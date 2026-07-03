@@ -136,6 +136,13 @@
     #gp-hero-grad { position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; background: linear-gradient(to top, rgba(0,0,0,0.94) 0%, rgba(0,0,0,0.5) 60%, transparent 100%); z-index: 1; pointer-events: none; }
     #gp-logo { position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%); z-index: 2; max-width: 56%; max-height: 50%; object-fit: contain; display: none; filter: drop-shadow(0 5px 24px rgba(0,0,0,0.95)); }
     #gp-hero-title { position: absolute; top: 46%; left: 50%; transform: translate(-50%,-50%); z-index: 2; font-size: clamp(28px,4vw,52px); font-weight: 900; color: #fff; text-shadow: 0 4px 20px #000; text-align: center; max-width: 80%; }
+    /* CRT: system · year · players as plain drop-shadowed text across the top of the hero (no pills, no labels) */
+    #gp-hero-meta { display: none; }
+    body.crt #gp-hero-meta { display: block; position: absolute; top: 10px; left: 0; right: 0; z-index: 3; text-align: center; padding: 0 16px; color: #fff; font-weight: 800; font-size: 25px; letter-spacing: 0.4px; text-shadow: 0 2px 6px #000, 0 0 14px rgba(0,0,0,0.9); white-space: nowrap; overflow: hidden; }
+    body.crt #gp-hero-meta > span { display: inline-block; will-change: transform; }
+    body.crt #gp-hero-meta.scroll { text-align: left; }   /* overflowing → left-align so the marquee reveals it from the start */
+    body.crt #gp-hero-meta.scroll > span { animation: gp-meta-marq var(--dur, 8s) ease-in-out infinite alternate; }
+    @keyframes gp-meta-marq { 0%, 12% { transform: translateX(0); } 88%, 100% { transform: translateX(var(--shift, 0)); } }
     #gp-actions { position: absolute; bottom: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 12px; padding: 18px 40px; }
     .gp-btn { background: rgba(0,0,0,0.55); border: 2px solid rgba(255,255,255,0.22); color: #fff; padding: 11px 22px; border-radius: 9px; font-weight: 900; letter-spacing: 1px; font-size: 14px; backdrop-filter: blur(6px); transition: transform .12s, border-color .12s, box-shadow .12s; white-space: nowrap; }
     .gp-btn.active { border-color: var(--accent); color: var(--accent); }
@@ -404,24 +411,29 @@
     body.crt #gp-actions { padding: 10px 14px; gap: 8px; justify-content: center; flex-wrap: wrap; row-gap: 6px; }   /* centered, not left-justified */
     body.crt .gp-btn { font-size: 15px; padding: 9px 15px; letter-spacing: 0.5px; }   /* much bigger button text for the CRT */
     body.crt #gp-content { padding: 12px 18px 14px; gap: 14px; overflow: hidden; align-items: stretch; }   /* no scroll — the three columns always fit */
-    /* equal thirds */
-    body.crt #gp-cover, body.crt #gp-left, body.crt #gp-right { flex: 1 1 0; width: auto; min-width: 0; }
-    /* box art — contained inside the column's height so tall portrait covers don't overflow */
-    body.crt #gp-cover { display: flex; align-items: flex-start; justify-content: center; }
-    body.crt #gp-cover .cover-frame { width: 100%; }
-    body.crt #gp-cover .cover-frame:not(.jewel) { width: auto; max-width: 100%; height: 100%; display: flex; align-items: flex-start; justify-content: center; }
-    body.crt #gp-cover .cover-frame:not(.jewel) img { width: auto; height: auto; max-width: 100%; max-height: 100%; }
-    /* screenshot — fit within the column AND the screen height, so vertical games no longer overflow with an ugly scrollbar */
-    body.crt #gp-left { display: flex; flex-direction: column; min-height: 0; }
-    body.crt #gp-ss { flex: 1 1 auto; min-height: 0; max-width: 100%; border: none; background: transparent; align-items: flex-start; justify-content: center; }
-    body.crt #gp-ss img { width: auto; height: auto; max-width: 100%; max-height: 100%; }
-    /* info — value under the label, larger, one line, side-scrolls when too long */
-    body.crt #gp-right { gap: 8px; justify-content: flex-start; }
-    body.crt .gp-stat { flex-direction: column; align-items: stretch; gap: 3px; padding: 8px 12px; }
-    body.crt .gp-stat .k { font-size: 12px; letter-spacing: 1px; }
-    body.crt .gp-stat .v { text-align: left; font-size: 22px; white-space: nowrap; overflow: hidden; }
-    body.crt .gp-stat .v > span { display: inline-block; will-change: transform; }
-    body.crt .gp-stat .v.scroll > span { animation: gp-stat-marq var(--dur, 5s) ease-in-out infinite alternate; }
+    /* ── CRT gamepage bottom area: cover art (left) + screenshot (right), 50/50 ──
+       Both columns are built IDENTICALLY so the cover behaves exactly like the (perfect) screenshot:
+         • the column fills the full content height — align-self:stretch is REQUIRED because the base
+           #gp-cover sets align-self:flex-start, which otherwise keeps it at natural height (the bug
+           that made the cover crop / jewel cases vanish);
+         • an inner box grows (flex:1 1 auto) to that full height;
+         • the media is height:100% / width:auto → the FULL image, natural ratio, as tall as fits, never cropped. */
+    body.crt #gp-right { display: none; }   /* system/year/players moved to the hero top */
+    body.crt #gp-cover,
+    body.crt #gp-left {
+        flex: 1 1 0; width: auto; min-width: 0; min-height: 0; align-self: stretch;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    body.crt #gp-cover .cover-frame:not(.jewel),
+    body.crt #gp-ss {
+        flex: 1 1 auto; min-height: 0; min-width: 0; max-width: 100%;
+        display: flex; align-items: center; justify-content: center;
+        border: none; background: transparent;
+    }
+    body.crt #gp-cover .cover-frame:not(.jewel) img,
+    body.crt #gp-ss img { height: 100%; width: auto; max-width: 100%; max-height: 100%; }
+    /* CD jewel case: same full-height box, width comes from the jewelcase aspect ratio */
+    body.crt #gp-cover .cover-frame.jewel { flex: 1 1 auto; min-height: 0; align-self: center; width: auto; max-width: 100%; }
     @keyframes gp-stat-marq { 0%, 16% { transform: translateX(0); } 84%, 100% { transform: translateX(var(--shift, 0)); } }
     /* CRT playlist menu (opened from the gamepage button): make the game-title subtitle much bigger */
     body.crt #overlay-list[data-mode="playlists"] .overlay-section { font-size: 22px; letter-spacing: 2px; opacity: 0.95; color: var(--accent); padding: 12px 16px 8px; }
@@ -668,6 +680,7 @@
       <img id="gp-hero-img" src="" alt="">
       <div id="gp-hero-ph"></div>
       <div id="gp-hero-grad"></div>
+      <div id="gp-hero-meta"></div>
       <img id="gp-logo" src="" alt="">
       <div id="gp-hero-title"></div>
       <div id="gp-actions"></div>

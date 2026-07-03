@@ -378,12 +378,11 @@ function rssBuild() {
         const opts = [{ label: 'Off', set: { video_shader_enable: 'false' } }, { label: 'On', set: { video_shader_enable: 'true' } }];
         const on = rg('video_shader_enable') === 'true';
         list.push(cyc('Shaders', opts, () => on ? 1 : 0));
-        if (on) {
-            const shOpts = [{ label: 'None', set: { video_shader: '' } }];
-            const seen = new Set();
-            [...rssPresets, ...rssFavs].forEach(p => { if (p && p.file && !seen.has(p.file)) { seen.add(p.file); shOpts.push({ label: p.name, val: p.file, set: { video_shader: p.file, video_shader_enable: 'true' } }); } });
+        if (on) {                                                   // Shader = a submenu (A opens the picker list)
             const cur = rg('video_shader');
-            list.push(cyc('Shader', shOpts, () => Math.max(0, shOpts.findIndex(o => (o.set.video_shader || '') === cur))));
+            let nm = 'None';
+            if (cur) { const hit = [...rssPresets, ...rssFavs].find(p => p && p.file === cur); nm = hit ? hit.name : cur.split('/').pop().replace(/\.(slangp|glslp|cgp)$/i, ''); }
+            list.push({ label: 'Shader', kind: 'submenu', open: openRssShaderMenu, valueLabel: () => nm });
         }
     }
     {                                                               // Auto-save & resume
@@ -438,13 +437,11 @@ function rssFocused() {
     const label = raw.split(':')[0].trim();
     return rssControls.find(c => c.label === label) || null;
 }
-function rssSet(updates) {
-    Object.assign(rssCfg, updates);
-    window.api.raConfigSet(updates);
-    rssRender(overlayIndex);   // keep cursor, refresh values + conditional rows
-}
+function rssApply(updates) { Object.assign(rssCfg, updates); window.api.raConfigSet(updates); }   // write only, no re-render
+function rssSet(updates) { rssApply(updates); rssRender(overlayIndex); }   // + keep cursor, refresh values + conditional rows
 function rssCycle(control, dir) {
     if (!control) return;
+    if (control.kind === 'submenu') { _rssReturnIdx = overlayIndex; control.open(); return; }
     if (control.kind === 'text') {
         openOSK({ mode: 'text', title: control.label.toUpperCase(), initial: (rssCfg[control.key] || ''),
             onDone: v => rssSet({ [control.key]: v }) });
@@ -453,6 +450,20 @@ function rssCycle(control, dir) {
     const n = control.options.length; let i = control.current(); if (i < 0) i = 0;
     i = (i + (dir || 1) + n) % n;
     rssSet(control.options[i].set);
+}
+// Shader picker — a proper submenu (navigate the list, A selects, ★ marks the active one).
+let _rssShaderOpts = [], _rssReturnIdx = 0;
+function openRssShaderMenu() {
+    menuMode = 'rssshader';
+    const cur = rssCfg.video_shader != null ? String(rssCfg.video_shader) : '';
+    const opts = [{ label: 'None', file: '', set: { video_shader: '' } }];
+    const seen = new Set();
+    [...rssPresets, ...rssFavs].forEach(p => { if (p && p.file && !seen.has(p.file)) { seen.add(p.file); opts.push({ label: p.name, file: p.file, set: { video_shader: p.file, video_shader_enable: 'true' } }); } });
+    _rssShaderOpts = opts;
+    const items = ['§SHADER', ...opts.map(o => (o.file === cur ? '★ ' : '') + o.label), 'Back'];
+    renderOverlay('SHADER', items, opts.length > 1 ? 'A selects · B back. Add .slangp files in the shaders folder for more.' : 'No presets found — install Emulatte presets in Desktop mode.');
+    const curIdx = opts.findIndex(o => o.file === cur);
+    if (curIdx >= 0) { overlayIndex = curIdx + 1; highlightOverlay(); }   // land the cursor on the active shader (+1 for the §header)
 }
 
 // ── Playlists (gamepage: add/remove this game) ───────────────────────────────
@@ -517,6 +528,12 @@ async function overlayConfirm() {
         return;
     }
     if (menuMode === 'theme' && raw === 'Back') { openThemeMenu(); return; }
+    if (menuMode === 'rssshader') {
+        if (raw === 'Back') { menuMode = 'rss'; rssRender(_rssReturnIdx); return; }
+        const o = _rssShaderOpts.find(x => x.label === raw);
+        if (o) { rssApply(o.set); openRssShaderMenu(); }   // apply + re-render the picker so ★ moves
+        return;
+    }
     if (raw === 'Back') { openMenu(); return; }
     if (menuMode === 'theme') { applyTheme(raw); window.api.setSetting('couch_theme', raw); if (syncDesktop) { syncDesktop = false; window.api.setSetting('couch_sync_desktop', '0'); } openThemeCatMenu(_themeCat); }
     else if (menuMode === 'density') { const o = DENSITY_OPTS.find(([l]) => l === raw); if (o) { window.api.setSetting('couch_density', o[1]); applyDensity(o[1]); openDensityMenu(); } }
@@ -573,6 +590,7 @@ async function overlayConfirm() {
 function overlayBack() {
     if (menuMode === 'main' || menuMode === 'sort' || menuMode === 'playlists') closeMenu();
     else if (menuMode === 'theme') openThemeMenu();   // back to theme categories
+    else if (menuMode === 'rssshader') { menuMode = 'rss'; rssRender(_rssReturnIdx); }   // back to the RA setup list
     else openMenu();
 }
 function dispatchMenu() { if (ssOpen || smOpen || infoOpen) return; if (menuOpen) closeMenu(); else openMenu(); }
@@ -934,6 +952,13 @@ function wallCycleCategory(dir) {
 }
 
 // ── GAMEPAGE ─────────────────────────────────────────────────────────────────
+function playersLabel(p) {   // "1" → "1 player", "2" → "1-2 players", "1-4" → "1-4 players"
+    const s = String(p == null ? '' : p).trim(); if (!s) return '';
+    if (/[-–]/.test(s)) return s.replace('–', '-') + ' players';
+    const n = parseInt(s, 10);
+    if (!n || isNaN(n)) return s;
+    return n === 1 ? '1 player' : `1-${n} players`;
+}
 function openGamepage(id) {
     const g = gamesById.get(id); if (!g) return; gpGame = g;
     if (screen === 'wall' || screen === 'list') gpReturn = screen;   // B returns to whichever browse view
@@ -943,6 +968,7 @@ function openGamepage(id) {
     if (g.logo) { logo.src = g.logo; logo.style.display = 'block'; title.style.display = 'none'; heroPh.innerHTML = ''; }
     else if (hero) { logo.style.display = 'none'; title.style.display = 'block'; title.textContent = g.title || ''; heroPh.innerHTML = ''; }
     else { logo.style.display = 'none'; title.style.display = 'none'; heroPh.innerHTML = artPlaceholderHTML(g, false); }   // no art at all → stylish hero placeholder
+    $('gp-hero-meta').innerHTML = `<span>${escHtml([g.system_name, g.year, playersLabel(g.players)].filter(Boolean).join('   ·   '))}</span>`;   // CRT: shown across the hero top (scrolls if long)
     const cov = $('gp-cover');
     if (g.cover) { cov.classList.remove('noart'); cov.innerHTML = coverFrameHTML(g); applyCoverFrame(g, cov.querySelector('.cover-frame'), cov.querySelector('img')); }
     else { cov.classList.add('noart'); cov.innerHTML = artPlaceholderHTML(g, false); }
@@ -961,6 +987,7 @@ function openGamepage(id) {
     $('gp-scrape-hint').style.display = hasArt(g) ? 'none' : '';   // footer: offer X Scrape only when the game has no artwork
     buildGpActions();
     showScreen('gamepage'); $('gp-content').scrollTop = 0; gpBtnFocus = 0; updateGpFocus();
+    requestAnimationFrame(applyHeroMetaMarquee);   // CRT: scroll the hero meta line if it overflows
     if (compact()) requestAnimationFrame(applyStatMarquee);              // side-scroll any stat value that's too long for its column
     else if (displayType === 'horizontal') requestAnimationFrame(applyInfoAutoScroll);   // slow auto-scroll the info panel if it overflows
 }
@@ -978,6 +1005,13 @@ function applyStatMarquee() {
         const over = inner.scrollWidth - v.clientWidth;
         if (over > 2) { v.classList.add('scroll'); inner.style.setProperty('--shift', (-over - 4) + 'px'); inner.style.setProperty('--dur', clamp(Math.round(over / 26), 3, 9) + 's'); }
     });
+}
+function applyHeroMetaMarquee() {   // CRT: horizontally scroll the hero meta line when it's too long to read
+    const el = $('gp-hero-meta'), inner = el && el.firstElementChild; if (!inner) return;
+    el.classList.remove('scroll'); inner.style.removeProperty('--shift'); inner.style.removeProperty('--dur');
+    if (!crtOn) return;
+    const over = inner.scrollWidth - el.clientWidth;
+    if (over > 2) { el.classList.add('scroll'); inner.style.setProperty('--shift', (-over - 10) + 'px'); inner.style.setProperty('--dur', clamp(Math.round(over / 20), 5, 16) + 's'); }
 }
 function buildGpActions() {
     const g = gpGame;
@@ -1310,7 +1344,7 @@ function dispatchNav(dx, dy) {
     playSfx(sfxNav);
     if (menuOpen) {
         if (menuMode === 'sound' && dx) { soundHorizontal(dx); return; }
-        if (menuMode === 'rss' && dx) { const c = rssFocused(); if (c && c.kind !== 'text') rssCycle(c, dx); return; }
+        if (menuMode === 'rss' && dx) { const c = rssFocused(); if (c && c.kind === 'cycle') rssCycle(c, dx); return; }
         if (dy) overlayMove(dy);
         return;
     }

@@ -201,6 +201,30 @@ app.whenReady().then(() => {
             try { db.prepare(`ALTER TABLE cores ADD COLUMN ${col} TEXT`).run(); } catch {}
         // Fix a wrong ScreenScraper system id shipped in an old preset (Wii was 117 → 404; correct is 16).
         try { db.prepare(`UPDATE systems SET screenscraper_id=16 WHERE short_name='wii' AND screenscraper_id=117`).run(); } catch {}
+        // One-time: retire the legacy "global" RA override (from an old version that had a global-override
+        // editor). It was layered on top of the owned config at launch and thus silently shadowed the
+        // Screen/Fullscreen/Aspect/Shader the user sets in Express / RA-Settings / couch RSS. Fold any
+        // enabled one into the owned config (so current behaviour is preserved + now editable), then drop it.
+        try {
+            const grow = db.prepare("SELECT data FROM ra_overrides WHERE scope='global' AND ref_id=0").get();
+            if (grow) {
+                let gd = {}; try { gd = JSON.parse(grow.data || '{}'); } catch {}
+                if (gd && gd.enabled) {
+                    const up = {};
+                    const mon = gd.monitor, specificMon = mon != null && mon !== '' && mon !== '0';
+                    if (mon != null && mon !== '') up.video_monitor_index = String(mon);
+                    if (specificMon) { up.video_fullscreen = 'true'; up.video_windowed_fullscreen = 'false'; }
+                    else if (gd.fullscreen != null && gd.fullscreen !== '') up.video_fullscreen = String(gd.fullscreen);
+                    if (gd.aspect != null && gd.aspect !== '') { up.aspect_ratio_index = String(gd.aspect); up.video_aspect_ratio_auto = 'false'; }
+                    if (gd.shaderEnable != null && gd.shaderEnable !== '') up.video_shader_enable = String(gd.shaderEnable);
+                    if (gd.shaderEnable === 'true' && gd.shader) up.video_shader = gd.shader;
+                    if (gd.custom && gd.custom.trim()) for (const line of gd.custom.trim().split('\n')) { const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?(.*?)"?\s*$/); if (m) up[m[1]] = m[2]; }
+                    if (Object.keys(up).length) writeRaCfgKeys(ensureOwnedRaCfg(), up);
+                }
+                db.prepare("DELETE FROM ra_overrides WHERE scope='global' AND ref_id=0").run();
+                try { fs.unlinkSync(raOverridePath('global', 0)); } catch {}
+            }
+        } catch {}
         db.prepare(`CREATE TABLE IF NOT EXISTS ra_achievements (
             ra_game_id  INTEGER NOT NULL,
             ach_id      TEXT    NOT NULL,
@@ -565,7 +589,10 @@ function shaderArg(game) { const s = effectiveShader(game); return (s.enable && 
 // not reliably applied here). Returns the file path.
 function launchConfigFile(game, extra = {}) {
     const cfg = parseRaCfg(ensureOwnedRaCfg());
-    const scopes = game ? [['global', 0], ['system', game.system_id], ['game', game.id]] : [['global', 0]];
+    // The owned config IS the global layer (edited by Express / RA-Settings / couch RSS), so only
+    // per-system and per-game overrides layer on top — never a separate "global" override, which
+    // would silently shadow the Screen/Fullscreen/etc. the user just set in those menus.
+    const scopes = game ? [['system', game.system_id], ['game', game.id]] : [];
     for (const [scope, refId] of scopes) {
         if (refId == null) continue;
         let data = {};
