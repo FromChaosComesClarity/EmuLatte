@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('api', {
     selectFile:      (filters) => ipcRenderer.invoke('select-file', filters),
     selectDirectory: ()        => ipcRenderer.invoke('select-directory'),
     scanRomFolder:   (p, exts) => ipcRenderer.invoke('scan-rom-folder', p, exts),
+    rescanNewGames:  ()        => ipcRenderer.invoke('rescan-new-games'),
     createM3u:       (payload) => ipcRenderer.invoke('create-m3u', payload),
     repairDiscRefsGame:   (id) => ipcRenderer.invoke('repair-disc-refs-game', id),
     repairDiscRefsSystem: (id) => ipcRenderer.invoke('repair-disc-refs-system', id),

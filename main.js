@@ -2597,7 +2597,7 @@ function discReferencedFiles(indexFile) {
     return refs.map(abs);
 }
 
-ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => {
+function scanFolderEntries(folderPath, extensions) {
     const exts = new Set(
         (extensions || '').split(',')
             .map(e => e.trim().toLowerCase().replace(/^\./, ''))
@@ -2655,6 +2655,83 @@ ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => {
     for (const f of loose) entries.push(single(f));
     entries.sort((a, b) => a.title.localeCompare(b.title));
     return entries;
+}
+ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => scanFolderEntries(folderPath, extensions));
+
+// ── RESCAN: find NEW ROMs in every current system's folder(s) ─────────────────
+// Infers each system's ROM folder(s) from its existing games' rom_paths, scans
+// them (disc-aware) with that system's extensions, and returns only entries that
+// aren't already in the library. Powers the Refresh button's "find new games".
+const commonAncestor = (dirs) => {
+    const parts = dirs.map(d => path.resolve(d).split(path.sep));
+    if (!parts.length) return null;
+    const first = parts[0]; let n = first.length;
+    for (const pr of parts) { let i = 0; while (i < n && i < pr.length && pr[i] === first[i]) i++; n = i; }
+    return n <= 1 ? null : (first.slice(0, n).join(path.sep) || null);
+};
+ipcMain.handle('rescan-new-games', () => {
+    if (!db) return { entries: [], folders: 0 };
+    const systems = db.prepare('SELECT * FROM systems').all();
+    const sysById = new Map(systems.map(s => [s.id, s]));
+    const games   = db.prepare('SELECT id, system_id, rom_path FROM games').all();
+    const playlistsDir = path.resolve(path.join(configDir, 'playlists'));
+
+    // Real ROM folder for a game (following a generated .m3u to where its discs live).
+    const discLines = (m3u) => {
+        try { return fs.readFileSync(m3u, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+            .map(l => path.isAbsolute(l) ? l : path.join(path.dirname(m3u), l)); } catch { return []; }
+    };
+
+    // Everything already in the library (resolved paths + discs referenced by .m3u games).
+    const known = new Set();
+    const gameDirs = [];   // [system_id, resolvedDir] — immediate ROM folder of each game
+    for (const g of games) {
+        if (!g.rom_path) continue;
+        known.add(path.resolve(g.rom_path));
+        let dirs;
+        if (extOf(g.rom_path) === 'm3u') { const d = discLines(g.rom_path); d.forEach(x => known.add(path.resolve(x))); dirs = d.map(x => path.dirname(x)); }
+        else dirs = [path.dirname(g.rom_path)];
+        for (const d of dirs) {
+            const rd = path.resolve(d);
+            if (rd === playlistsDir || !g.system_id) continue;
+            gameDirs.push([g.system_id, rd]);
+        }
+    }
+
+    // Scan roots per system: prefer the common ancestor (catches new per-game subfolders)
+    // unless it's too shallow or shared with another system — then use the immediate folders.
+    const roots = new Map();   // system_id -> Set(dir)
+    for (const [sysId] of sysById) {
+        const dirs = [...new Set(gameDirs.filter(([s]) => s === sysId).map(([, d]) => d))];
+        if (!dirs.length) continue;
+        const anc = commonAncestor(dirs);
+        const deepEnough = anc && anc.split(path.sep).filter(Boolean).length >= 2;
+        const sharedWithOther = anc && gameDirs.some(([s, d]) => s !== sysId && (d === anc || d.startsWith(anc + path.sep)));
+        roots.set(sysId, new Set(deepEnough && !sharedWithOther ? [anc] : dirs));
+    }
+
+    const entries = [];
+    const seen = new Set();
+    let folders = 0;
+    for (const [sysId, dirSet] of roots) {
+        const sys = sysById.get(sysId); if (!sys) continue;
+        for (const dir of dirSet) {
+            if (!fs.existsSync(dir)) continue;   // drive not mounted, etc.
+            folders++;
+            for (const e of scanFolderEntries(dir, sys.extensions || '')) {
+                const dup = e.kind === 'multidisc'
+                    ? (e.discs || []).some(d => known.has(path.resolve(d)))
+                    : known.has(path.resolve(e.path));
+                if (dup) continue;
+                const key = path.resolve(e.path);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                entries.push({ ...e, system_id: sysId, system_name: sys.name });
+            }
+        }
+    }
+    entries.sort((a, b) => (a.system_name || '').localeCompare(b.system_name || '') || a.title.localeCompare(b.title));
+    return { entries, folders };
 });
 
 // Write a .m3u playlist (one disc path per line, absolute) into EmuLatte's own data

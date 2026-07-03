@@ -60,7 +60,8 @@ function autoDensity() {
     if (h <= 540) return 2.4; if (h <= 768) return 1.7; if (h <= 1080) return 1.25; return 1.0;
 }
 async function init() {
-    applyTheme((await window.api.getSetting('couch_theme')) || 'CREMA (DEFAULT)');
+    syncDesktop = (await window.api.getSetting('couch_sync_desktop')) === '1';
+    await applyActiveTheme();
     const dRaw = (await window.api.getSetting('couch_density')) || 'auto';
     const density = dRaw === 'auto' ? autoDensity() : (parseFloat(dRaw) || 1);
     if (window.api.setZoom && density !== 1) window.api.setZoom(density);
@@ -159,10 +160,21 @@ const THEMES = {
   "NECROMORPH": {bg: "#030808", bg_panel: "rgba(0, 80, 20, 0.60)", bg_menu: "#040a04", accent: "#80ff20", accent_menu: "#60c010", text_main: "#c8ffc0", text_sec: "#70c060", text_dim: "#306020", border: "rgba(128, 255, 32, 0.22)", border_solid: "#0a2808"},
   "CRIMSON PEAK": {bg: "#120508", bg_panel: "rgba(80, 15, 30, 0.75)", bg_menu: "#1a080c", accent: "#d4904a", accent_menu: "#e0b060", text_main: "#f0e0d8", text_sec: "#c0909a", text_dim: "#7a3848", border: "rgba(212, 144, 74, 0.22)", border_solid: "#5a1520"},
   "LAKESIDE CURSE": {bg: "#0c0a08", bg_panel: "rgba(60, 40, 20, 0.72)", bg_menu: "#141008", accent: "#e09030", accent_menu: "#f0b040", text_main: "#f0e8d0", text_sec: "#b09070", text_dim: "#706050", border: "rgba(224, 144, 48, 0.22)", border_solid: "#402808"},
-  "THE BACKROOMS": {bg: "#1a1810", bg_panel: "rgba(220, 200, 100, 0.10)", bg_menu: "#201e14", accent: "#d4c840", accent_menu: "#f0e050", text_main: "#f0e8c8", text_sec: "#b0a870", text_dim: "#706840", border: "rgba(212, 200, 64, 0.22)", border_solid: "#3a3820"}
+  "THE BACKROOMS": {bg: "#1a1810", bg_panel: "rgba(220, 200, 100, 0.10)", bg_menu: "#201e14", accent: "#d4c840", accent_menu: "#f0e050", text_main: "#f0e8c8", text_sec: "#b0a870", text_dim: "#706840", border: "rgba(212, 200, 64, 0.22)", border_solid: "#3a3820"},
+  "PAPER": {bg: "#f9f7f4", bg_panel: "rgba(232,228,222,0.75)", bg_menu: "#eeebe6", accent: "#1a1a1a", accent_menu: "#444444", text_main: "#1a1a1a", text_sec: "#444444", text_dim: "#999999", border: "rgba(0,0,0,0.08)", border_solid: "#cccccc"},
+  "SOLARIZED LIGHT": {bg: "#fdf6e3", bg_panel: "rgba(238,232,213,0.80)", bg_menu: "#eee8d5", accent: "#268bd2", accent_menu: "#2aa198", text_main: "#586e75", text_sec: "#657b83", text_dim: "#93a1a1", border: "rgba(38,139,210,0.20)", border_solid: "#cfc9aa"},
+  "CATPPUCCIN LATTE": {bg: "#eff1f5", bg_panel: "rgba(220,224,232,0.80)", bg_menu: "#e6e9ef", accent: "#8839ef", accent_menu: "#ea76cb", text_main: "#4c4f69", text_sec: "#5c5f77", text_dim: "#9ca0b0", border: "rgba(136,57,239,0.16)", border_solid: "#c4c8da"},
+  "GITHUB LIGHT": {bg: "#ffffff", bg_panel: "rgba(234,238,242,0.80)", bg_menu: "#f6f8fa", accent: "#0969da", accent_menu: "#8250df", text_main: "#1f2328", text_sec: "#656d76", text_dim: "#9198a1", border: "rgba(9,105,218,0.15)", border_solid: "#d0d7de"},
+  "GRUVBOX LIGHT": {bg: "#fbf1c7", bg_panel: "rgba(235,219,178,0.80)", bg_menu: "#f2e5bc", accent: "#af3a03", accent_menu: "#b57614", text_main: "#3c3836", text_sec: "#504945", text_dim: "#a89984", border: "rgba(175,58,3,0.18)", border_solid: "#d5c4a1"},
+  "ROSÉ PINE DAWN": {bg: "#faf4ed", bg_panel: "rgba(242,232,228,0.78)", bg_menu: "#f2e9e1", accent: "#b4637a", accent_menu: "#d7827e", text_main: "#575279", text_sec: "#797593", text_dim: "#9893a5", border: "rgba(180,99,122,0.18)", border_solid: "#dfd9e2"},
+  "NORD LIGHT": {bg: "#eceff4", bg_panel: "rgba(216,222,233,0.78)", bg_menu: "#e5e9f0", accent: "#5e81ac", accent_menu: "#81a1c1", text_main: "#2e3440", text_sec: "#3b4252", text_dim: "#7b8899", border: "rgba(94,129,172,0.20)", border_solid: "#c0cad8"},
+  "DAYBREAK": {bg: "#fff9f0", bg_panel: "rgba(255,236,205,0.75)", bg_menu: "#ffefd8", accent: "#c05b18", accent_menu: "#d47820", text_main: "#3a2510", text_sec: "#6a4520", text_dim: "#b08060", border: "rgba(192,91,24,0.18)", border_solid: "#e8c898"},
+  "OAKANIZER DARK": {bg: "#120a1a", bg_panel: "rgba(46,26,58,0.70)", bg_menu: "#23142d", accent: "#b5a9bd", accent_menu: "#cfc5d6", text_main: "#dad4de", text_sec: "#907f9c", text_dim: "#6b547b", border: "rgba(181,169,189,0.22)", border_solid: "#46295a"},
+  "OAKANIZER LIGHT": {bg: "#f5f0f8", bg_panel: "rgba(217,208,230,0.78)", bg_menu: "#e4dbed", accent: "#46295a", accent_menu: "#7c4a99", text_main: "#1e0a30", text_sec: "#6b547b", text_dim: "#907f9c", border: "rgba(70,41,90,0.18)", border_solid: "#c0b4cc"}
 };
 const THEME_CATEGORIES = {
-  "Originals & System": ["CREMA (DEFAULT)", "DARK GRAY", "CYBERPUNK", "SNOW", "MOVIESFLIX", "VAPOUR OS", "PSIV BLUE", "GREEN BOX", "WIN XP"],
+  "Light & Minimal": ["PAPER", "SOLARIZED LIGHT", "CATPPUCCIN LATTE", "GITHUB LIGHT", "GRUVBOX LIGHT", "ROSÉ PINE DAWN", "NORD LIGHT", "DAYBREAK", "OAKANIZER LIGHT"],
+  "Originals & System": ["CREMA (DEFAULT)", "DARK GRAY", "CYBERPUNK", "SNOW", "MOVIESFLIX", "VAPOUR OS", "PSIV BLUE", "GREEN BOX", "WIN XP", "OAKANIZER DARK"],
   "Gaming Legends": ["GAME BOY DMG", "PIP BOY", "SEVASTOPOL", "RIP AND TEAR CLASSIC", "SUPER BROTHERS", "GREEN HILL", "NES", "SNES", "BLOODBORNE", "METROID PRIME", "SILENT HILL", "DIABLO", "HALF-LIFE", "SHOVEL KNIGHT"],
   "Aesthetics": ["EARTHY & ORGANIC", "DOPAMINE BRIGHTS", "RETRO REVIVAL", "VAPORWAVE", "AURORA", "NOIR", "BIOLUMINESCENCE", "BRUTALIST"],
   "Linux Ricing": ["DRACULA", "GRUVBOX", "NORD", "SOLARIZED DARK", "CATPPUCCIN FRAPPÉ", "CATPPUCCIN MACCHIATO", "CATPPUCCIN MOCHA", "TOKYO NIGHT", "EVERFOREST", "ROSÉ PINE", "OXOCARBON", "MATERIAL DARK"],
@@ -171,9 +183,17 @@ const THEME_CATEGORIES = {
   "PSIII Colors": ["PSIII CLASSIC", "PSIII RED", "PSIII GREEN", "PSIII BLUE", "PSIII PURPLE", "PSIII GOLD", "PSIII SILVER"]
 };
 function applyTheme(name) {
-    const t = THEMES[name] || THEMES["CREMA (DEFAULT)"];
+    const t = THEMES[name] || THEMES["HALF-LIFE"];
     const r = document.documentElement;
     Object.keys(t).forEach(k => r.style.setProperty('--' + k, t[k]));
+}
+let syncDesktop = false;   // when on, Couch mirrors the desktop mode's color scheme (el_theme)
+async function applyActiveTheme() {
+    if (syncDesktop) {
+        const el = await window.api.getSetting('el_theme');   // desktop's chosen scheme
+        if (el) { applyTheme(el === 'CREMA' ? 'CREMA (DEFAULT)' : el); return; }
+    }
+    applyTheme(await getCfg('couch_theme', 'HALF-LIFE'));
 }
 
 // ── Settings menu (CREMA-style overlay) ──────────────────────────────────────
@@ -243,7 +263,7 @@ function overlayMove(dir) {
 }
 async function openMenu() {
     menuOpen = true; menuMode = 'main';
-    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§SYSTEM', 'Manage Save States', 'Close Menu', 'Exit Couch Mode']);
+    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode']);
 }
 function closeMenu() { menuOpen = false; $('overlay-backdrop').classList.add('hidden'); }
 let _themeCat = null;
@@ -252,7 +272,7 @@ async function openThemeMenu() {   // level 1: theme categories
     renderOverlay('COLOR THEME', ['§CATEGORY', ...Object.keys(THEME_CATEGORIES), 'Back']);
 }
 async function openThemeCatMenu(cat) {   // level 2: themes within a category
-    menuMode = 'theme'; _themeCat = cat; const cur = await getCfg('couch_theme', 'CREMA (DEFAULT)');
+    menuMode = 'theme'; _themeCat = cat; const cur = await getCfg('couch_theme', 'HALF-LIFE');
     renderOverlay(cat.toUpperCase(), ['§' + cat, ...(THEME_CATEGORIES[cat] || []).map(n => n === cur ? '★ ' + n : n), 'Back']);
 }
 async function openDensityMenu() {
@@ -309,6 +329,132 @@ function openSortMenu() {   // opened with SELECT from gallery/list — same opt
 }
 function resortActive() { if (screen === 'wall') { renderWall(); focusGrid(0); } else if (screen === 'list') { renderList(); listSelect(0); } }
 
+// ── RetroArch Simple Setup (mirrors Desktop mode's Express pane) ──────────────
+// Reads/writes EmuLatte's OWN RetroArch cfg via the same IPC the desktop uses, so
+// every change here is instantly reflected in Desktop's Express settings and vice
+// versa (each side re-reads the cfg when its menu opens). Gamepad: A / ◄ ► cycle.
+let rssCfg = {}, rssMon = [], rssPresets = [], rssFavs = [], rssControls = [];
+function rssBuild() {
+    const rg = k => (rssCfg[k] != null ? String(rssCfg[k]) : '');
+    const cyc = (label, options, current) => ({ label, kind: 'cycle', options, current });
+    const list = [];
+
+    if (rssMon.length > 1) {                                         // Screen — only meaningful with >1 monitor
+        const opts = [{ label: 'Auto', set: { video_monitor_index: '0' } }];
+        rssMon.forEach(m => opts.push({ label: 'Screen ' + m.index, set: { video_monitor_index: String(m.index), video_fullscreen: 'true', video_windowed_fullscreen: 'false' } }));
+        const cur = rg('video_monitor_index') || '0';
+        list.push(cyc('Screen', opts, () => Math.max(0, opts.findIndex(o => String(o.set.video_monitor_index) === cur))));
+    }
+    {                                                               // Screen ratio
+        const ar = [['0','4:3'],['22','Core provided'],['24','Full'],['1','16:9'],['2','16:10'],['4','21:9'],['5','1:1'],['7','3:2'],['11','5:4'],['21','Square pixel']];
+        const opts = ar.map(([v, l]) => ({ label: l, val: v, set: { aspect_ratio_index: v, video_aspect_ratio_auto: 'false' } }));
+        const cur = rg('aspect_ratio_index');
+        const c = cyc('Screen ratio', opts, () => opts.findIndex(o => o.val === cur));
+        c.rawFallback = () => cur; list.push(c);
+    }
+    {                                                               // Fullscreen — 3-way over two keys
+        const opts = [
+            { label: 'On (Windowed)', set: { video_fullscreen: 'true', video_windowed_fullscreen: 'true' } },
+            { label: 'On (Full)',     set: { video_fullscreen: 'true', video_windowed_fullscreen: 'false' } },
+            { label: 'Off',           set: { video_fullscreen: 'false' } },
+        ];
+        const fs = rg('video_fullscreen') === 'true', win = rg('video_windowed_fullscreen') === 'true';
+        list.push(cyc('Fullscreen', opts, () => !fs ? 2 : (win ? 0 : 1)));
+    }
+    {                                                               // Big menu for CRT — RA's OWN menu + Ozone font scale
+        const opts = [
+            { label: 'Off', set: { menu_scale_factor: '1.000000', ozone_font_scale: '0', ozone_font_scale_factor_global: '1.000000' } },
+            { label: 'On',  set: { menu_scale_factor: '2.000000', ozone_font_scale: '1', ozone_font_scale_factor_global: '2.000000' } },
+        ];
+        list.push(cyc('Big menu (CRT / TV)', opts, () => parseFloat(rg('menu_scale_factor') || '1') >= 1.5 ? 1 : 0));
+    }
+    {                                                               // Close RetroArch combo — device-independent RetroPad combo
+        const combo = [['0','Off'],['4','Select + Start'],['2','L3 + R3'],['3','L1+R1+Select+Start'],['8','L2 + R2']];
+        const opts = combo.map(([v, l]) => ({ label: l, val: v, set: { input_quit_gamepad_combo: v } }));
+        const cur = rg('input_quit_gamepad_combo') || '0';
+        list.push(cyc('Close RetroArch combo', opts, () => Math.max(0, opts.findIndex(o => o.val === cur))));
+    }
+    {                                                               // Shaders on/off (+ preset picker when on)
+        const opts = [{ label: 'Off', set: { video_shader_enable: 'false' } }, { label: 'On', set: { video_shader_enable: 'true' } }];
+        const on = rg('video_shader_enable') === 'true';
+        list.push(cyc('Shaders', opts, () => on ? 1 : 0));
+        if (on) {
+            const shOpts = [{ label: 'None', set: { video_shader: '' } }];
+            const seen = new Set();
+            [...rssPresets, ...rssFavs].forEach(p => { if (p && p.file && !seen.has(p.file)) { seen.add(p.file); shOpts.push({ label: p.name, val: p.file, set: { video_shader: p.file, video_shader_enable: 'true' } }); } });
+            const cur = rg('video_shader');
+            list.push(cyc('Shader', shOpts, () => Math.max(0, shOpts.findIndex(o => (o.set.video_shader || '') === cur))));
+        }
+    }
+    {                                                               // Auto-save & resume
+        const opts = [
+            { label: 'Off', set: { savestate_auto_save: 'false', savestate_auto_load: 'false' } },
+            { label: 'On',  set: { savestate_auto_save: 'true',  savestate_auto_load: 'true' } },
+        ];
+        const auto = rg('savestate_auto_save') === 'true' && rg('savestate_auto_load') === 'true';
+        list.push(cyc('Auto-save & resume', opts, () => auto ? 1 : 0));
+    }
+    {                                                               // RetroAchievements (+ credentials when on)
+        const opts = [{ label: 'Off', set: { cheevos_enable: 'false' } }, { label: 'On', set: { cheevos_enable: 'true' } }];
+        const on = rg('cheevos_enable') === 'true';
+        list.push(cyc('Achievements', opts, () => on ? 1 : 0));
+        if (on) {
+            list.push({ label: 'RA Username', kind: 'text', key: 'cheevos_username', valueLabel: () => rg('cheevos_username') || '(not set)' });
+            list.push({ label: 'RA Password', kind: 'text', key: 'cheevos_password', valueLabel: () => rg('cheevos_password') ? '••••••' : '(not set)' });
+        }
+    }
+    return list;
+}
+function rssValue(c) {
+    if (c.valueLabel) return c.valueLabel();
+    const i = c.current();
+    if (i < 0) return c.rawFallback ? (c.rawFallback() || '—') : '—';
+    return c.options[i].label;
+}
+async function openRssMenu() {
+    menuOpen = true; menuMode = 'rss';
+    renderOverlay('RETROARCH SIMPLE SETUP', ['§Loading…', 'Back'], 'Reading RetroArch settings…');
+    try {
+        const [cfg, mons, root, favRaw] = await Promise.all([
+            window.api.raConfigGetAll().then(x => x || {}),
+            window.api.getMonitors().catch(() => []),
+            window.api.raBrowseShaders('').catch(() => ({ presets: [] })),
+            window.api.getSetting('express_fav_shaders'),
+        ]);
+        rssCfg = cfg || {}; rssMon = mons || []; rssPresets = (root && root.presets) || [];
+        try { rssFavs = JSON.parse(favRaw) || []; } catch { rssFavs = []; }
+    } catch { rssCfg = rssCfg || {}; }
+    rssRender();
+}
+function rssRender(keepIdx) {
+    rssControls = rssBuild();
+    const items = ['§RETROARCH SIMPLE SETUP', ...rssControls.map(c => `${c.label}: ${rssValue(c)}`), 'Back'];
+    renderOverlay('RETROARCH SIMPLE SETUP', items, 'A / ◄ ► change · these settings are shared with Desktop mode.');
+    if (keepIdx != null) { overlayIndex = Math.min(keepIdx, overlayItems.length - 1); highlightOverlay(); }
+}
+function rssFocused() {
+    const raw = String(overlayItems[overlayIndex] || '');
+    if (raw === 'Back' || raw[0] === '§') return null;
+    const label = raw.split(':')[0].trim();
+    return rssControls.find(c => c.label === label) || null;
+}
+function rssSet(updates) {
+    Object.assign(rssCfg, updates);
+    window.api.raConfigSet(updates);
+    rssRender(overlayIndex);   // keep cursor, refresh values + conditional rows
+}
+function rssCycle(control, dir) {
+    if (!control) return;
+    if (control.kind === 'text') {
+        openOSK({ mode: 'text', title: control.label.toUpperCase(), initial: (rssCfg[control.key] || ''),
+            onDone: v => rssSet({ [control.key]: v }) });
+        return;
+    }
+    const n = control.options.length; let i = control.current(); if (i < 0) i = 0;
+    i = (i + (dir || 1) + n) % n;
+    rssSet(control.options[i].set);
+}
+
 // ── Playlists (gamepage: add/remove this game) ───────────────────────────────
 let _plGame = null;
 async function openPlaylistsMenu(keepIdx) {
@@ -338,6 +484,11 @@ async function overlayConfirm() {
     const raw = String(overlayItems[overlayIndex] || '').replace('★ ', '');
     if (menuMode === 'main') {
         if (raw === 'Color Theme') openThemeMenu();
+        else if (raw.startsWith('Sync Desktop Colors')) {
+            syncDesktop = !syncDesktop; window.api.setSetting('couch_sync_desktop', syncDesktop ? '1' : '0');
+            await applyActiveTheme();
+            openMenu(); const i = overlayItems.findIndex(t => String(t).startsWith('Sync Desktop Colors')); if (i >= 0) { overlayIndex = i; highlightOverlay(); }
+        }
         else if (raw === 'Display Type') openDisplayMenu();
         else if (raw === 'Fonts') openFontMenu();
         else if (raw === 'Carousel Label') openHeroMenu();
@@ -347,6 +498,7 @@ async function overlayConfirm() {
         else if (raw === 'Sound') openSoundMenu();
         else if (raw === 'Gamepad Icons') openLayoutMenu();
         else if (raw === 'Return Combo') openComboMenu();
+        else if (raw === 'RetroArch Simple Setup') openRssMenu();
         else if (raw === 'Manage Save States') openSaveMgr();
         else if (raw === 'Close Menu') closeMenu();
         else if (raw === 'Exit Couch Mode') exitCouch();
@@ -366,7 +518,7 @@ async function overlayConfirm() {
     }
     if (menuMode === 'theme' && raw === 'Back') { openThemeMenu(); return; }
     if (raw === 'Back') { openMenu(); return; }
-    if (menuMode === 'theme') { applyTheme(raw); window.api.setSetting('couch_theme', raw); openThemeCatMenu(_themeCat); }
+    if (menuMode === 'theme') { applyTheme(raw); window.api.setSetting('couch_theme', raw); if (syncDesktop) { syncDesktop = false; window.api.setSetting('couch_sync_desktop', '0'); } openThemeCatMenu(_themeCat); }
     else if (menuMode === 'density') { const o = DENSITY_OPTS.find(([l]) => l === raw); if (o) { window.api.setSetting('couch_density', o[1]); applyDensity(o[1]); openDensityMenu(); } }
     else if (menuMode === 'layout') { const o = LAYOUT_OPTS.find(([l]) => l === raw); if (o) { window.api.setSetting('couch_gamepad_layout', o[1]); applyGamepadLayout(o[1]); openLayoutMenu(); } }
     else if (menuMode === 'navmode') {
@@ -409,6 +561,7 @@ async function overlayConfirm() {
     else if (menuMode === 'combo') {
         if (COMBO_OPTS.includes(raw)) { returnCombo = raw; window.api.setSetting('couch_return_combo', raw); openComboMenu(); }
     }
+    else if (menuMode === 'rss') { rssCycle(rssFocused(), +1); }
     else if (menuMode === 'sound') {
         const it = String(overlayItems[overlayIndex] || '');
         if (it.startsWith('Music')) { bgmMode = BGM_ORDER[(BGM_ORDER.indexOf(bgmMode) + 1) % BGM_ORDER.length]; window.api.setSetting('couch_bgm_mode', bgmMode); applyBgm(); }
@@ -1155,7 +1308,12 @@ function dispatchNav(dx, dy) {
     if (smOpen) { playSfx(sfxNav); smMove(dx, dy); return; }
     if (infoOpen) { if (dy) infoScroll(dy); return; }
     playSfx(sfxNav);
-    if (menuOpen) { if (menuMode === 'sound' && dx) { soundHorizontal(dx); return; } if (dy) overlayMove(dy); return; }
+    if (menuOpen) {
+        if (menuMode === 'sound' && dx) { soundHorizontal(dx); return; }
+        if (menuMode === 'rss' && dx) { const c = rssFocused(); if (c && c.kind !== 'text') rssCycle(c, dx); return; }
+        if (dy) overlayMove(dy);
+        return;
+    }
     if (screen === 'start') { if (startMode === 'carousel') { if (dx) carouselMove(dx); } else tilesMove(dx, dy); }
     else if (screen === 'wall') wallMove(dx, dy);
     else if (screen === 'list') { if (dy) listMove(dy); else if (dx) listCycleCategory(dx); }

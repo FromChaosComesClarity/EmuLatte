@@ -77,6 +77,7 @@ async function loadCouchSettings() {
     document.getElementById('couch-layout-sel').value  = (await window.api.getSetting('couch_gamepad_layout')) || 'xbox';
     document.getElementById('couch-start-chk').checked  = (await window.api.getSetting('couch_start_on_launch')) === '1';
     document.getElementById('couch-cursor-chk').checked = (await window.api.getSetting('couch_hide_cursor'))     === '1';
+    document.getElementById('couch-sync-theme-chk').checked = (await window.api.getSetting('couch_sync_desktop')) === '1';
 }
 
 async function loadCores() {
@@ -2191,11 +2192,22 @@ const EL_THEMES = {
     "NECROMORPH": {bg:"#030808",bg_panel:"rgba(0, 80, 20, 0.60)",bg_menu:"#040a04",accent:"#80ff20",text_main:"#c8ffc0",text_sec:"#70c060",text_dim:"#306020",border:"rgba(128, 255, 32, 0.22)",border_solid:"#0a2808"},
     "CRIMSON PEAK": {bg:"#120508",bg_panel:"rgba(80, 15, 30, 0.75)",bg_menu:"#1a080c",accent:"#d4904a",text_main:"#f0e0d8",text_sec:"#c0909a",text_dim:"#7a3848",border:"rgba(212, 144, 74, 0.22)",border_solid:"#5a1520"},
     "LAKESIDE CURSE": {bg:"#0c0a08",bg_panel:"rgba(60, 40, 20, 0.72)",bg_menu:"#141008",accent:"#e09030",text_main:"#f0e8d0",text_sec:"#b09070",text_dim:"#706050",border:"rgba(224, 144, 48, 0.22)",border_solid:"#402808"},
-    "THE BACKROOMS": {bg:"#1a1810",bg_panel:"rgba(220, 200, 100, 0.10)",bg_menu:"#201e14",accent:"#d4c840",text_main:"#f0e8c8",text_sec:"#b0a870",text_dim:"#706840",border:"rgba(212, 200, 64, 0.22)",border_solid:"#3a3820"}
+    "THE BACKROOMS": {bg:"#1a1810",bg_panel:"rgba(220, 200, 100, 0.10)",bg_menu:"#201e14",accent:"#d4c840",text_main:"#f0e8c8",text_sec:"#b0a870",text_dim:"#706840",border:"rgba(212, 200, 64, 0.22)",border_solid:"#3a3820"},
+    "PAPER": {bg:"#f9f7f4",bg_panel:"rgba(232,228,222,0.75)",bg_menu:"#eeebe6",accent:"#1a1a1a",text_main:"#1a1a1a",text_sec:"#444444",text_dim:"#999999",border:"rgba(0,0,0,0.08)",border_solid:"#cccccc"},
+    "SOLARIZED LIGHT": {bg:"#fdf6e3",bg_panel:"rgba(238,232,213,0.80)",bg_menu:"#eee8d5",accent:"#268bd2",text_main:"#586e75",text_sec:"#657b83",text_dim:"#93a1a1",border:"rgba(38,139,210,0.20)",border_solid:"#cfc9aa"},
+    "CATPPUCCIN LATTE": {bg:"#eff1f5",bg_panel:"rgba(220,224,232,0.80)",bg_menu:"#e6e9ef",accent:"#8839ef",text_main:"#4c4f69",text_sec:"#5c5f77",text_dim:"#9ca0b0",border:"rgba(136,57,239,0.16)",border_solid:"#c4c8da"},
+    "GITHUB LIGHT": {bg:"#ffffff",bg_panel:"rgba(234,238,242,0.80)",bg_menu:"#f6f8fa",accent:"#0969da",text_main:"#1f2328",text_sec:"#656d76",text_dim:"#9198a1",border:"rgba(9,105,218,0.15)",border_solid:"#d0d7de"},
+    "GRUVBOX LIGHT": {bg:"#fbf1c7",bg_panel:"rgba(235,219,178,0.80)",bg_menu:"#f2e5bc",accent:"#af3a03",text_main:"#3c3836",text_sec:"#504945",text_dim:"#a89984",border:"rgba(175,58,3,0.18)",border_solid:"#d5c4a1"},
+    "ROSÉ PINE DAWN": {bg:"#faf4ed",bg_panel:"rgba(242,232,228,0.78)",bg_menu:"#f2e9e1",accent:"#b4637a",text_main:"#575279",text_sec:"#797593",text_dim:"#9893a5",border:"rgba(180,99,122,0.18)",border_solid:"#dfd9e2"},
+    "NORD LIGHT": {bg:"#eceff4",bg_panel:"rgba(216,222,233,0.78)",bg_menu:"#e5e9f0",accent:"#5e81ac",text_main:"#2e3440",text_sec:"#3b4252",text_dim:"#7b8899",border:"rgba(94,129,172,0.20)",border_solid:"#c0cad8"},
+    "DAYBREAK": {bg:"#fff9f0",bg_panel:"rgba(255,236,205,0.75)",bg_menu:"#ffefd8",accent:"#c05b18",text_main:"#3a2510",text_sec:"#6a4520",text_dim:"#b08060",border:"rgba(192,91,24,0.18)",border_solid:"#e8c898"},
+    "OAKANIZER DARK": {bg:"#120a1a",bg_panel:"rgba(46,26,58,0.70)",bg_menu:"#23142d",accent:"#b5a9bd",text_main:"#dad4de",text_sec:"#907f9c",text_dim:"#6b547b",border:"rgba(181,169,189,0.22)",border_solid:"#46295a"},
+    "OAKANIZER LIGHT": {bg:"#f5f0f8",bg_panel:"rgba(217,208,230,0.78)",bg_menu:"#e4dbed",accent:"#46295a",text_main:"#1e0a30",text_sec:"#6b547b",text_dim:"#907f9c",border:"rgba(70,41,90,0.18)",border_solid:"#c0b4cc"}
 };
 
 const EL_THEME_CATEGORIES = {
-    "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","WIN XP"],
+    "Light & Minimal": ["PAPER","SOLARIZED LIGHT","CATPPUCCIN LATTE","GITHUB LIGHT","GRUVBOX LIGHT","ROSÉ PINE DAWN","NORD LIGHT","DAYBREAK","OAKANIZER LIGHT"],
+    "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","WIN XP","OAKANIZER DARK"],
     "Gaming Legends": ["GAME BOY DMG","PIP BOY","SEVASTOPOL","RIP AND TEAR CLASSIC","SUPER BROTHERS","GREEN HILL","NES","SNES","BLOODBORNE","METROID PRIME","SILENT HILL","DIABLO","HALF-LIFE","SHOVEL KNIGHT"],
     "Aesthetics": ["EARTHY & ORGANIC","DOPAMINE BRIGHTS","RETRO REVIVAL","VAPORWAVE","AURORA","NOIR","BIOLUMINESCENCE","BRUTALIST"],
     "Linux Ricing": ["DRACULA","GRUVBOX","NORD","SOLARIZED DARK","CATPPUCCIN FRAPPÉ","CATPPUCCIN MACCHIATO","CATPPUCCIN MOCHA","TOKYO NIGHT","EVERFOREST","ROSÉ PINE","OXOCARBON","MATERIAL DARK"],
@@ -2398,12 +2410,15 @@ function wireUI() {
         renderList(getFilteredGames());
     });
 
-    // Refresh
+    // Refresh — reload the library AND scan every system's folder(s) for new ROMs
     document.getElementById('btn-refresh-library').addEventListener('click', async () => {
         const btn = document.getElementById('btn-refresh-library');
         btn.style.animation = 'spin 0.6s linear infinite';
         await loadGames();
+        let res = null;
+        try { res = await window.api.rescanNewGames(); } catch (e) {}
         btn.style.animation = '';
+        await handleRescanResults(res);
     });
 
     // Gallery search — debounced so typing doesn't rebuild the whole grid on every keystroke
@@ -3429,6 +3444,7 @@ function wireUI() {
     document.getElementById('couch-layout-sel').addEventListener('change', e => window.api.setSetting('couch_gamepad_layout', e.target.value));
     document.getElementById('couch-start-chk').addEventListener('change', e => window.api.setSetting('couch_start_on_launch', e.target.checked ? '1' : ''));
     document.getElementById('couch-cursor-chk').addEventListener('change', e => window.api.setSetting('couch_hide_cursor', e.target.checked ? '1' : ''));
+    document.getElementById('couch-sync-theme-chk').addEventListener('change', e => window.api.setSetting('couch_sync_desktop', e.target.checked ? '1' : '0'));
     document.getElementById('btn-enter-couch').addEventListener('click', () => { closeModal('modal-settings'); window.api.enterCouch(); });
 
     // ── DATA: BACKUP / RESTORE ───────────────────────────────────────────────
@@ -3524,6 +3540,7 @@ function wireUI() {
     document.getElementById('btn-scrape-with-ss').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('ss'); return; }
         if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAll(_scrapeAllSystemId); return; }
+        if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'ss'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.scrapeGameMeta(id), 'ScreenScraper', true); return; }
         if (!currentGame) return;
         closeModal('modal-scraper-picker');
@@ -3532,18 +3549,21 @@ function wireUI() {
     document.getElementById('btn-scrape-with-igdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('igdb'); return; }
         if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'igdb'); return; }
+        if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'igdb'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.igdbScrapeGameMeta(id), 'IGDB'); return; }
         runScraper(id => window.api.igdbScrapeGame(id), 'IGDB');
     });
     document.getElementById('btn-scrape-with-tgdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('tgdb'); return; }
         if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'tgdb'); return; }
+        if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'tgdb'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.tgdbScrapeGameMeta(id), 'TheGamesDB'); return; }
         runScraper(id => window.api.tgdbScrapeGame(id), 'TheGamesDB');
     });
     document.getElementById('btn-scrape-with-sgdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('sgdb'); return; }
         if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'sgdb'); return; }
+        if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'sgdb'); return; }
         if (_scraperPickerMode === 'meta')  {
             const statusEl = document.getElementById('scraper-picker-status');
             statusEl.textContent = 'SteamGridDB provides artwork only — no text metadata.';
@@ -3555,6 +3575,7 @@ function wireUI() {
     document.getElementById('btn-scrape-with-moby').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('moby'); return; }
         if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'moby'); return; }
+        if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'moby'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.mobyScrapeGameMeta(id), 'MobyGames'); return; }
         runScraper(id => window.api.mobyScrapeGame(id), 'MobyGames');
     });
@@ -3759,8 +3780,9 @@ async function browseArt(type) {
 // ── ART PICKER ────────────────────────────────────────────────────────────────
 let _artPickerType          = 'cover';
 let _artPickerScraper       = 'sgdb';
-let _scraperPickerMode      = 'full'; // 'full' | 'art' | 'batch'
+let _scraperPickerMode      = 'full'; // 'full' | 'art' | 'batch' | 'batchIds'
 let _scrapeAllSystemId      = null;
+let _scrapeBatchIds         = null;   // explicit game-id list for 'batchIds' (e.g. newly-found ROMs)
 let _artPickerSystemShort   = '';
 
 const _artPreviewId   = { cover: 'edit-cover-preview', hero: 'edit-hero-preview', logo: 'edit-logo-preview', screenshot: 'edit-screenshot-preview' };
@@ -4135,6 +4157,46 @@ async function runScrapeWorker() {
 // Entry points used by the scraper-picker batch buttons.
 function scrapeAll(systemId)          { enqueueScrape(systemId, 'ss'); }
 function scrapeAllWith(systemId, src) { enqueueScrape(systemId, src); }
+
+// Scrape an explicit list of game ids (used after the Refresh rescan adds new ROMs).
+function enqueueScrapeIds(ids, source) {
+    const set   = new Set(ids || []);
+    const games = allGames.filter(g => set.has(g.id));
+    if (!games.length) { showLaunchToast('No new ROMs to scrape.', null); return; }
+    const fn    = scraperFnFor(source);
+    const isSS  = !['igdb', 'tgdb', 'moby', 'sgdb'].includes(source);
+    for (const g of games) scrapeQueue.push({ id: g.id, scraperFn: fn, isSS });
+    scrapeStats.total += games.length;
+    if (scrapeRunning) updateScrapeCount();
+    else runScrapeWorker();
+}
+
+// Refresh rescan → import the new ROMs, then offer to scrape them (source picker).
+async function handleRescanResults(res) {
+    const entries = res?.entries || [];
+    if (!entries.length) {
+        showLaunchToast(res?.folders
+            ? 'Library up to date — no new games found.'
+            : 'No ROM folders to scan yet — add a game or connect your drive first.', null);
+        return;
+    }
+    const newIds = [];
+    for (const e of entries) {
+        let romPath = e.path;
+        if (e.kind === 'multidisc') { const r = await window.api.createM3u({ title: e.title, discs: e.discs }); if (r?.ok) romPath = r.path; }
+        const id = await window.api.addGame({ system_id: e.system_id, title: e.title, rom_path: romPath });
+        if (id) newIds.push(id);
+    }
+    await loadGames();
+    const n = newIds.length;
+    if (!n) return;
+    _scraperPickerMode = 'batchIds';
+    _scrapeBatchIds    = newIds;
+    const statusEl = document.getElementById('scraper-picker-status');
+    statusEl.textContent = `Added ${n} new game${n !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
+    statusEl.style.color = 'var(--accent)';
+    openModal('modal-scraper-picker');
+}
 
 function wireScrapeProgress() {
     document.getElementById('btn-scrape-cancel').addEventListener('click', () => {

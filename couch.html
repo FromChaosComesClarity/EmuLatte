@@ -105,6 +105,9 @@
     .gcell-footer-row { display: flex; align-items: center; justify-content: space-between; }
     .gcell-play-btn { border: none; border-radius: 3px; font-size: 9px; font-weight: 900; padding: 2px 7px; letter-spacing: 1px; }
     .gcell-installed-btn { background: var(--accent); color: rgba(0,0,0,0.85); }
+    body.horiz .gcell-footer-row { display: none; }   /* Horizontal: no PLAY button on cards (A opens the gamepage) */
+    body.horiz .gcell-footer { height: 26px; }
+    body.horiz .gcell { contain-intrinsic-size: auto 210px; }
     .gcell.selected { border-color: var(--accent); transform: scale(1.10); box-shadow: 0 0 18px var(--accent), 0 8px 24px rgba(0,0,0,0.85); z-index: 10; }
     .couch-empty { grid-column: 1/-1; text-align: center; padding: 80px; color: var(--text_dim); font-size: 16px; font-weight: 900; letter-spacing: 2px; }
 
@@ -153,23 +156,30 @@
     .gp-stat .k { color: var(--text_dim); font-weight: 800; letter-spacing: 1px; }
     .gp-stat .v { color: var(--text_main); font-weight: 700; text-align: right; }
 
-    /* ── GAMEPAGE (Horizontal): centered hero buttons; big full-height screenshot on the left with the cover
-          overlaid bottom-left; the info (pills + auto-scrolling description) fills the right side. ── */
+    /* ── GAMEPAGE (Horizontal): three columns — screenshot (left) · info (middle) · cover art (right).
+          The screenshot and the cover both fill the full content height and keep their own aspect ratio
+          (width follows the height); CD-based systems get the jewel-case frame. ── */
     body.horiz #gp-actions { justify-content: center; }   /* centered, not left-justified */
-    body.horiz #gp-content { position: relative; align-items: stretch; overflow: hidden; gap: 30px; padding: 22px 44px 28px; }
-    /* screenshot: full height, keeps proportions; sized to its own width (capped) and left/bottom-anchored */
-    body.horiz #gp-left { flex: 0 1 auto; min-width: 0; max-width: 60%; display: flex; align-items: flex-end; }
-    body.horiz #gp-ss { display: flex; align-items: flex-end; min-width: 0; max-width: 100%; height: 100%; border: none; background: transparent; overflow: visible; border-radius: 0; }
-    body.horiz #gp-ss img { height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: left bottom; border-radius: 10px; }
-    /* cover art overlaid on the screenshot's bottom-left corner */
-    body.horiz #gp-cover { position: absolute; left: 56px; bottom: 40px; width: 210px; max-width: 26%; z-index: 5; margin: 0; align-self: auto; filter: drop-shadow(0 12px 26px rgba(0,0,0,0.9)); }
-    /* right = info area: pills pinned at top, description auto-scrolls if too long */
-    body.horiz #gp-right { flex: 1 1 0; width: auto; min-width: 0; display: flex; flex-direction: column; gap: 16px; overflow: hidden; align-self: stretch; }
+    body.horiz #gp-content { align-items: stretch; overflow: hidden; gap: 30px; padding: 22px 44px 28px; }
+
+    /* left column: screenshot at full height, natural ratio */
+    body.horiz #gp-left { order: 0; flex: 0 1 auto; min-width: 0; max-width: 46%; display: flex; align-items: center; justify-content: center; }
+    body.horiz #gp-ss { display: flex; align-items: center; justify-content: center; min-width: 0; max-width: 100%; height: 100%; border: none; background: transparent; overflow: visible; border-radius: 0; }
+    body.horiz #gp-ss img { height: 100%; width: auto; max-width: 100%; object-fit: contain; object-position: center; border-radius: 10px; }
+
+    /* middle column: info — pills pinned at top, description auto-scrolls if too long */
+    body.horiz #gp-right { order: 1; flex: 1 1 0; width: auto; min-width: 0; display: flex; flex-direction: column; gap: 16px; overflow: hidden; align-self: stretch; }
     body.horiz .gp-info-pills { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 10px; }
     body.horiz .gp-info-descwrap { flex: 1 1 auto; min-height: 0; overflow: hidden; }
     body.horiz .gp-info-desc { font-size: 20px; line-height: 1.55; color: var(--text_sec); }
     body.horiz .gp-info-desc.auto { animation: gp-info-scroll var(--dur, 24s) ease-in-out infinite alternate; }
     @keyframes gp-info-scroll { 0%, 10% { transform: translateY(0); } 90%, 100% { transform: translateY(var(--shift, 0)); } }
+
+    /* right column: cover art at full height, natural ratio (jewel case for CD systems) */
+    body.horiz #gp-cover { order: 2; position: relative; flex: 0 0 auto; width: auto; max-width: 34%; height: 100%; margin: 0; align-self: stretch; z-index: auto; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 12px 26px rgba(0,0,0,0.9)); }
+    body.horiz #gp-cover .cover-frame { width: auto; height: 100%; display: flex; align-items: center; justify-content: center; }
+    body.horiz #gp-cover .cover-frame:not(.jewel) img { height: 100%; width: auto; max-width: 100%; }
+    body.horiz #gp-cover .cover-frame.jewel { height: 100%; width: auto; }
 
     /* ── LIST VIEW (CREMA main-screen, exact CSS, kept fluid) ── */
     #screen-list { padding: 40px; }
