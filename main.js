@@ -29,6 +29,7 @@ if (process.env.APPIMAGE) {
 const configDir    = path.join(baseDir, 'GameManagerConfig', 'EmuLatte');
 const imagesDir    = path.join(configDir, 'images');
 const trailersDir  = path.join(configDir, 'videos');
+const manualsDir   = path.join(configDir, 'manuals');
 const dbPath       = path.join(configDir, 'emulatte.db');
 
 const baseAssetPath  = app.isPackaged ? process.resourcesPath : __dirname;
@@ -114,6 +115,7 @@ app.whenReady().then(() => {
         fs.mkdirSync(path.join(imagesDir, d), { recursive: true })
     );
     fs.mkdirSync(trailersDir, { recursive: true });
+    fs.mkdirSync(manualsDir, { recursive: true });
 
     try {
         db = new Database(dbPath);
@@ -404,6 +406,7 @@ ipcMain.handle('delete-game', (_, id) => {
             .filter(Boolean)
             .forEach(p => { try { if (p.startsWith(imagesDir)) fs.unlinkSync(p); } catch {} });
     }
+    try { const mp = path.join(manualsDir, `${id}_manual.pdf`); if (fs.existsSync(mp)) fs.unlinkSync(mp); } catch {}
     db.prepare('DELETE FROM playlist_games WHERE game_id=?').run(id);
     db.prepare('DELETE FROM games WHERE id=?').run(id);
     return true;
@@ -2897,15 +2900,171 @@ ipcMain.handle('delete-trailer', (_, title) => {
     return false;
 });
 
+// ── GAME MANUALS (ScreenScraper PDFs, viewed in an independent second window) ───
+// A "kept" manual lives permanently under manualsDir (offline library, keyed by game id).
+// A "cache-only" manual is written to the OS temp dir and discarded when its viewer closes,
+// so people who don't want PDFs piling up on disk can still read one on demand.
+const manualsCacheDir = path.join(os.tmpdir(), 'emulatte-manuals');
+const keptManualPath  = gameId => path.join(manualsDir,      `${gameId}_manual.pdf`);
+const cacheManualPath = gameId => path.join(manualsCacheDir, `${gameId}_manual.pdf`);
+function discardManualCache(p) {
+    try { if (p && p.startsWith(manualsCacheDir) && fs.existsSync(p)) fs.unlinkSync(p); } catch {}
+}
+// Tell every window (chiefly the main one) a game's offline-manual state changed, so its hero
+// button can re-sync live when the user keeps or deletes a manual from the viewer window.
+function broadcastManualChanged(gameId, kept) {
+    for (const w of BrowserWindow.getAllWindows()) { try { w.webContents.send('manual-changed', { gameId, kept }); } catch {} }
+}
+let manualWin = null;   // the single, reused manual-viewer window (its own top-level BrowserWindow)
+
+ipcMain.handle('manual-status', (_, gameId) => {
+    const p = keptManualPath(gameId);
+    return fs.existsSync(p) ? { kept: true, path: p } : { kept: false, path: null };
+});
+
+// Fetch a game's manual from ScreenScraper. keep=true stores it permanently; otherwise it's a
+// throwaway cache file the viewer deletes on close. Matches by ROM filename + CRC/size (same as
+// art/metadata scraping) and picks the region-preferred `manuel` media.
+ipcMain.handle('fetch-manual', async (event, gameId, keep) => {
+    if (!db) return { ok: false, error: 'DB not ready' };
+
+    const kp = keptManualPath(gameId);
+    if (fs.existsSync(kp)) return { ok: true, path: kp, kept: true };   // already offline — no network needed
+
+    const ssUser = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_user')?.value;
+    const ssPass = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_pass')?.value;
+    if (!ssUser || !ssPass) return { ok: false, error: 'ScreenScraper credentials are not set. Add them in Settings → Scrapers.' };
+
+    const game = db.prepare(`SELECT g.*, s.screenscraper_id AS system_ss_id
+        FROM games g LEFT JOIN systems s ON g.system_id=s.id WHERE g.id=?`).get(gameId);
+    if (!game) return { ok: false, error: 'Game not found.' };
+
+    const romFileName = game.rom_path ? path.basename(game.rom_path) : (game.title + '.rom');
+    let crc = '', romSize = 0;
+    if (game.rom_path && fs.existsSync(game.rom_path)) {
+        try { crc = await computeFileCrc32(game.rom_path); romSize = fs.statSync(game.rom_path).size; } catch {}
+    }
+    const params = { ...ssBaseParams(ssUser, ssPass), romtype: 'rom', romnom: romFileName };
+    if (crc)               params.crc       = crc;
+    if (romSize)           params.romtaille = romSize;
+    if (game.system_ss_id) params.systemeid = game.system_ss_id;
+
+    let apiResult;
+    try { apiResult = await ssApiCall('jeuInfos.php', params); }
+    catch (e) {
+        if (/HTTP 404/.test(e.message)) return { ok: false, notFound: true, error: 'This game wasn’t found on ScreenScraper.' };
+        return { ok: false, error: `ScreenScraper error: ${e.message}` };
+    }
+    const jeu = apiResult.response?.jeu;
+    if (!jeu) return { ok: false, notFound: true, error: apiResult.response?.msg || 'This game wasn’t found on ScreenScraper.' };
+
+    const media = ssPickMedia(jeu.medias || [], 'manuel');
+    if (!media?.url) return { ok: false, noManual: true, error: 'No manual is available for this game on ScreenScraper.' };
+
+    const dest = keep ? kp : cacheManualPath(gameId);
+    try { fs.mkdirSync(path.dirname(dest), { recursive: true }); } catch {}
+    const win = BrowserWindow.fromWebContents(event.sender);
+    try {
+        await httpsDownload(ssMediaUrl(media.url, ssUser, ssPass), dest,
+            (got, total) => win?.webContents.send('manual-progress', { gameId, got, total }));
+    } catch (e) {
+        try { fs.unlinkSync(dest); } catch {}
+        return { ok: false, error: `Download failed: ${e.message}` };
+    }
+    // Guard against ScreenScraper handing back an HTML error page instead of the PDF.
+    try {
+        const head = Buffer.alloc(5);
+        const fd = fs.openSync(dest, 'r'); fs.readSync(fd, head, 0, 5, 0); fs.closeSync(fd);
+        if (head.toString('latin1') !== '%PDF-') { fs.unlinkSync(dest); return { ok: false, error: 'ScreenScraper did not return a valid PDF for this game.' }; }
+    } catch {}
+    return { ok: true, path: dest, kept: !!keep };
+});
+
+// Promote a cache-only manual to the permanent offline library (from the viewer's "Keep" button).
+ipcMain.handle('keep-manual', (_, gameId) => {
+    const src = cacheManualPath(gameId), dst = keptManualPath(gameId);
+    try {
+        if (fs.existsSync(dst)) { if (manualWin && !manualWin.isDestroyed() && manualWin._cachePath === src) manualWin._cachePath = null; broadcastManualChanged(gameId, true); return { ok: true, path: dst }; }
+        if (!fs.existsSync(src)) return { ok: false, error: 'Nothing to keep.' };
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        fs.copyFileSync(src, dst); fs.unlinkSync(src);
+        if (manualWin && !manualWin.isDestroyed() && manualWin._cachePath === src) manualWin._cachePath = null;   // don't re-delete on close
+        broadcastManualChanged(gameId, true);
+        return { ok: true, path: dst };
+    } catch (e) { return { ok: false, error: e.message }; }
+});
+
+// Delete a game's offline manual copy (from the viewer's "Delete" button).
+ipcMain.handle('delete-manual', (_, gameId) => {
+    const p = keptManualPath(gameId);
+    try {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+        broadcastManualChanged(gameId, false);
+        return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+});
+
+// Independent, freely-movable manual viewer window (its own top-level BrowserWindow, so it can be
+// dragged to a second monitor and survives the main window moving or a game launching). A single
+// viewer is reused across games; cache-only manuals are deleted when it finally closes.
+function manualQuery(opts) {
+    return {
+        file:   opts.path || '',
+        title:  opts.title || 'Manual',
+        system: opts.system || '',
+        logo:   opts.logo || '',
+        gameId: String(opts.gameId ?? ''),
+        cache:  opts.cache ? '1' : '0',
+        theme:  JSON.stringify(opts.theme || {}),
+    };
+}
+ipcMain.handle('open-manual-viewer', (event, opts = {}) => {
+    const pdfPath = opts.path;
+    if (!pdfPath || !fs.existsSync(pdfPath)) return { ok: false, error: 'Manual file not found.' };
+    const newCachePath = opts.cache ? pdfPath : null;
+
+    if (manualWin && !manualWin.isDestroyed()) {
+        if (manualWin._cachePath && manualWin._cachePath !== newCachePath) discardManualCache(manualWin._cachePath);
+        manualWin._cachePath = newCachePath;
+        manualWin.loadFile('manual.html', { query: manualQuery(opts) });
+        if (manualWin.isMinimized()) manualWin.restore();
+        manualWin.focus();
+        return { ok: true };
+    }
+
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const pb = parent ? parent.getBounds() : { x: 80, y: 60, width: 1200, height: 900 };
+    manualWin = new BrowserWindow({
+        width: 860, height: 980,
+        x: (pb.x || 0) + 60, y: Math.max(0, (pb.y || 0) + 30),
+        frame: false,
+        backgroundColor: (opts.theme && opts.theme.bg) || '#141414',
+        title: opts.title ? `Manual — ${opts.title}` : 'Manual',
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            webSecurity: false,
+            plugins: true,          // enable Chromium's built-in PDF viewer inside the iframe
+        }
+    });
+    manualWin._cachePath = newCachePath;
+    manualWin.setMenu(null);
+    manualWin.loadFile('manual.html', { query: manualQuery(opts) });
+    manualWin.on('closed', () => { discardManualCache(manualWin?._cachePath); manualWin = null; });
+    return { ok: true };
+});
+
 // Find (and optionally delete) managed art/trailers no longer referenced by any game.
 ipcMain.handle('clean-unused-media', (_, dryRun = true) => {
     if (!db) return { ok: false, error: 'DB not ready' };
-    const games = db.prepare('SELECT title, cover, hero, logo, screenshot FROM games').all();
+    const games = db.prepare('SELECT id, title, cover, hero, logo, screenshot FROM games').all();
     const refImages = new Set();
     for (const g of games)
         [g.cover, g.hero, g.logo, ...(g.screenshot ? g.screenshot.split('|') : [])]
             .filter(Boolean).forEach(p => refImages.add(path.resolve(p)));
     const refTrailers = new Set(games.map(g => path.resolve(trailerFilePath(g.title || ''))));
+    const refManuals  = new Set(games.map(g => path.resolve(keptManualPath(g.id))));
 
     const orphans = [];
     let bytes = 0;
@@ -2922,6 +3081,7 @@ ipcMain.handle('clean-unused-media', (_, dryRun = true) => {
     };
     for (const sub of ['covers', 'heroes', 'logos', 'screenshots']) sweep(path.join(imagesDir, sub), refImages);
     sweep(trailersDir, refTrailers);
+    sweep(manualsDir, refManuals);
 
     if (!dryRun) for (const p of orphans) { try { fs.unlinkSync(p); } catch {} }
     return { ok: true, count: orphans.length, bytes };

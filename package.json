@@ -46,6 +46,8 @@
       "index.html",
       "couch.html",
       "couch.js",
+      "manual.html",
+      "manual.js",
       "assets/**/*",
       "!assets/ss_dev.json"
     ],

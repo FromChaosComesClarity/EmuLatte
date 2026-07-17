@@ -169,6 +169,15 @@ contextBridge.exposeInMainWorld('api', {
     downloadTrailer:   (title, videoId) => ipcRenderer.invoke('download-trailer', title, videoId),
     onDownloadProgress:(cb)             => ipcRenderer.on('download-progress', (_, d) => cb(d)),
 
+    // Game manuals (independent PDF viewer window)
+    manualStatus:      (id)             => ipcRenderer.invoke('manual-status', id),
+    fetchManual:       (id, keep)       => ipcRenderer.invoke('fetch-manual', id, !!keep),
+    openManualViewer:  (opts)           => ipcRenderer.invoke('open-manual-viewer', opts),
+    keepManual:        (id)             => ipcRenderer.invoke('keep-manual', id),
+    deleteManual:      (id)             => ipcRenderer.invoke('delete-manual', id),
+    onManualProgress:  (cb)             => ipcRenderer.on('manual-progress', (_, d) => cb(d)),
+    onManualChanged:   (cb)             => ipcRenderer.on('manual-changed', (_, d) => cb(d)),
+
     // Misc
     getBaseDir:   () => ipcRenderer.invoke('get-basedir'),
     getConfigDir: () => ipcRenderer.invoke('get-config-dir'),

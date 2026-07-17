@@ -23,10 +23,13 @@ let currentPlaylistGames = [];
 let retroarchVariant     = 'none';
 let _activePanelSection  = null; // 'systems' | 'playlists' | 'search' | null
 let _scanEntries         = []; // structured results of the last folder scan
+let _manualKept          = false; // whether the current game has a manual saved offline
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
     applyZoom();
+    currentSort = await window.api.getSetting('el_sort') || 'alpha';   // restore the last-used gallery sort
+    document.getElementById('gallery-sort').value = currentSort;       // (before enhanceAllSelects so the widget shows it)
     await loadSystems();
     await loadGames();
     await loadPlaylists();
@@ -1373,6 +1376,8 @@ function openGamePage(game) {
         }
     });
 
+    refreshManualButton(game);
+
     clearInterval(ssBannerKbInterval);
     const banner   = document.getElementById('gamepage-screenshots-banner');
     const ssKbImg  = document.getElementById('gamepage-ss-kb-img');
@@ -2202,12 +2207,19 @@ const EL_THEMES = {
     "NORD LIGHT": {bg:"#eceff4",bg_panel:"rgba(216,222,233,0.78)",bg_menu:"#e5e9f0",accent:"#5e81ac",text_main:"#2e3440",text_sec:"#3b4252",text_dim:"#7b8899",border:"rgba(94,129,172,0.20)",border_solid:"#c0cad8"},
     "DAYBREAK": {bg:"#fff9f0",bg_panel:"rgba(255,236,205,0.75)",bg_menu:"#ffefd8",accent:"#c05b18",text_main:"#3a2510",text_sec:"#6a4520",text_dim:"#b08060",border:"rgba(192,91,24,0.18)",border_solid:"#e8c898"},
     "OAKANIZER DARK": {bg:"#120a1a",bg_panel:"rgba(46,26,58,0.70)",bg_menu:"#23142d",accent:"#b5a9bd",text_main:"#dad4de",text_sec:"#907f9c",text_dim:"#6b547b",border:"rgba(181,169,189,0.22)",border_solid:"#46295a"},
-    "OAKANIZER LIGHT": {bg:"#f5f0f8",bg_panel:"rgba(217,208,230,0.78)",bg_menu:"#e4dbed",accent:"#46295a",text_main:"#1e0a30",text_sec:"#6b547b",text_dim:"#907f9c",border:"rgba(70,41,90,0.18)",border_solid:"#c0b4cc"}
+    "OAKANIZER LIGHT": {bg:"#f5f0f8",bg_panel:"rgba(217,208,230,0.78)",bg_menu:"#e4dbed",accent:"#46295a",text_main:"#1e0a30",text_sec:"#6b547b",text_dim:"#907f9c",border:"rgba(70,41,90,0.18)",border_solid:"#c0b4cc"},
+    // ── BrewBalance brand — espresso & latte (imported from BrewBalance) ──────
+    "BREWBALANCE DARK": {bg:"#0f0a06",bg_panel:"rgba(30, 21, 13, 0.6)",bg_menu:"#1e150d",accent:"#d4a373",text_main:"#efe3d2",text_sec:"#b89b7d",text_dim:"#7a5f45",border:"rgba(212, 163, 115, 0.2)",border_solid:"#382718"},
+    "BREWBALANCE LIGHT": {bg:"#efe6d7",bg_panel:"rgba(243, 235, 221, 0.78)",bg_menu:"#f3ebdd",accent:"#b5651d",text_main:"#2a241c",text_sec:"#7c6b53",text_dim:"#9a8a72",border:"rgba(181, 101, 29, 0.18)",border_solid:"#ddceb4"},
+    "MOCHA": {bg:"#1a1210",bg_panel:"rgba(36, 24, 19, 0.6)",bg_menu:"#241813",accent:"#c98a5e",text_main:"#f0dfcf",text_sec:"#c7a98f",text_dim:"#8a6a54",border:"rgba(201, 138, 94, 0.2)",border_solid:"#4a3226"},
+    "FLAT WHITE": {bg:"#f6f1e9",bg_panel:"rgba(253, 250, 244, 0.78)",bg_menu:"#fdfaf4",accent:"#8a5a2b",text_main:"#33291f",text_sec:"#6b5a48",text_dim:"#a4917a",border:"rgba(138, 90, 43, 0.18)",border_solid:"#e0d4c0"},
+    "MATCHA": {bg:"#12160f",bg_panel:"rgba(26, 32, 21, 0.6)",bg_menu:"#1a2015",accent:"#9bbf6b",text_main:"#e6efd8",text_sec:"#b3c79b",text_dim:"#6d8556",border:"rgba(155, 191, 107, 0.2)",border_solid:"#33422a"}
 };
 
 const EL_THEME_CATEGORIES = {
-    "Light & Minimal": ["PAPER","SOLARIZED LIGHT","CATPPUCCIN LATTE","GITHUB LIGHT","GRUVBOX LIGHT","ROSÉ PINE DAWN","NORD LIGHT","DAYBREAK","OAKANIZER LIGHT"],
     "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","WIN XP","OAKANIZER DARK"],
+    "BrewBalance": ["BREWBALANCE DARK","BREWBALANCE LIGHT","MOCHA","FLAT WHITE","MATCHA"],
+    "Light & Minimal": ["PAPER","SOLARIZED LIGHT","CATPPUCCIN LATTE","GITHUB LIGHT","GRUVBOX LIGHT","ROSÉ PINE DAWN","NORD LIGHT","DAYBREAK","OAKANIZER LIGHT"],
     "Gaming Legends": ["GAME BOY DMG","PIP BOY","SEVASTOPOL","RIP AND TEAR CLASSIC","SUPER BROTHERS","GREEN HILL","NES","SNES","BLOODBORNE","METROID PRIME","SILENT HILL","DIABLO","HALF-LIFE","SHOVEL KNIGHT"],
     "Aesthetics": ["EARTHY & ORGANIC","DOPAMINE BRIGHTS","RETRO REVIVAL","VAPORWAVE","AURORA","NOIR","BIOLUMINESCENCE","BRUTALIST"],
     "Linux Ricing": ["DRACULA","GRUVBOX","NORD","SOLARIZED DARK","CATPPUCCIN FRAPPÉ","CATPPUCCIN MACCHIATO","CATPPUCCIN MOCHA","TOKYO NIGHT","EVERFOREST","ROSÉ PINE","OXOCARBON","MATERIAL DARK"],
@@ -2428,7 +2440,7 @@ function wireUI() {
         clearTimeout(_searchDebounce);
         _searchDebounce = setTimeout(() => renderCurrentView(), 140);
     });
-    document.getElementById('gallery-sort').addEventListener('change', e => { currentSort = e.target.value; renderCurrentView(); });
+    document.getElementById('gallery-sort').addEventListener('change', e => { currentSort = e.target.value; window.api.setSetting('el_sort', currentSort); renderCurrentView(); });
     document.getElementById('gallery-category').addEventListener('change', e => { currentCategory = e.target.value; renderCurrentView(); });
     document.getElementById('btn-gsearch-clear').addEventListener('click', () => {
         document.getElementById('gallery-search').value = '';
@@ -3025,6 +3037,32 @@ function wireUI() {
             custom:       document.getElementById('ra-ovr-custom').value,
         });
         closeModal('modal-ra-override');
+    });
+
+    // ── GAME MANUAL ──────────────────────────────────────────────────────────
+    document.getElementById('btn-gamepage-manual').addEventListener('click', () => {
+        if (!currentGame) return;
+        if (_manualKept) openManualDirect(currentGame);
+        else             openManualFetchModal(currentGame);
+    });
+    document.getElementById('manual-fetch-cancel').addEventListener('click', () => { if (!_manualFetchBusy) closeModal('modal-manual-fetch'); });
+    document.getElementById('manual-fetch-go').addEventListener('click', runManualFetch);
+    document.getElementById('modal-manual-fetch').addEventListener('click', e => { if (e.target.id === 'modal-manual-fetch' && !_manualFetchBusy) closeModal('modal-manual-fetch'); });
+    window.api.onManualProgress(d => {
+        if (!_manualFetchBusy || !currentGame || d.gameId !== currentGame.id) return;
+        const pct = d.total ? Math.round((d.got / d.total) * 100) : 0;
+        document.getElementById('manual-fetch-bar').style.width = (d.total ? pct : 40) + '%';
+        document.getElementById('manual-fetch-status').textContent = d.total
+            ? `Downloading… ${pct}%  (${(d.got / 1048576).toFixed(1)} / ${(d.total / 1048576).toFixed(1)} MB)`
+            : `Downloading… ${(d.got / 1048576).toFixed(1)} MB`;
+    });
+    // Kept/deleted from the separate viewer window → re-sync this game's hero button live.
+    window.api.onManualChanged(d => {
+        if (!currentGame || d.gameId !== currentGame.id) return;
+        _manualKept = !!d.kept;
+        const btn = document.getElementById('btn-gamepage-manual');
+        btn.classList.toggle('active', _manualKept);
+        btn.title = _manualKept ? 'View manual (saved offline)' : 'View game manual';
     });
 
     // ── SAVE STATE MANAGER ───────────────────────────────────────────────────
@@ -3905,6 +3943,88 @@ async function _artPickerSearch(query, gameId) {
 
         wrap.appendChild(img);
         grid.appendChild(wrap);
+    }
+}
+
+// ── GAME MANUAL ───────────────────────────────────────────────────────────────
+// Reflect whether this game already has a manual saved offline (button gets the "active" look).
+function refreshManualButton(game) {
+    const btn = document.getElementById('btn-gamepage-manual');
+    if (!btn) return;
+    _manualKept = false;
+    btn.classList.remove('active', 'working');
+    btn.title = 'View game manual';
+    const gid = game.id;
+    window.api.manualStatus(gid).then(st => {
+        if (currentGame?.id !== gid) return;   // user already moved on
+        _manualKept = !!st.kept;
+        btn.classList.toggle('active', _manualKept);
+        btn.title = _manualKept ? 'View manual (saved offline)' : 'View game manual';
+    });
+}
+
+// Hand a downloaded PDF to the independent viewer window, styled to match the current theme.
+function launchManualViewer(game, filePath, isCache) {
+    const theme = EL_THEMES[_activeTheme] || EL_THEMES['CREMA'];
+    window.api.openManualViewer({
+        path:   filePath,
+        gameId: game.id,
+        title:  game.title,
+        system: game.system_name || '',
+        logo:   game.logo || '',
+        cache:  isCache ? 1 : 0,
+        theme,
+    });
+}
+
+// Kept manual → open straight away (no prompt, no network).
+async function openManualDirect(game) {
+    const btn = document.getElementById('btn-gamepage-manual');
+    btn.classList.add('working');
+    const res = await window.api.fetchManual(game.id, true);
+    btn.classList.remove('working');
+    if (res.ok) launchManualViewer(game, res.path, false);
+    else showAlert(res.error || 'Could not open the manual.', 'Manual');
+}
+
+let _manualFetchBusy = false;
+function openManualFetchModal(game) {
+    document.getElementById('manual-fetch-title').textContent = `“${game.title}”`;
+    document.getElementById('manual-keep-chk').checked = false;
+    document.getElementById('manual-fetch-progress').style.display = 'none';
+    document.getElementById('manual-fetch-bar').style.width = '0%';
+    document.getElementById('manual-fetch-error').style.display = 'none';
+    const go = document.getElementById('manual-fetch-go');
+    go.disabled = false; go.textContent = 'Fetch & View';
+    _manualFetchBusy = false;
+    openModal('modal-manual-fetch');
+}
+
+async function runManualFetch() {
+    if (_manualFetchBusy || !currentGame) return;
+    const game = currentGame;
+    const keep = document.getElementById('manual-keep-chk').checked;
+    const go   = document.getElementById('manual-fetch-go');
+    const err  = document.getElementById('manual-fetch-error');
+    _manualFetchBusy = true;
+    err.style.display = 'none';
+    go.disabled = true; go.textContent = 'Fetching…';
+    document.getElementById('manual-fetch-progress').style.display = 'block';
+    document.getElementById('manual-fetch-bar').style.width = '0%';
+    document.getElementById('manual-fetch-status').textContent = 'Contacting ScreenScraper…';
+
+    const res = await window.api.fetchManual(game.id, keep);
+    _manualFetchBusy = false;
+
+    if (res.ok) {
+        closeModal('modal-manual-fetch');
+        launchManualViewer(game, res.path, !keep);
+        if (keep && currentGame?.id === game.id) refreshManualButton(game);
+    } else {
+        document.getElementById('manual-fetch-progress').style.display = 'none';
+        err.textContent = res.error || 'Could not fetch the manual.';
+        err.style.display = 'block';
+        go.disabled = false; go.textContent = 'Try Again';
     }
 }
 
