@@ -283,6 +283,27 @@ const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting(
 // Shipped version, straight from package.json, so the About dialog can never drift from the build.
 ipcMain.handle('get-app-version', () => { try { return app.getVersion(); } catch { return ''; } });
 
+// The EmuLatte user manual, in its own frameless window. Not to be confused with manual.html,
+// which is the viewer for scanned per-game manual PDFs from ScreenScraper.
+let userManualWin = null;
+ipcMain.handle('open-user-manual', event => {
+    if (userManualWin && !userManualWin.isDestroyed()) { userManualWin.focus(); return { ok: true }; }
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const pb = parent ? parent.getBounds() : { x: 80, y: 60, width: 1200, height: 900 };
+    userManualWin = new BrowserWindow({
+        width: 980, height: 900,
+        x: (pb.x || 0) + 50, y: Math.max(0, (pb.y || 0) + 30),
+        frame: false,
+        backgroundColor: '#2C1E16',
+        title: 'EmuLatte User Manual',
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    userManualWin.setMenu(null);
+    userManualWin.loadFile('usermanual.html');
+    userManualWin.on('closed', () => { userManualWin = null; });
+    return { ok: true };
+});
+
 ipcMain.handle('enter-couch-mode', e => { enterCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 ipcMain.handle('exit-couch-mode', e => { exitCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 // Pull Couch Mode back to the foreground after a launched game exits / the return combo fires.

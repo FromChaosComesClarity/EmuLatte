@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmuLatte User Manual</title>
+    <style>
+        /* Bundled locally (assets/fonts/) — no network dependency. Italic is synthesized. */
+        @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Regular.ttf') format('truetype'); font-weight: 400; }
+        @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
+        @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
+        @font-face { font-family: 'PxPlus IBM VGA8';  src: url('assets/fonts/PxPlusIBMVGA8.ttf')  format('truetype'); }
+        @font-face { font-family: 'C64 Pro Mono';     src: url('assets/fonts/C64ProMono.ttf')     format('truetype'); }
+        @font-face { font-family: 'Chicago';          src: url('assets/fonts/ChicagoFLF.ttf')     format('truetype'); }
+        @font-face { font-family: 'BigBlue Terminal'; src: url('assets/fonts/BigBlueTerminal.ttf') format('truetype'); }
+        @font-face { font-family: 'Inter';            src: url('assets/fonts/Inter.ttf')          format('truetype'); }
+    </style>
+    <script>
+        // Inherit whatever theme the desktop face is wearing. Same cache renderer.js writes on
+        // every applyTheme(), so this window opens already dressed instead of flashing default.
+        (function () {
+            try {
+                const c = JSON.parse(localStorage.getItem('el_theme_cache') || '{}');
+                if (!Object.keys(c).length) return;
+                const root = document.documentElement;
+                for (const [k, v] of Object.entries(c)) if (k !== 'font') root.style.setProperty('--' + k, v);
+                root.style.setProperty('--ui-font', c.font ? `'${c.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        :root {
+            --bg: #2C1E16; --bg_panel: rgba(67, 40, 24, 0.6); --bg_menu: #432818;
+            --accent: #D4A373; --text_main: #FFE6A7; --text_sec: #E6CC98;
+            --text_dim: #A47148; --border: rgba(212, 163, 115, 0.2); --border_solid: #8B5A2B;
+            --ui-font: 'Raleway', sans-serif;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { margin: 0; background: var(--bg); color: var(--text_main); font-family: var(--ui-font); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+        /* TITLEBAR */
+        #manual-titlebar { height: 35px; flex-shrink: 0; background: var(--bg_menu); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border_solid); user-select: none; -webkit-app-region: drag; z-index: 9999; }
+        .titlebar-brand { padding-left: 20px; font-size: 11px; font-weight: 900; color: var(--text_dim); letter-spacing: 3px; }
+        .titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
+        .win-btn { border: none; border-radius: 0; background: transparent; width: 45px; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: background-color 0.1s; cursor: pointer; color: var(--text_main); }
+        .win-btn:hover { background-color: rgba(255,255,255,0.1); }
+        .win-close:hover { background-color: #d32f2f; color: white; }
+
+        /* BODY LAYOUT */
+        #manual-body { display: flex; flex: 1; overflow: hidden; }
+
+        /* NAV SIDEBAR */
+        #manual-nav { width: 235px; flex-shrink: 0; background: var(--bg_panel); border-right: 2px solid var(--border_solid); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+        #manual-nav::-webkit-scrollbar { width: 4px; }
+        #manual-nav::-webkit-scrollbar-track { background: transparent; }
+        #manual-nav::-webkit-scrollbar-thumb { background: var(--border_solid); border-radius: 2px; }
+
+        .nav-group-label { font-size: 9px; font-weight: 900; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; padding: 14px 8px 5px; border-top: 1px solid var(--border_solid); margin-top: 4px; }
+        .nav-group-label:first-child { border-top: none; margin-top: 0; padding-top: 5px; }
+
+        .manual-nav-btn { background: transparent; border: 1px solid transparent; color: var(--text_sec); text-align: left; padding: 7px 8px; font-size: 11px; text-transform: uppercase; font-weight: bold; border-radius: 4px; cursor: pointer; transition: 0.2s; font-family: var(--ui-font); letter-spacing: 0.5px; }
+        .manual-nav-btn:hover, .manual-nav-btn.active { background: var(--border_solid); color: var(--text_main); border-color: var(--accent); }
+
+        /* CONTENT */
+        #manual-content { flex: 1; padding: 35px 45px; overflow-y: auto; scroll-behavior: smooth; }
+        #manual-content::-webkit-scrollbar { width: 6px; }
+        #manual-content::-webkit-scrollbar-track { background: transparent; }
+        #manual-content::-webkit-scrollbar-thumb { background: var(--border_solid); border-radius: 3px; }
+
+        #manual-content h2 { color: var(--accent); border-bottom: 2px solid var(--border_solid); padding-bottom: 8px; font-weight: 900; text-transform: uppercase; margin-top: 55px; font-size: 17px; letter-spacing: 2px; }
+        #manual-content h2:first-of-type { margin-top: 0; }
+        #manual-content h3 { color: var(--text_sec); font-weight: bold; text-transform: uppercase; margin-top: 28px; margin-bottom: 10px; font-size: 12px; letter-spacing: 1.5px; }
+        #manual-content p { font-size: 14px; line-height: 1.75; color: var(--text_sec); margin-bottom: 12px; }
+        #manual-content ul, #manual-content ol { padding-left: 22px; margin-bottom: 12px; }
+        #manual-content li { font-size: 14px; line-height: 1.75; color: var(--text_sec); margin-bottom: 6px; }
+        #manual-content strong { color: var(--text_main); }
+        #manual-content em { color: var(--text_dim); font-style: italic; }
+        #manual-content code { background: var(--bg_panel); border: 1px solid var(--border_solid); border-radius: 3px; padding: 1px 6px; font-size: 12px; color: var(--accent); font-family: monospace; }
+
+        /* INTRO */
+        .manual-hero { text-align: center; padding: 10px 0 6px; }
+        .manual-hero h1 { font-size: 30px; font-weight: 900; letter-spacing: 8px; color: var(--text_main); }
+        .manual-hero .quip { font-size: 13px; font-style: italic; font-weight: 900; letter-spacing: 2px; color: var(--accent); margin-top: 6px; }
+        .manual-hero .sub { font-size: 12px; color: var(--text_dim); margin-top: 8px; letter-spacing: 1px; }
+
+        /* BOXES */
+        .manual-box { background: var(--bg_panel); border: 1px solid var(--border_solid); border-left: 4px solid var(--accent); border-radius: 6px; padding: 18px 22px; margin: 20px 0; }
+        .manual-box-title { color: var(--accent) !important; font-weight: 900 !important; font-size: 11px !important; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px !important; }
+        .tip-box { background: rgba(102, 187, 106, 0.06); border: 1px solid rgba(102, 187, 106, 0.3); border-left: 4px solid #66bb6a; border-radius: 6px; padding: 14px 18px; margin: 15px 0; }
+        .tip-box p { color: var(--text_sec); margin: 0; }
+        .tip-box strong { color: #66bb6a; }
+        .warn-box { background: rgba(255, 152, 0, 0.06); border: 1px solid rgba(255, 152, 0, 0.3); border-left: 4px solid #ff9800; border-radius: 6px; padding: 14px 18px; margin: 15px 0; }
+        .warn-box p { color: var(--text_sec); margin: 0; }
+        .warn-box strong { color: #ff9800; }
+
+        /* TABLES */
+        .controls-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .controls-table th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); border-bottom: 2px solid var(--border_solid); }
+        .controls-table td { padding: 8px 12px; font-size: 13px; color: var(--text_sec); border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .controls-table tr:last-child td { border-bottom: none; }
+        .key { color: var(--text_main); font-weight: bold; font-family: monospace; background: var(--bg_panel); border: 1px solid var(--border_solid); border-radius: 3px; padding: 2px 7px; white-space: nowrap; font-size: 12px; }
+
+        /* FOOTER */
+        .manual-footer { text-align: center; margin-top: 60px; padding: 25px; border: 1px solid var(--border_solid); background: var(--bg_panel); border-radius: 6px; }
+        .manual-footer .accent-line { color: var(--accent); font-weight: bold; letter-spacing: 2px; }
+        .manual-footer h3 { color: var(--text_main); margin: 8px 0; }
+        .manual-footer .mono { color: var(--text_sec); font-family: monospace; font-size: 12px; margin: 3px 0; }
+
+        /* SEARCH */
+        mark { background: var(--accent); color: var(--bg); border-radius: 2px; padding: 0 2px; }
+        #manual-search-wrap { position: relative; padding: 10px 10px 0; flex-shrink: 0; }
+        #manual-search { width: 100%; padding: 6px 26px 6px 9px; background: var(--bg); border: 1px solid var(--border_solid); border-radius: 4px; font-size: 11px; color: var(--text_main); font-family: var(--ui-font); box-sizing: border-box; outline: none; }
+        #manual-search::placeholder { color: var(--text_dim); }
+        #manual-search:focus { border-color: var(--accent); }
+        #manual-search-clear { position: absolute; right: 14px; top: 55%; transform: translateY(-50%); background: transparent; border: none; color: var(--text_dim); cursor: pointer; font-size: 12px; padding: 0; display: none; line-height: 1; }
+        #manual-search-clear:hover { color: var(--text_main); }
+        #search-count { font-size: 9px; font-weight: 900; letter-spacing: 1px; color: var(--text_dim); padding: 5px 10px 6px; display: block; min-height: 20px; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+    <div id="manual-titlebar">
+        <div class="titlebar-brand">EMULATTE USER MANUAL</div>
+        <div class="titlebar-controls">
+            <button class="win-btn win-close" onclick="window.close()" title="Close">&#x2715;</button>
+        </div>
+    </div>
+
+    <div id="manual-body">
+        <div id="manual-nav">
+            <div id="manual-search-wrap">
+                <input id="manual-search" type="text" placeholder="Search manual&hellip;" autocomplete="off" spellcheck="false">
+                <button id="manual-search-clear" title="Clear">&#x2715;</button>
+            </div>
+            <span id="search-count"></span>
+
+            <div class="nav-group-label">Getting Started</div>
+            <button class="manual-nav-btn" data-target="man-1">1. What EmuLatte Is</button>
+            <button class="manual-nav-btn" data-target="man-2">2. Install &amp; First Run</button>
+            <button class="manual-nav-btn" data-target="man-3">3. Adding Systems</button>
+            <button class="manual-nav-btn" data-target="man-4">4. Importing ROMs</button>
+
+            <div class="nav-group-label">The Library</div>
+            <button class="manual-nav-btn" data-target="man-5">5. Library &amp; Gallery</button>
+            <button class="manual-nav-btn" data-target="man-6">6. The Game Page</button>
+            <button class="manual-nav-btn" data-target="man-7">7. Editing Game Details</button>
+            <button class="manual-nav-btn" data-target="man-15">8. Playlists</button>
+
+            <div class="nav-group-label">Art &amp; Metadata</div>
+            <button class="manual-nav-btn" data-target="man-8">9. Art Scraping</button>
+            <button class="manual-nav-btn" data-target="man-9">10. Metadata Scraping</button>
+            <button class="manual-nav-btn" data-target="man-10">11. CNGM Credential Import</button>
+
+            <div class="nav-group-label">Emulation</div>
+            <button class="manual-nav-btn" data-target="man-11">12. Emulator Scanner</button>
+            <button class="manual-nav-btn" data-target="man-12">13. RetroArch &amp; Cores</button>
+            <button class="manual-nav-btn" data-target="man-13">14. Custom Commands</button>
+            <button class="manual-nav-btn" data-target="man-14">15. BIOS Files</button>
+
+            <div class="nav-group-label">Extras</div>
+            <button class="manual-nav-btn" data-target="man-16">16. RetroAchievements</button>
+            <button class="manual-nav-btn" data-target="man-17">17. Trailers</button>
+            <button class="manual-nav-btn" data-target="man-18">18. Game Manual PDFs</button>
+
+            <div class="nav-group-label">Couch &amp; Looks</div>
+            <button class="manual-nav-btn" data-target="man-19">19. Couch Mode</button>
+            <button class="manual-nav-btn" data-target="man-20">20. Themes &amp; Fonts</button>
+
+            <div class="nav-group-label">Ecosystem &amp; Data</div>
+            <button class="manual-nav-btn" data-target="man-21">21. Export to Cafe Neurotico</button>
+            <button class="manual-nav-btn" data-target="man-22">22. Your Data &amp; Backups</button>
+        </div>
+
+        <div id="manual-content">
+
+            <div class="manual-hero">
+                <h1>EMULATTE</h1>
+                <div class="quip">&ldquo;I use RetroArch BTW&rdquo;</div>
+                <div class="sub">ROM library manager for the obsessively organized</div>
+            </div>
+
+            <h2 id="man-1">1. What EmuLatte Is</h2>
+            <p>EmuLatte is a <strong>ROM library manager</strong>. It keeps your emulation collection organised across every system you care about &mdash; importing ROMs, scraping art and metadata, tracking achievements, downloading trailers, and launching each game exactly the way you configured it.</p>
+            <p>It is not an emulator. It drives <strong>RetroArch</strong> (and any other emulator you point it at) and stays out of the way once a game is running.</p>
+            <p>It ships with <strong>56 system presets</strong>, each carrying opinionated RetroArch core defaults so you are not starting from zero.</p>
+
+            <div class="manual-box">
+                <p class="manual-box-title">Two faces, one binary</p>
+                <p>The <strong>desktop face</strong> is the one you are looking at: detail-obsessed, built for a mouse and keyboard, where all the management happens. <strong>Couch Mode</strong> is a fullscreen, gamepad-first, play-only face for a TV or CRT. Same library, same database, no duplication. See section 19.</p>
+            </div>
+
+            <p>EmuLatte is part of the <strong>Cafe Neurotico</strong> ecosystem, and it is also a perfectly complete standalone app. Nothing here requires the rest of the suite.</p>
+
+            <h2 id="man-2">2. Install &amp; First Run</h2>
+            <p>EmuLatte ships as a single AppImage. Make it executable and run it:</p>
+            <ul>
+                <li><code>chmod +x EmuLatte.AppImage</code></li>
+                <li><code>./EmuLatte.AppImage</code></li>
+            </ul>
+
+            <div class="warn-box">
+                <p><strong>Where you put the AppImage matters.</strong> EmuLatte stores its data in a <code>GameManagerConfig/</code> folder <em>next to the AppImage itself</em>. Put it somewhere permanent &mdash; for example <code>~/Games/CNGM/</code> &mdash; before you start building a library. Moving the AppImage later means moving that folder with it.</p>
+            </div>
+
+            <p>If you already run Cafe Neurotico, drop EmuLatte alongside it so both share the same <code>GameManagerConfig/</code> parent. That is what makes credential import (section 11) and export (section 21) work without any configuration.</p>
+
+            <p>On first launch the library is empty and no systems are defined. That is expected. The order of operations is: <strong>add a system</strong> (section 3), <strong>import ROMs into it</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10).</p>
+
+            <h2 id="man-3">3. Adding Systems</h2>
+            <p>A <strong>system</strong> is a console or platform &mdash; SNES, PS1, Dreamcast. It owns a ROM folder, a default emulator core, and its own scraping and launch settings. Every game belongs to exactly one system.</p>
+            <p>Open <strong>Settings &rarr; Systems &rarr; Manage Systems</strong>. From there you can add a system from the bundled presets or define one by hand.</p>
+
+            <h3>From a preset</h3>
+            <p>The 56 presets cover the systems most people actually own ROMs for, and each arrives with a sensible default RetroArch core already chosen, plus the identifiers the scrapers need to search the right platform. Pick the system, point it at your ROM folder, and you are done.</p>
+
+            <h3>By hand</h3>
+            <p>If your platform is not in the list, create it manually. You will need to supply at least a name, a ROM folder and a launch method &mdash; either a RetroArch core or a custom command (section 14).</p>
+
+            <div class="tip-box">
+                <p><strong>Per-system settings live here too.</strong> The system editor is also where you set a system's default core, its BIOS requirements, disc-reference repair, and RetroArch settings that should apply to every game on that platform.</p>
+            </div>
+
+            <h2 id="man-4">4. Importing ROMs</h2>
+            <p>Two ways in, both on the main toolbar:</p>
+            <ul>
+                <li><strong>Scan Folder</strong> &mdash; point EmuLatte at a directory and it sweeps it for ROMs matching the system's known extensions. This is how you import a collection.</li>
+                <li><strong>Add ROM</strong> &mdash; add a single file by hand, for when a scan missed something or the file lives somewhere unusual.</li>
+            </ul>
+            <p>Importing <strong>never moves, copies or renames your ROM files</strong>. EmuLatte records the path and leaves your collection exactly where it is. Removing a game from the library likewise deletes only the database row, never the file on disk.</p>
+
+            <h3>Re-scanning later</h3>
+            <p>Run the folder scan again after adding new ROMs. Games already in the library are skipped, so re-scanning is safe and is the normal way to pick up new arrivals. Couch Mode's <strong>Refresh</strong> does the same thing without leaving the sofa.</p>
+
+            <h3>Multi-disc and archives</h3>
+            <p>Multi-disc games are the usual sharp edge in any ROM collection. The system editor's <strong>disc-reference repair</strong> exists for exactly this: it fixes up <code>.m3u</code> and <code>.cue</code> files whose internal references point at paths that no longer exist, which is what normally breaks a disc-based game after you move or re-rip a collection.</p>
+
+            <div class="tip-box">
+                <p><strong>Found duplicates?</strong> <strong>Settings &rarr; Data &rarr; Find Duplicate Games</strong> scans for repeated titles and lets you batch-remove the extras. It only ever removes library entries &mdash; your ROM files are never touched.</p>
+            </div>
+
+            <h2 id="man-5">5. The Library &amp; Gallery Views</h2>
+            <p>The main window is your library. The left rail switches between views and opens Settings; the collapsible side panel filters by system and playlist.</p>
+            <p>The <strong>gallery</strong> is a cover wall. The <strong>list</strong> is denser and shows more metadata per row. Sort order is yours to choose and is remembered between sessions.</p>
+            <p>The <strong>search box</strong> filters by title as you type. It searches titles only &mdash; deliberately, so a search for "Mario" returns Mario games rather than every game whose description happens to mention him.</p>
+
+            <div class="tip-box">
+                <p><strong>Favourites and Want to Play</strong> are two independent flags you can set from any game page. Both are filterable from the side panel, and both carry through to Couch Mode.</p>
+            </div>
+
+            <h2 id="man-6">6. The Game Page</h2>
+            <p>Clicking a game opens its page: hero art, logo, cover, description, metadata and screenshots, with an action row across the top.</p>
+            <table class="controls-table">
+                <tr><th>Action</th><th>What it does</th></tr>
+                <tr><td><span class="key">Play</span></td><td>Launches the game with its configured emulator and settings</td></tr>
+                <tr><td><span class="key">Favourite</span></td><td>Flags the game as a favourite</td></tr>
+                <tr><td><span class="key">Want to Play</span></td><td>Flags the game for your backlog</td></tr>
+                <tr><td><span class="key">Playlist</span></td><td>Adds the game to one or more playlists</td></tr>
+                <tr><td><span class="key">Cafe Neurotico</span></td><td>Exports the game to CN's library (section 21)</td></tr>
+                <tr><td><span class="key">Scrape</span></td><td>Fetches metadata and artwork (sections 9&ndash;10)</td></tr>
+                <tr><td><span class="key">Trailer</span></td><td>Watches, or downloads, the game's trailer (section 17)</td></tr>
+                <tr><td><span class="key">Manual</span></td><td>Opens the scanned game manual PDF (section 18)</td></tr>
+                <tr><td><span class="key">Save States</span></td><td>Browse, label, launch into and delete RetroArch save states</td></tr>
+                <tr><td><span class="key">RetroArch</span></td><td>Per-game launch settings and core override (section 13)</td></tr>
+                <tr><td><span class="key">Edit</span></td><td>Edit details by hand (section 7)</td></tr>
+                <tr><td><span class="key">Remove</span></td><td>Removes from the library &mdash; <em>never</em> deletes the ROM</td></tr>
+            </table>
+            <p>Click any screenshot to open it full-size; arrow keys move through the set and <span class="key">Esc</span> closes it.</p>
+
+            <h2 id="man-7">7. Editing Game Details</h2>
+            <p>Scrapers are good, not infallible. The edit screen lets you correct anything by hand: title, description, developer, publisher, release date, genre, players, rating.</p>
+            <p>You can also replace any individual art asset &mdash; cover, hero, logo, screenshots &mdash; either by picking a different scraped candidate or by supplying your own local file. Hand-edited values are yours; a later scrape will not silently overwrite work you did deliberately.</p>
+
+            <h2 id="man-15">8. Playlists</h2>
+            <p>Playlists are named collections that cut across systems. A game can be in as many as you like, and adding it to one does not remove it from anywhere else.</p>
+            <p>Create them from the side panel, add games from any game page, and filter the library by playlist from the sidebar. They carry through to Couch Mode, which is the real point &mdash; "Saturday Night Co-op" is a much better way to browse from a sofa than "Sega Genesis".</p>
+
+            <h2 id="man-8">9. Art Scraping</h2>
+            <p>EmuLatte pulls art from <strong>five</strong> sources, and they are genuinely good at different things. The scraper picker on the game page lets you choose per game, so you can take metadata from one and art from another.</p>
+            <table class="controls-table">
+                <tr><th>Source</th><th>Gives you</th><th>Needs</th></tr>
+                <tr><td><strong>ScreenScraper.fr</strong></td><td>Full metadata plus artwork. The best all-round source for console ROMs, and the only one that also serves scanned game manuals.</td><td>Free account</td></tr>
+                <tr><td><strong>SteamGridDB</strong></td><td><em>Artwork only</em> &mdash; covers, heroes and logos. The best-looking modern art, and the place to go when you want a specific style.</td><td>Free API key</td></tr>
+                <tr><td><strong>TheGamesDB</strong></td><td>Retro-focused metadata and boxart. Strong on older consoles.</td><td>Free API key</td></tr>
+                <tr><td><strong>IGDB</strong></td><td>Metadata and artwork via the Twitch API. Excellent, well-curated descriptions.</td><td>Client ID + Secret</td></tr>
+                <tr><td><strong>MobyGames</strong></td><td>Metadata plus boxart and screenshots. Excellent retro coverage. Rate-limited to 360 requests/hour.</td><td>Free API key (approval required)</td></tr>
+            </table>
+            <p>Credentials for all of them live in <strong>Settings &rarr; Scrapers</strong>, and each has a <strong>Test</strong> button so you find out immediately whether a key works rather than halfway through a scrape.</p>
+
+            <div class="tip-box">
+                <p><strong>A practical combination:</strong> ScreenScraper for metadata and the bulk of your art, then SteamGridDB to replace the covers and heroes on the handful of games you care most about looking right.</p>
+            </div>
+
+            <h3>Art types</h3>
+            <ul>
+                <li><strong>Cover</strong> &mdash; the boxart shown in the gallery wall</li>
+                <li><strong>Hero</strong> &mdash; the wide background image on the game page and in Couch Mode</li>
+                <li><strong>Logo</strong> &mdash; the transparent title treatment laid over the hero</li>
+                <li><strong>Screenshots</strong> &mdash; the in-game shots, also used by the Couch Mode screensaver</li>
+            </ul>
+
+            <h2 id="man-9">10. Metadata Scraping</h2>
+            <p>Metadata is everything that is not art: description, developer, publisher, release date, genre, player count, rating. It comes from the same picker and the same five sources.</p>
+            <p>If a scrape matches the wrong game &mdash; common with regional variants, revisions and anything called "Adventure" &mdash; use <strong>refine</strong> to search manually and pick the correct result. The system's platform identifier is passed to the scrapers, so results are already filtered to the right console before you even look.</p>
+
+            <div class="warn-box">
+                <p><strong>ScreenScraper enforces per-account rate limits.</strong> Scraping a very large collection in one sitting may pause partway through. This is the service protecting itself, not a fault in EmuLatte &mdash; wait, then continue.</p>
+            </div>
+
+            <h2 id="man-10">11. CNGM Credential Import</h2>
+            <p>If Cafe Neurotico is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from CNGM</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
+            <p>This reads CN's settings out of the shared <code>GameManagerConfig/</code> folder. If the button reports nothing found, the two apps are not sharing a parent folder &mdash; see section 2.</p>
+
+            <h2 id="man-11">12. The Emulator Scanner</h2>
+            <p><strong>Settings &rarr; Systems &rarr; Add Emulators</strong> scans your machine for installed emulators and offers to assign them to existing systems or create new systems around them.</p>
+            <p>It is the fastest way to get a working setup on a machine that already has emulators installed, and it saves typing launch commands by hand for anything it recognises.</p>
+
+            <h2 id="man-12">13. RetroArch &amp; Cores</h2>
+            <div class="manual-box">
+                <p class="manual-box-title">EmuLatte runs RetroArch on its own config</p>
+                <p>Your host <code>retroarch.cfg</code> is <strong>never read and never written</strong>. EmuLatte seeds a clean config of its own (importing only folder paths) and drives RetroArch with it. Nothing you do here can disturb a RetroArch setup you already rely on.</p>
+            </div>
+
+            <p>RetroArch is auto-detected in both native and Flatpak installs. The <strong>Settings &rarr; RetroArch</strong> pane is where you manage all of it:</p>
+            <ul>
+                <li><strong>Edit RetroArch Settings</strong> &mdash; the full settings tree (video, audio, input, latency, shaders, achievements and the rest) edited from inside EmuLatte.</li>
+                <li><strong>Configure in RetroArch</strong> &mdash; opens RetroArch's own menu running on EmuLatte's config. Changes you make there save back here.</li>
+                <li><strong>Re-import Paths</strong> &mdash; re-points cores, BIOS and saves at the current machine. Use this after restoring a backup on a different computer.</li>
+                <li><strong>Scan Cores / Download Cores</strong> &mdash; finds installed cores, or fetches ones you do not have yet.</li>
+                <li><strong>Back Up / Restore Settings</strong> &mdash; zips your RetroArch overrides plus a copy of <code>retroarch.cfg</code> to carry to another machine.</li>
+            </ul>
+
+            <h3>Express RetroArch</h3>
+            <p><strong>Settings &rarr; Express</strong> is the same machinery in plain language: the settings that actually matter, described in words rather than RetroArch's own vocabulary, applied instantly. A <strong>&#9733;</strong> marks the recommended pick. Shaders included. Start here; drop into the full settings tree only when Express does not cover what you want.</p>
+
+            <h3>Core overrides</h3>
+            <p>Cores are chosen in three layers, most specific winning:</p>
+            <ol>
+                <li>The <strong>system default</strong>, from the preset or your own choice</li>
+                <li>A <strong>per-system</strong> RetroArch setting, in the system editor</li>
+                <li>A <strong>per-game override</strong>, from the game page's RetroArch button</li>
+            </ol>
+            <p>Per-game overrides are how you handle the one game on a platform that needs a different core or different settings, without disturbing the other four hundred.</p>
+
+            <h3>Save states</h3>
+            <p>The <strong>Save State Manager</strong> (<strong>Settings &rarr; RetroArch</strong>, or the game page) browses save states across your whole library. You can label them, launch straight into one, delete them, and back them up. Labels are yours &mdash; "before the boss" beats "slot 3".</p>
+
+            <h2 id="man-13">14. Custom Emulator Commands</h2>
+            <p>RetroArch is the default, not a requirement. Any system or individual game can instead use a <strong>fully custom command</strong> &mdash; standalone emulators, wrapper scripts, anything you can run from a shell.</p>
+            <p>Set it on the system to apply to everything on that platform, or on a single game to override just that one. This is how you handle the platforms RetroArch does not serve well, and it is why the tagline is a joke rather than a limitation.</p>
+
+            <h2 id="man-14">15. BIOS Files</h2>
+            <p>Some systems will not run without their BIOS. EmuLatte ships a database of what each platform requires and checks whether you have it.</p>
+            <p>The system editor shows <strong>BIOS status</strong> for that platform: which files are needed, and which are present. You can add a file you already own individually, or point EmuLatte at a folder and let it pick out the ones it recognises. Files are copied into RetroArch's <code>system/</code> folder where the cores expect to find them.</p>
+
+            <div class="warn-box">
+                <p><strong>EmuLatte does not supply BIOS files</strong> and will not download them. It only tells you what is missing and files what you already own into the right place.</p>
+            </div>
+
+            <h2 id="man-16">16. RetroAchievements</h2>
+            <p>Put your <strong>retroachievements.org</strong> username and API key into <strong>Settings &rarr; Scrapers</strong> (the API key is in your profile settings on the site) and press <strong>Test Credentials</strong>.</p>
+            <p>EmuLatte then shows achievement sets and your progress on supported games. The achievement filter on the game page separates earned from unearned.</p>
+            <p>Achievements have to be switched on inside RetroArch as well &mdash; the <strong>Achievements</strong> section of the RetroArch settings tree, or via Express. EmuLatte drives its own config, so enabling it here does not touch any other RetroArch install you have.</p>
+
+            <h2 id="man-17">17. Trailers</h2>
+            <p>EmuLatte downloads trailers with a bundled <strong>yt-dlp</strong> and <strong>ffmpeg</strong> &mdash; both ship inside the AppImage, so there is nothing to install.</p>
+            <p>From a game page, search for a trailer, pick the right result, and download it. Downloaded trailers are stored locally and play in an embedded player. There is no streaming and no account.</p>
+
+            <div class="tip-box">
+                <p><strong>Closing the player stops the video.</strong> Both the &#10005; button and <span class="key">Esc</span> stop playback and release the file.</p>
+            </div>
+
+            <h2 id="man-18">18. Game Manual PDFs</h2>
+            <p>This is the manual for <em>EmuLatte</em>. The <strong>Manual</strong> button on a game page is a different thing entirely: it fetches the <strong>scanned manual for that game</strong> &mdash; the actual printed booklet that came in the box &mdash; from ScreenScraper, and opens it in its own window with Chromium's PDF viewer.</p>
+            <p>It needs ScreenScraper credentials (section 9), and coverage depends on what ScreenScraper has for that title. Fetched manuals are cached locally, so a manual you keep opens instantly next time.</p>
+
+            <h2 id="man-19">19. Couch Mode</h2>
+            <p>Couch Mode is EmuLatte's fullscreen, gamepad-first, <strong>play-only</strong> face &mdash; built for a TV, a projector or a genuine CRT. It reads the same library. It deliberately cannot edit anything: it is for playing games, not managing them.</p>
+            <p>Enter it with <strong>&#9654; GO FULLSCREEN</strong> in the top bar, from <strong>Settings &rarr; General</strong>, or set <strong>Start in Couch Mode on launch</strong> to boot straight into it.</p>
+
+            <h3>Display types</h3>
+            <p>Three separate layouts, each with its own tuning &mdash; switch in <strong>Settings &rarr; Display Type</strong> inside Couch Mode:</p>
+            <ul>
+                <li><strong>Horizontal</strong> &mdash; the standard widescreen layout</li>
+                <li><strong>Vertical</strong> &mdash; for a rotated or portrait display</li>
+                <li><strong>CRT Mode (640&times;480)</strong> &mdash; a genuinely low-resolution layout with a three-column game page, built to be readable on a real CRT rather than merely shrunk down</li>
+            </ul>
+
+            <h3>Controls</h3>
+            <table class="controls-table">
+                <tr><th>Gamepad</th><th>Keyboard</th><th>Action</th></tr>
+                <tr><td>D-pad / Left stick</td><td><span class="key">&#8592;&#8593;&#8594;&#8595;</span></td><td>Navigate</td></tr>
+                <tr><td>A</td><td><span class="key">Enter</span></td><td>Confirm / launch</td></tr>
+                <tr><td>B</td><td><span class="key">Esc</span> <span class="key">Backspace</span></td><td>Back</td></tr>
+                <tr><td>X</td><td><span class="key">X</span></td><td>Scrape artwork</td></tr>
+                <tr><td>Y</td><td><span class="key">Y</span> <span class="key">Tab</span></td><td>Context action</td></tr>
+                <tr><td>LB / RB</td><td><span class="key">[</span> <span class="key">]</span></td><td>Jump between groups</td></tr>
+                <tr><td>LT / RT</td><td><span class="key">,</span> <span class="key">.</span></td><td>Jump by first letter</td></tr>
+                <tr><td>Select</td><td><span class="key">S</span></td><td>Sort</td></tr>
+                <tr><td>Start</td><td><span class="key">M</span></td><td>Settings menu</td></tr>
+                <tr><td>&mdash;</td><td><span class="key">F11</span></td><td>Exit Couch Mode</td></tr>
+            </table>
+            <p>Hold a direction to repeat; in CRT mode, scrolling a long list accelerates the longer you hold. On-screen button labels follow your <strong>Gamepad Buttons</strong> setting &mdash; Xbox, PlayStation or Nintendo lettering.</p>
+
+            <h3>Returning from a game</h3>
+            <p>The <strong>Return Combo</strong> is a button combination you hold <em>while a game is running</em> to come back to Couch Mode. Six combinations are available, including hold-for-two-seconds variants that are much harder to trigger by accident.</p>
+            <div class="tip-box">
+                <p><strong>Match it to RetroArch's own Close combo</strong> and a single press both closes the game and returns you to Couch Mode.</p>
+            </div>
+
+            <h3>Save states, screensaver and sound</h3>
+            <ul>
+                <li><strong>Manage Save States</strong> &mdash; the save-state manager, usable from the sofa</li>
+                <li><strong>Screensaver</strong> &mdash; a screenshot slideshow after 1, 3, 5 or 10 minutes idle, or off</li>
+                <li><strong>Sound</strong> &mdash; ambient background music and interface sound effects, with volume</li>
+                <li><strong>Now playing</strong> &mdash; shows what launched, and what you are returning from</li>
+            </ul>
+
+            <h3>RetroArch Simple Setup</h3>
+            <p>The Express settings from the desktop face, rebuilt for a gamepad, including the shader submenu. The two stay in sync &mdash; it is the same configuration, not a second copy.</p>
+
+            <h3>Other Couch settings</h3>
+            <ul>
+                <li><strong>Refresh</strong> &mdash; rescans your ROM folders for new games without going back to the desktop</li>
+                <li><strong>Navigation Mode</strong> &mdash; cover wall or list-with-details</li>
+                <li><strong>Carousel Label</strong> &mdash; logo, name, or both on the start carousel</li>
+                <li><strong>Display Density</strong> &mdash; scales the whole interface for low-resolution screens</li>
+                <li><strong>Sync Desktop Colors</strong> &mdash; mirror the desktop face's theme instead of Couch's own</li>
+            </ul>
+
+            <div class="warn-box">
+                <p><strong>On Wayland, applications cannot choose which display they open on.</strong> Leave <strong>Target Screen</strong> on <em>Current screen</em>, drag the EmuLatte window onto your TV first, then Go Fullscreen. The Target Screen setting works on X11, Windows and macOS.</p>
+            </div>
+
+            <h2 id="man-20">20. Themes &amp; Fonts</h2>
+            <p>EmuLatte ships <strong>92 themes in 10 categories</strong>, and both faces carry all of them. Pick one from <strong>Settings &rarr; General &rarr; Choose Theme</strong>, or from <strong>Color Theme</strong> inside Couch Mode.</p>
+            <p>The categories run from <em>Originals &amp; System</em> and <em>BrewBalance</em> through <em>Gaming Legends</em>, <em>Linux Ricing</em>, <em>Sci-Fi Universes</em> and <em>Horror Realm</em>, to <strong>Systems</strong> &mdash; twenty retro-OS palettes reproducing MS-DOS, Windows 3.1, Windows 95, Windows XP, Classic MacOS, Amiga Workbench, NeXTSTEP, BeOS, OS/2 Warp, RISC OS, Solaris CDE, ZX Spectrum, Commodore 64, GEOS, Atari ST, IBM 3270, Teletext, and amber and green CRT phosphor.</p>
+            <p>Each Systems theme carries <strong>its own era typeface</strong> &mdash; the interface actually changes font to match the operating system it is imitating. All fonts are bundled in the AppImage; nothing is fetched from the network.</p>
+            <p>Couch Mode additionally offers a <strong>Press Start 2P</strong> interface font under <strong>Fonts</strong>, with long-form text kept in the readable face regardless.</p>
+            <p><strong>UI Scale</strong> (50%&ndash;150%) is separate, under <strong>Settings &rarr; General</strong>.</p>
+
+            <h2 id="man-21">21. Exporting Games to Cafe Neurotico</h2>
+            <div class="manual-box">
+                <p class="manual-box-title">How games actually get to Cafe Neurotico</p>
+                <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Cafe Neurotico does not read EmuLatte's database and has no "show emulation" toggle.</p>
+            </div>
+            <p>Press <strong>ADD TO CAFENEUROTICO</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into CN's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Cafe Neurotico or CREMA exactly as it does here.</p>
+            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; CN sees a game, not your library.</p>
+            <p>This requires both apps to share a <code>GameManagerConfig/</code> parent folder (section 2).</p>
+
+            <h2 id="man-22">22. Your Data &amp; Backups</h2>
+            <p>Everything EmuLatte owns lives in one folder, next to the AppImage:</p>
+            <table class="controls-table">
+                <tr><th>Path</th><th>Contents</th></tr>
+                <tr><td><code>GameManagerConfig/EmuLatte/</code></td><td>Everything below</td></tr>
+                <tr><td><code>emulatte.db</code></td><td>The library: games, systems, playlists, settings, achievements</td></tr>
+                <tr><td><code>images/covers/</code></td><td>Boxart</td></tr>
+                <tr><td><code>images/heroes/</code></td><td>Wide background art</td></tr>
+                <tr><td><code>images/logos/</code></td><td>Transparent title logos</td></tr>
+                <tr><td><code>images/screenshots/</code></td><td>In-game shots</td></tr>
+                <tr><td><code>videos/</code></td><td>Downloaded trailers</td></tr>
+                <tr><td><code>manuals/</code></td><td>Cached game manual PDFs</td></tr>
+            </table>
+            <p>Your <strong>ROM files are not in here</strong> and are never copied into it. EmuLatte stores paths and leaves your collection where you put it.</p>
+
+            <h3>Backups</h3>
+            <p>From <strong>Settings &rarr; Data</strong>:</p>
+            <ul>
+                <li><strong>Back Up EmuLatte</strong> &mdash; the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states</li>
+                <li><strong>Back Up Cafe Neurotico Suite</strong> &mdash; everything in <code>GameManagerConfig</code> (EmuLatte, Cafe Neurotico, CREMA and the Clock) plus save states, as a full 1:1 copy</li>
+                <li><strong>Restore from Backup</strong> &mdash; overwrites current data and restarts EmuLatte</li>
+            </ul>
+
+            <div class="warn-box">
+                <p><strong>Restoring on a different computer:</strong> ROM paths and RetroArch folders are machine-specific. After a restore on a new machine, run <strong>Settings &rarr; RetroArch &rarr; Re-import Paths</strong> to re-point cores, BIOS and saves at that machine.</p>
+            </div>
+
+            <h3>Reclaiming space</h3>
+            <p><strong>Clean Unused Images &amp; Videos</strong> deletes downloaded art and trailers that are no longer linked to any game. It reports what it found before removing anything.</p>
+
+            <div class="manual-footer">
+                <p class="accent-line">EMULATTE</p>
+                <h3>&ldquo;I use RetroArch BTW&rdquo;</h3>
+                <p class="mono">Part of the Cafe Neurotico ecosystem</p>
+                <p class="mono">GPL-3.0-or-later &middot; Designed in Brazil by J.R.A.</p>
+                <p class="mono">shampooisalie@gmail.com</p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const navBtns = document.querySelectorAll('.manual-nav-btn');
+        const content = document.getElementById('manual-content');
+        const searchInput = document.getElementById('manual-search');
+        const searchClear = document.getElementById('manual-search-clear');
+        const searchCount = document.getElementById('search-count');
+        const originalContent = content.innerHTML;
+        let searchActive = false;
+        let searchTimeout = null;
+
+        // --- NAV CLICK ---
+        navBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                navBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const target = document.getElementById(btn.dataset.target);
+                if (target) content.scrollTo({ top: target.offsetTop - content.offsetTop - 10, behavior: 'smooth' });
+            });
+        });
+
+        // --- SCROLL SPY ---
+        content.addEventListener('scroll', () => {
+            if (searchActive) return;
+            const sections = document.querySelectorAll('[id^="man-"]');
+            const contentTop = content.getBoundingClientRect().top;
+            let activeId = null;
+            sections.forEach(sec => {
+                if (sec.getBoundingClientRect().top - contentTop <= 60) activeId = sec.id;
+            });
+            if (activeId) navBtns.forEach(b => b.classList.toggle('active', b.dataset.target === activeId));
+        });
+
+        // --- SEARCH ---
+        function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+        function highlightText(query) {
+            content.innerHTML = originalContent;
+            if (!query) return 0;
+            const regex = new RegExp(escapeRegex(query), 'gi');
+            let count = 0;
+            const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, null);
+            const textNodes = [];
+            let n;
+            while ((n = walker.nextNode())) textNodes.push(n);
+            textNodes.forEach(tn => {
+                if (!tn.nodeValue.toLowerCase().includes(query.toLowerCase())) return;
+                regex.lastIndex = 0;
+                const frag = document.createDocumentFragment();
+                let lastIdx = 0, m;
+                while ((m = regex.exec(tn.nodeValue)) !== null) {
+                    if (m.index > lastIdx) frag.appendChild(document.createTextNode(tn.nodeValue.slice(lastIdx, m.index)));
+                    const mark = document.createElement('mark');
+                    mark.textContent = m[0];
+                    frag.appendChild(mark);
+                    lastIdx = regex.lastIndex;
+                    count++;
+                }
+                if (lastIdx < tn.nodeValue.length) frag.appendChild(document.createTextNode(tn.nodeValue.slice(lastIdx)));
+                tn.parentNode.replaceChild(frag, tn);
+            });
+            return count;
+        }
+
+        function updateNavDimming(query) {
+            if (!query) { navBtns.forEach(b => { b.style.opacity = '1'; }); return; }
+            const sectionIds = [...navBtns].map(b => b.dataset.target);
+            const marks = [...content.querySelectorAll('mark')];
+            sectionIds.forEach((id, i) => {
+                const startEl = document.getElementById(id);
+                const endEl = i < sectionIds.length - 1 ? document.getElementById(sectionIds[i + 1]) : null;
+                const btn = navBtns[i];
+                if (!startEl) { btn.style.opacity = '0.3'; return; }
+                const hasMatch = marks.some(mark => {
+                    const afterStart = startEl.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING;
+                    if (!afterStart) return false;
+                    if (!endEl) return true;
+                    return !!(endEl.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_PRECEDING);
+                });
+                btn.style.opacity = hasMatch ? '1' : '0.3';
+            });
+        }
+
+        function performSearch(query) {
+            const count = highlightText(query);
+            updateNavDimming(query);
+            if (query && count > 0) {
+                const firstMark = content.querySelector('mark');
+                if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            searchCount.textContent = query ? (count > 0 ? `${count} match${count !== 1 ? 'es' : ''}` : 'no matches') : '';
+        }
+
+        function clearSearch() {
+            searchInput.value = '';
+            searchClear.style.display = 'none';
+            searchActive = false;
+            content.innerHTML = originalContent;
+            navBtns.forEach(b => { b.style.opacity = '1'; });
+            searchCount.textContent = '';
+        }
+
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            const q = searchInput.value.trim();
+            searchClear.style.display = q ? 'block' : 'none';
+            if (q.length === 0) { clearSearch(); return; }
+            if (q.length < 2) { searchCount.textContent = 'type more…'; return; }
+            searchActive = true;
+            searchTimeout = setTimeout(() => performSearch(q), 220);
+        });
+
+        searchClear.addEventListener('click', clearSearch);
+        searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') clearSearch(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.activeElement !== searchInput) window.close(); });
+    </script>
+</body>
+</html>

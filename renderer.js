@@ -3847,6 +3847,12 @@ function wireUI() {
     // like the other modals here, the backdrop is not click-to-close.
     document.getElementById('btn-about').addEventListener('click', () => openModal('modal-about'));
     document.getElementById('btn-close-about').addEventListener('click', () => closeModal('modal-about'));
+    // User manual — reachable from About and from Settings → General.
+    document.getElementById('btn-open-user-manual').addEventListener('click', () => {
+        closeModal('modal-about');
+        window.api.openUserManual();
+    });
+    document.getElementById('btn-settings-user-manual').addEventListener('click', () => window.api.openUserManual());
     // Stamp the shipped version in, straight from package.json via app.getVersion().
     window.api.getAppVersion?.().then(v => {
         const el = document.getElementById('about-version');
