@@ -8,20 +8,27 @@
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
     @font-face { font-family: 'PressStart2P'; src: url('assets/fonts/PressStart2P.ttf') format('truetype'); }
+    /* Era faces for the "Systems" themes — each retro-OS theme names one and applyTheme() puts it in --ui-font. */
+    @font-face { font-family: 'PxPlus IBM VGA8';  src: url('assets/fonts/PxPlusIBMVGA8.ttf')  format('truetype'); }
+    @font-face { font-family: 'C64 Pro Mono';     src: url('assets/fonts/C64ProMono.ttf')     format('truetype'); }
+    @font-face { font-family: 'Chicago';          src: url('assets/fonts/ChicagoFLF.ttf')     format('truetype'); }
+    @font-face { font-family: 'BigBlue Terminal'; src: url('assets/fonts/BigBlueTerminal.ttf') format('truetype'); }
+    @font-face { font-family: 'Inter';            src: url('assets/fonts/Inter.ttf')          format('truetype'); }
 
     :root {
       --bg: #2C1E16; --bg_panel: rgba(67, 40, 24, 0.6); --bg_menu: #432818;
       --accent: #D4A373; --text_main: #FFE6A7;
       --text_sec: #E6CC98; --text_dim: #A47148; --border: rgba(212, 163, 115, 0.2);
       --border_solid: #8B5A2B;
+      --ui-font: 'Raleway', sans-serif;
     }
 
-    body { margin: 0; background-color: var(--bg); color: var(--text_main); font-family: 'Raleway', sans-serif; display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+    body { margin: 0; background-color: var(--bg); color: var(--text_main); font-family: var(--ui-font); display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
 
     #titlebar { height: 35px; flex-shrink: 0; background: var(--bg_menu); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border_solid); user-select: none; -webkit-app-region: drag; z-index: 9999; box-sizing: border-box; }
     .titlebar-brand { padding-left: 20px; font-size: 11px; font-weight: 900; color: var(--text_dim); letter-spacing: 3px; }
     .titlebar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
-    .titlebar-pill { -webkit-app-region: no-drag; cursor: pointer; border: 1px solid var(--accent); background: rgba(212,163,115,0.14); color: var(--accent); font-family: 'Raleway', sans-serif; font-size: 10px; font-weight: 900; letter-spacing: 2px; padding: 5px 16px; border-radius: 13px; transition: background-color 0.15s, color 0.15s; }
+    .titlebar-pill { -webkit-app-region: no-drag; cursor: pointer; border: 1px solid var(--accent); background: rgba(212,163,115,0.14); color: var(--accent); font-family: var(--ui-font); font-size: 10px; font-weight: 900; letter-spacing: 2px; padding: 5px 16px; border-radius: 13px; transition: background-color 0.15s, color 0.15s; }
     .titlebar-pill:hover { background: var(--accent); color: var(--bg); }
     .win-btn { border: none; border-radius: 0; background: transparent; width: 45px; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: background-color 0.1s; cursor: pointer; color: var(--text_main); }
     .win-btn:hover { background-color: rgba(255,255,255,0.1); color: var(--text_main); transform: none; box-shadow: none; }
@@ -95,7 +102,7 @@
     .btn-gallery-want.active { color: #ff9800; background: rgba(0,0,0,0.65); }
     @keyframes gallery-flag-glow { 0% { transform: scale(1); } 45% { transform: scale(1.45); box-shadow: 0 0 10px 3px currentColor; } 100% { transform: scale(1); box-shadow: none; } }
     .gallery-title { padding: 10px 10px 6px; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text_sec); }
-    .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; cursor: pointer; font-family: 'Raleway', sans-serif; transition: opacity 0.15s; }
+    .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; cursor: pointer; font-family: var(--ui-font); transition: opacity 0.15s; }
     .btn-play-gallery:hover { background: var(--accent); color: var(--bg); opacity: 0.8; transform: none; box-shadow: none; }
 
     #icon-rail { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; background: var(--bg_menu); border-right: 1px solid var(--border_solid); overflow: hidden; }
@@ -115,7 +122,7 @@
 
     #gallery-search-wrap { display: flex; align-items: center; gap: 14px; padding: 0 0 18px; }
     #gallery-search-inner { position: relative; flex: 1; }
-    #gallery-search { width: 100%; box-sizing: border-box; padding: 13px 44px 13px 46px; background: rgba(0,0,0,0.35); border: 1.5px solid var(--border_solid); border-radius: 12px; color: var(--text_main); font-family: 'Raleway', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: border-color 0.2s, box-shadow 0.2s; }
+    #gallery-search { width: 100%; box-sizing: border-box; padding: 13px 44px 13px 46px; background: rgba(0,0,0,0.35); border: 1.5px solid var(--border_solid); border-radius: 12px; color: var(--text_main); font-family: var(--ui-font); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: border-color 0.2s, box-shadow 0.2s; }
     #gallery-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--border), 0 6px 24px rgba(0,0,0,0.4); }
     #gallery-search::placeholder { color: var(--text_dim); font-weight: 400; font-style: italic; letter-spacing: 0; }
     .gsearch-icon { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text_dim); pointer-events: none; transition: color 0.2s; }
@@ -128,7 +135,7 @@
     #gallery-search-wrap .cust-sel-btn { padding: 12px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; }
 
     .row { display: flex; gap: 10px; }
-    button { background-color: var(--bg_panel); color: var(--text_main); border: 1px solid var(--border_solid); padding: 10px 12px; font-family: 'Raleway', sans-serif; font-weight: 900; cursor: pointer; border-radius: 6px; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; text-transform: uppercase; letter-spacing: 1px; }
+    button { background-color: var(--bg_panel); color: var(--text_main); border: 1px solid var(--border_solid); padding: 10px 12px; font-family: var(--ui-font); font-weight: 900; cursor: pointer; border-radius: 6px; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; text-transform: uppercase; letter-spacing: 1px; }
     button:hover { background-color: var(--text_main); color: var(--bg); }
     button.primary { background-color: var(--accent); color: var(--bg); border: none; }
     button.primary:hover { background-color: var(--text_main); color: var(--bg); }
@@ -140,7 +147,7 @@
 
     input[type="text"], input[type="password"], input[type="number"], textarea, select {
       background-color: rgba(0,0,0,0.3); color: var(--text_main); border: 1px solid var(--border_solid);
-      padding: 10px; width: 100%; box-sizing: border-box; border-radius: 6px; font-family: 'Raleway', sans-serif;
+      padding: 10px; width: 100%; box-sizing: border-box; border-radius: 6px; font-family: var(--ui-font);
     }
     select { cursor: pointer; }
     select option, select optgroup { background-color: var(--bg_menu); color: var(--text_main); }
@@ -150,7 +157,7 @@
     .cust-sel { position: relative; width: 100%; }
     .cust-sel-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
       background-color: rgba(0,0,0,0.3); color: var(--text_main); border: 1px solid var(--border_solid);
-      padding: 10px 12px; border-radius: 6px; font-family: 'Raleway', sans-serif; font-size: 13px;
+      padding: 10px 12px; border-radius: 6px; font-family: var(--ui-font); font-size: 13px;
       cursor: pointer; text-align: left; transition: border-color 0.15s, box-shadow 0.15s; }
     .cust-sel-btn:hover { border-color: var(--accent); }
     .cust-sel.open .cust-sel-btn { border-color: var(--accent); box-shadow: 0 0 10px var(--border); }
@@ -225,7 +232,7 @@
     .stat-label { font-size: 10px; font-weight: 900; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
     .stat-val { font-size: 13px; font-weight: bold; color: var(--text_main); }
 
-    .btn-hero { background: var(--bg_menu); border: 1px solid var(--border_solid); color: var(--text_sec); padding: 12px 20px; border-radius: 8px; font-weight: 900; font-family: 'Raleway', sans-serif; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: background 0.2s, color 0.2s, border-color 0.2s; white-space: nowrap; }
+    .btn-hero { background: var(--bg_menu); border: 1px solid var(--border_solid); color: var(--text_sec); padding: 12px 20px; border-radius: 8px; font-weight: 900; font-family: var(--ui-font); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: background 0.2s, color 0.2s, border-color 0.2s; white-space: nowrap; }
     .btn-hero:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); box-shadow: 0 0 14px var(--accent); }
     .btn-hero.active { background: var(--text_main); color: var(--bg); border-color: var(--text_main); }
     .btn-hero-sq { width: 38px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -421,17 +428,17 @@
     .modal-hdr { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; gap:12px; margin-bottom:18px; }
     .modal-hdr .modal-title { border:none; padding:0; margin:0; flex:1; }
     .modal-hdr-btns { display:flex; gap:8px; align-items:center; flex-shrink:0; }
-    .btn-modal-x { width:30px; height:30px; border-radius:50%; border:1.5px solid var(--border_solid); background:rgba(0,0,0,0.35); color:var(--text_dim); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; font-family:'Raleway',sans-serif; padding:0; text-transform:none; letter-spacing:0; transition:background 0.15s, border-color 0.15s, color 0.15s; }
+    .btn-modal-x { width:30px; height:30px; border-radius:50%; border:1.5px solid var(--border_solid); background:rgba(0,0,0,0.35); color:var(--text_dim); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; font-family:var(--ui-font); padding:0; text-transform:none; letter-spacing:0; transition:background 0.15s, border-color 0.15s, color 0.15s; }
     .btn-modal-x:hover { background:#c62828; border-color:#c62828; color:#fff; transform:none; box-shadow:0 0 10px rgba(198,40,40,0.35); }
-    .btn-modal-save-x { height:30px; padding:0 16px; border-radius:20px; border:1.5px solid var(--accent); background:transparent; color:var(--accent); font-size:10px; font-weight:900; letter-spacing:0.5px; cursor:pointer; font-family:'Raleway',sans-serif; white-space:nowrap; transition:background 0.15s, color 0.15s, box-shadow 0.15s; text-transform:uppercase; }
+    .btn-modal-save-x { height:30px; padding:0 16px; border-radius:20px; border:1.5px solid var(--accent); background:transparent; color:var(--accent); font-size:10px; font-weight:900; letter-spacing:0.5px; cursor:pointer; font-family:var(--ui-font); white-space:nowrap; transition:background 0.15s, color 0.15s, box-shadow 0.15s; text-transform:uppercase; }
     .btn-modal-save-x:hover { background:var(--accent); color:var(--bg); transform:none; box-shadow:0 0 12px rgba(212,163,115,0.35); }
     .seg-ctrl { display:flex; width:100%; border:1px solid var(--border_solid); border-radius:6px; overflow:hidden; margin-top:4px; }
-    .seg-btn { flex:1; background:var(--bg_panel); color:var(--text_sec); border:none; border-right:1px solid var(--border_solid); padding:8px 0; font-size:11px; font-weight:900; cursor:pointer; transition:background 0.15s, color 0.15s; border-radius:0; font-family:'Raleway',sans-serif; letter-spacing:0; text-transform:none; }
+    .seg-btn { flex:1; background:var(--bg_panel); color:var(--text_sec); border:none; border-right:1px solid var(--border_solid); padding:8px 0; font-size:11px; font-weight:900; cursor:pointer; transition:background 0.15s, color 0.15s; border-radius:0; font-family:var(--ui-font); letter-spacing:0; text-transform:none; }
     .seg-btn:last-child { border-right:none; }
     .seg-btn:hover { background:var(--border_solid); color:var(--text_main); transform:none; box-shadow:none; }
     .seg-btn.active { background:var(--accent); color:var(--bg); }
     #settings-search { width:100%; box-sizing:border-box; margin-bottom:4px; }
-    .theme-cat-btn { width:100%; text-align:left; padding:9px 12px; border-radius:6px; border:1px solid transparent; background:transparent; color:var(--text_sec); font-size:11px; font-weight:900; cursor:pointer; font-family:'Raleway',sans-serif; transition:0.15s; text-transform:uppercase; letter-spacing:0.5px; }
+    .theme-cat-btn { width:100%; text-align:left; padding:9px 12px; border-radius:6px; border:1px solid transparent; background:transparent; color:var(--text_sec); font-size:11px; font-weight:900; cursor:pointer; font-family:var(--ui-font); transition:0.15s; text-transform:uppercase; letter-spacing:0.5px; }
     .theme-cat-btn:hover { border-color:var(--border_solid); background:rgba(0,0,0,0.2); transform:none; box-shadow:none; color:var(--text_main); }
     .theme-cat-btn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
     .theme-swatch { cursor:pointer; border-radius:8px; border:2px solid transparent; overflow:hidden; transition:border-color 0.15s, transform 0.15s; }
@@ -444,7 +451,12 @@
   <script>
     try {
       const c = JSON.parse(localStorage.getItem('el_theme_cache') || 'null');
-      if (c) { const r = document.documentElement; Object.keys(c).forEach(k => r.style.setProperty(`--${k}`, c[k])); }
+      if (c) {
+        const r = document.documentElement;
+        // Mirror applyTheme(): `font` is the theme's era face, not a color token.
+        Object.keys(c).forEach(k => { if (k !== 'font') r.style.setProperty(`--${k}`, c[k]); });
+        r.style.setProperty('--ui-font', c.font ? `'${c.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
+      }
     } catch(e) {}
   </script>
 </head>
@@ -712,7 +724,7 @@
     </div>
   </div>
   <style>
-    .ach-filter-btn { padding:5px 14px; border-radius:20px; border:1px solid var(--border_solid); background:transparent; color:var(--text_dim); font-family:Raleway,sans-serif; font-weight:700; font-size:11px; letter-spacing:0.5px; cursor:pointer; transition:0.15s; }
+    .ach-filter-btn { padding:5px 14px; border-radius:20px; border:1px solid var(--border_solid); background:transparent; color:var(--text_dim); font-family:var(--ui-font); font-weight:700; font-size:11px; letter-spacing:0.5px; cursor:pointer; transition:0.15s; }
     .ach-filter-btn.active { background:var(--accent); border-color:var(--accent); color:#000; }
     .scraper-pick-btn { display:flex; flex-direction:column; align-items:flex-start; gap:3px; padding:12px 16px; border-radius:8px; border:1px solid var(--border_solid); background:rgba(0,0,0,0.2); cursor:pointer; text-align:left; color:var(--text_main); transition:border-color 0.15s, background 0.15s; }
     .scraper-pick-btn:hover { border-color:var(--accent); background:rgba(212,163,115,0.08); }
@@ -808,7 +820,7 @@
       <div class="modal-hdr" style="padding:18px 24px 14px; border-bottom:1px solid var(--border_solid); margin-bottom:0;">
         <div class="modal-title" style="font-size:11px;">Edit ROM Details</div>
         <div class="modal-hdr-btns">
-          <button id="btn-edit-cngm" title="Add to CafeNeurotico library (Emulation category)" style="font-size:11px; padding:5px 14px; border-radius:20px; background:var(--accent); color:var(--bg); border:none; font-weight:900; cursor:pointer; font-family:'Raleway',sans-serif;">ADD TO CAFENEUROTICO</button>
+          <button id="btn-edit-cngm" title="Add to CafeNeurotico library (Emulation category)" style="font-size:11px; padding:5px 14px; border-radius:20px; background:var(--accent); color:var(--bg); border:none; font-weight:900; cursor:pointer; font-family:var(--ui-font);">ADD TO CAFENEUROTICO</button>
           <button id="btn-edit-delete" class="danger" style="font-size:11px; padding:5px 14px; border-radius:20px;">Delete ROM</button>
           <button id="btn-edit-save" class="btn-modal-save-x">Save</button>
           <button id="btn-edit-cancel" class="btn-modal-x">✕</button>
@@ -1943,6 +1955,34 @@
         <button id="modal-dialog-cancel" style="flex:1; background:transparent; border:1px solid var(--border_solid); color:var(--text_sec);">Cancel</button>
         <button id="modal-dialog-ok" style="flex:1;"></button>
       </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: ABOUT ───────────────────────────────────────────────────────── -->
+  <div id="modal-about" class="modal-overlay">
+    <div class="modal-box" style="text-align:center;">
+      <div>
+        <h2 style="margin:0; color:var(--text_main); font-weight:900; letter-spacing:4px;">EMULATTE</h2>
+        <p style="font-size:12px; color:var(--accent); margin:4px 0 0; letter-spacing:2px; font-weight:900; font-style:italic;">I use RetroArch BTW</p>
+        <p id="about-version" style="font-size:11px; color:var(--text_dim); margin:8px 0 0; letter-spacing:2px; font-weight:700;"></p>
+      </div>
+
+      <p style="font-size:13px; color:var(--text_sec); margin:0;">ROM library manager for the obsessively organized.</p>
+
+      <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">EmuLatte keeps your ROM collection in order across 56 systems &mdash; importing, scraping art and metadata from four sources, tracking achievements, pulling trailers, and launching everything exactly the way you configured it. <strong>Couch Mode</strong> is the other half: a fullscreen, gamepad-first face for the TV, with its own display types, save-state manager and shaders.</p>
+
+      <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">It is part of the <strong>Cafe Neurotico</strong> ecosystem and works perfectly well alone. Games you want on the other side get <strong>exported to Cafe Neurotico</strong> from the game page; management of the collection always stays here.</p>
+
+      <hr style="border:none; border-top:1px solid var(--border_solid); width:100%; margin:0;">
+
+      <p style="font-size:12px; color:var(--text_dim); margin:0; line-height:1.8;">
+        Licensed GPL-3.0-or-later<br>
+        github.com/shampoo-is-a-lie/EmuLatte<br>
+        Designed in Brazil by J.R.A. &mdash; Shampoo is a Lie<br>
+        shampooisalie@gmail.com
+      </p>
+
+      <button id="btn-close-about">Close</button>
     </div>
   </div>
 

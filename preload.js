@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 contextBridge.exposeInMainWorld('api', {
     signalReady: () => ipcRenderer.send('renderer-ready'),
     setZoom:     (f) => webFrame.setZoomFactor(f),
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),

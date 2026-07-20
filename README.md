@@ -8,7 +8,7 @@
 
 **ROM library manager for the obsessively organized.**
 
-*55 systems. Multi-source art. RetroAchievements. Trailers. All your emulation, one place.*
+*56 systems. Multi-source art. RetroAchievements. Trailers. All your emulation, one place.*
 
 <br>
 
@@ -41,7 +41,7 @@ It keeps everything emulation-related in one self-contained app so neither it no
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  55 bundled system presets — SNES · Genesis · PS1 · N64     │
+│  56 bundled system presets — SNES · Genesis · PS1 · N64     │
 │  GBA · NDS · PSP · Dreamcast · Saturn · PC Engine and more  │
 │                                                             │
 │  Each preset ships with opinionated RetroArch core          │
@@ -148,12 +148,14 @@ Create named collections and assign any game to as many playlists as you want. F
     │
     ├──▸  GRINDER     GOG & Epic install engine — feeds games back into CNGM
     │
-    ├──▸  EmuLatte ◈  ROM library manager — emulation counterpart to CNGM
+    ├──▸  EmuLatte ◈  ROM library manager — exports games into CNGM's library
     │
     └──▸  CN Clock    Floating desktop clock — shows art from CNGM + EmuLatte
 ```
 
-CNGM and CREMA can each optionally read EmuLatte's library and surface your ROMs under an **Emulation** category — no import, no duplication. They read EmuLatte's DB directly and use the same launch commands it stores. Management always stays in EmuLatte.
+Games reach Cafe Neurotico by **exporting them from inside EmuLatte** — the `ADD TO CAFENEUROTICO` button on the game page. CNGM does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in CNGM's `games.db` with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from CNGM or CREMA exactly as it does here.
+
+Management of the ROM collection always stays in EmuLatte. Export is one-directional and re-exporting an already-exported game updates it in place.
 
 All data lives in `GameManagerConfig/EmuLatte/` — backs up with everything else.
 

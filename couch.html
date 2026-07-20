@@ -9,15 +9,22 @@
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
     @font-face { font-family: 'PressStart2P'; src: url('assets/fonts/PressStart2P.ttf') format('truetype'); }
+    /* Era faces for the "Systems" themes — each retro-OS theme names one and applyTheme() puts it in --ui-font. */
+    @font-face { font-family: 'PxPlus IBM VGA8';  src: url('assets/fonts/PxPlusIBMVGA8.ttf')  format('truetype'); }
+    @font-face { font-family: 'C64 Pro Mono';     src: url('assets/fonts/C64ProMono.ttf')     format('truetype'); }
+    @font-face { font-family: 'Chicago';          src: url('assets/fonts/ChicagoFLF.ttf')     format('truetype'); }
+    @font-face { font-family: 'BigBlue Terminal'; src: url('assets/fonts/BigBlueTerminal.ttf') format('truetype'); }
+    @font-face { font-family: 'Inter';            src: url('assets/fonts/Inter.ttf')          format('truetype'); }
     :root {
       --bg: #1c120d; --bg_panel: #2a1c14; --bg_menu: #241813;
       --accent: #d4a373; --accent_menu: #d4a373;
       --text_main: #e8d9c5; --text_sec: #c9b8a3; --text_dim: #9c8674;
       --border: rgba(212,163,115,0.18); --border_solid: #8B5A2B;
+      --ui-font: 'Raleway', sans-serif;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
-    body { background: var(--bg); color: var(--text_main); font-family: 'Raleway', system-ui, sans-serif; user-select: none; overflow: hidden; }
+    body { background: var(--bg); color: var(--text_main); font-family: var(--ui-font); user-select: none; overflow: hidden; }
     button { font-family: inherit; cursor: pointer; }
     #screens { position: absolute; inset: 0; }   /* containing block for the .screen layers; CRT scales this for overscan safe-area */
     .screen { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -307,8 +314,8 @@
     body.retro .now-title { font-size: clamp(16px, 3vw, 30px); }
     body.retro .art-ph-eyebrow { font-size: clamp(7px, 5cqh, 14px); }
     body.retro .art-ph-cta { font-size: clamp(7px, 5cqh, 13px); }
-    /* keep long-form text in Raleway for legibility */
-    body.retro #gp-desc, body.retro #game-desc, body.retro .desc-box { font-family: 'Raleway', sans-serif; }
+    /* keep long-form text in the normal interface font for legibility */
+    body.retro #gp-desc, body.retro #game-desc, body.retro .desc-box { font-family: var(--ui-font); }
 
     /* ── Cover frame: full natural proportion + faux CD jewel case (ported from desktop EmuLatte) ──
        Window from jewelcase.png's alpha: left 11.19% / top 2.59% / w 84.14% / h 95.61%. */

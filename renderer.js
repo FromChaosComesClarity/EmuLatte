@@ -1491,6 +1491,40 @@ function closeNowPlaying() {
     document.getElementById('modal-now-playing')?.classList.remove('active');
 }
 
+// Stopping the trailer is part of closing it — hiding the overlay alone leaves the audio playing.
+function closeTrailerPlayer() {
+    closeModal('modal-trailer-player');
+    const vid = document.getElementById('detail-video-player');
+    if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
+}
+
+// Escape must run a modal's real close path, not just drop the .active class: some of these own
+// state that a bare hide would strand — a playing <video>, a pending confirm Promise, a timer.
+// Anything not listed here holds no such state and is fine to simply hide.
+const MODAL_CLOSERS = {
+    'modal-trailer-player': closeTrailerPlayer,
+    'modal-now-playing':    closeNowPlaying,
+    // Resolve the awaiting caller as a cancel, exactly like the backdrop click does.
+    'modal-dialog':         () => document.getElementById('modal-dialog-cancel').onclick?.(),
+};
+
+// The topmost overlay, not merely the first in the document: the confirm dialog is last in the
+// DOM but has z-index 30000, so a naive querySelector would close the modal underneath it.
+function topmostActiveModal() {
+    const open = [...document.querySelectorAll('.modal-overlay.active')];
+    if (!open.length) return null;
+    const z = el => parseInt(getComputedStyle(el).zIndex, 10) || 0;
+    return open.reduce((a, b) => (z(b) >= z(a) ? b : a));
+}
+
+function closeTopmostModal() {
+    const el = topmostActiveModal();
+    if (!el) return false;
+    const closer = MODAL_CLOSERS[el.id];
+    if (closer) closer(); else el.classList.remove('active');
+    return true;
+}
+
 let toastTimer = null;
 function showLaunchToast(msg, cmd, label) {
     const toast  = document.getElementById('launch-toast');
@@ -2213,11 +2247,35 @@ const EL_THEMES = {
     "BREWBALANCE LIGHT": {bg:"#efe6d7",bg_panel:"rgba(243, 235, 221, 0.78)",bg_menu:"#f3ebdd",accent:"#b5651d",text_main:"#2a241c",text_sec:"#7c6b53",text_dim:"#9a8a72",border:"rgba(181, 101, 29, 0.18)",border_solid:"#ddceb4"},
     "MOCHA": {bg:"#1a1210",bg_panel:"rgba(36, 24, 19, 0.6)",bg_menu:"#241813",accent:"#c98a5e",text_main:"#f0dfcf",text_sec:"#c7a98f",text_dim:"#8a6a54",border:"rgba(201, 138, 94, 0.2)",border_solid:"#4a3226"},
     "FLAT WHITE": {bg:"#f6f1e9",bg_panel:"rgba(253, 250, 244, 0.78)",bg_menu:"#fdfaf4",accent:"#8a5a2b",text_main:"#33291f",text_sec:"#6b5a48",text_dim:"#a4917a",border:"rgba(138, 90, 43, 0.18)",border_solid:"#e0d4c0"},
-    "MATCHA": {bg:"#12160f",bg_panel:"rgba(26, 32, 21, 0.6)",bg_menu:"#1a2015",accent:"#9bbf6b",text_main:"#e6efd8",text_sec:"#b3c79b",text_dim:"#6d8556",border:"rgba(155, 191, 107, 0.2)",border_solid:"#33422a"}
+    "MATCHA": {bg:"#12160f",bg_panel:"rgba(26, 32, 21, 0.6)",bg_menu:"#1a2015",accent:"#9bbf6b",text_main:"#e6efd8",text_sec:"#b3c79b",text_dim:"#6d8556",border:"rgba(155, 191, 107, 0.2)",border_solid:"#33422a"},
+    // ── Systems (imported from CafeNeurotico) — retro-OS palettes; each carries its era
+    //    `font`, applied as --ui-font while that theme is active. ────────────────────
+    "MS-DOS": {bg:"#0a0a0a",bg_panel:"rgba(0, 0, 0, 0.6)",bg_menu:"#000000",accent:"#ffffff",text_main:"#d2d2d2",text_sec:"#a2a2a2",text_dim:"#7e7e7e",border:"rgba(255, 255, 255, 0.25)",border_solid:"#4a4a4a",font:"PxPlus IBM VGA8"},
+    "COMMODORE 64": {bg:"#0000aa",bg_panel:"rgba(0, 0, 170, 0.6)",bg_menu:"#0000aa",accent:"#b9b6ff",text_main:"#d0ccff",text_sec:"#9e9beb",text_dim:"#7976db",border:"rgba(185, 182, 255, 0.25)",border_solid:"#4341c5",font:"C64 Pro Mono"},
+    "MACOS 1.0": {bg:"#ffffff",bg_panel:"rgba(255, 255, 255, 0.6)",bg_menu:"#ffffff",accent:"#000000",text_main:"#000000",text_sec:"#3d3d3d",text_dim:"#6b6b6b",border:"rgba(0, 0, 0, 0.25)",border_solid:"#adadad",font:"Chicago"},
+    "CLASSIC MACOS": {bg:"#cfcfcf",bg_panel:"rgba(228, 228, 228, 0.6)",bg_menu:"#e4e4e4",accent:"#2b2b9c",text_main:"#000000",text_sec:"#323232",text_dim:"#575757",border:"rgba(43, 43, 156, 0.25)",border_solid:"#8d8d8d",font:"Chicago"},
+    "WINDOWS 95": {bg:"#c0c0c0",bg_panel:"rgba(192, 192, 192, 0.6)",bg_menu:"#c0c0c0",accent:"#000080",text_main:"#000000",text_sec:"#2e2e2e",text_dim:"#515151",border:"rgba(0, 0, 128, 0.25)",border_solid:"#838383",font:"Inter"},
+    "AMIGA WORKBENCH": {bg:"#a6a6a6",bg_panel:"rgba(178, 178, 178, 0.6)",bg_menu:"#b2b2b2",accent:"#2b5db0",text_main:"#000000",text_sec:"#282828",text_dim:"#464646",border:"rgba(43, 93, 176, 0.25)",border_solid:"#717171",font:"BigBlue Terminal"},
+    "WINDOWS XP": {bg:"#ece9d8",bg_panel:"rgba(244, 243, 239, 0.6)",bg_menu:"#f4f3ef",accent:"#2f6fd6",text_main:"#000000",text_sec:"#393834",text_dim:"#63625b",border:"rgba(47, 111, 214, 0.25)",border_solid:"#a09e93",font:"Inter"},
+    "BEOS": {bg:"#d8d8d0",bg_panel:"rgba(234, 234, 226, 0.6)",bg_menu:"#eaeae2",accent:"#2855b0",text_main:"#000000",text_sec:"#343432",text_dim:"#5b5b57",border:"rgba(40, 85, 176, 0.25)",border_solid:"#93938d",font:"Inter"},
+    "NEXTSTEP": {bg:"#dedede",bg_panel:"rgba(255, 255, 255, 0.6)",bg_menu:"#ffffff",accent:"#26408b",text_main:"#000000",text_sec:"#353535",text_dim:"#5d5d5d",border:"rgba(38, 64, 139, 0.25)",border_solid:"#979797",font:"Inter"},
+    "ZX SPECTRUM": {bg:"#000000",bg_panel:"rgba(0, 0, 0, 0.6)",bg_menu:"#000000",accent:"#00d8d8",text_main:"#ffffff",text_sec:"#c2c2c2",text_dim:"#949494",border:"rgba(0, 216, 216, 0.25)",border_solid:"#525252",font:"BigBlue Terminal"},
+    "ATARI ST": {bg:"#ffffff",bg_panel:"rgba(255, 255, 255, 0.6)",bg_menu:"#ffffff",accent:"#007000",text_main:"#000000",text_sec:"#3d3d3d",text_dim:"#6b6b6b",border:"rgba(0, 112, 0, 0.25)",border_solid:"#adadad",font:"PxPlus IBM VGA8"},
+    "AMBER CRT": {bg:"#140d00",bg_panel:"rgba(20, 13, 0, 0.6)",bg_menu:"#140d00",accent:"#ffcc44",text_main:"#ffb000",text_sec:"#c78900",text_dim:"#9c6c00",border:"rgba(255, 204, 68, 0.25)",border_solid:"#5f4100",font:"PxPlus IBM VGA8"},
+    "GREEN CRT": {bg:"#001400",bg_panel:"rgba(0, 20, 0, 0.6)",bg_menu:"#001400",accent:"#7dff9e",text_main:"#37ff6a",text_sec:"#2ac751",text_dim:"#209c3d",border:"rgba(125, 255, 158, 0.25)",border_solid:"#125f22",font:"PxPlus IBM VGA8"},
+    "TELETEXT": {bg:"#000000",bg_panel:"rgba(0, 0, 0, 0.6)",bg_menu:"#000000",accent:"#ffff00",text_main:"#ffffff",text_sec:"#c2c2c2",text_dim:"#949494",border:"rgba(255, 255, 0, 0.25)",border_solid:"#525252",font:"BigBlue Terminal"},
+    "WINDOWS 3.1": {bg:"#c0c0c0",bg_panel:"rgba(192, 192, 192, 0.6)",bg_menu:"#c0c0c0",accent:"#000080",text_main:"#000000",text_sec:"#2e2e2e",text_dim:"#515151",border:"rgba(0, 0, 128, 0.25)",border_solid:"#838383",font:"Inter"},
+    "OS/2 WARP": {bg:"#cececa",bg_panel:"rgba(214, 214, 208, 0.6)",bg_menu:"#d6d6d0",accent:"#00337f",text_main:"#000000",text_sec:"#313130",text_dim:"#575755",border:"rgba(0, 51, 127, 0.25)",border_solid:"#8c8c89",font:"Inter"},
+    "IBM 3270": {bg:"#051005",bg_panel:"rgba(5, 16, 5, 0.6)",bg_menu:"#051005",accent:"#66ff66",text_main:"#33cc33",text_sec:"#289f28",text_dim:"#207d20",border:"rgba(102, 255, 102, 0.25)",border_solid:"#144c14",font:"BigBlue Terminal"},
+    "SOLARIS CDE": {bg:"#aeb6c2",bg_panel:"rgba(188, 196, 208, 0.6)",bg_menu:"#bcc4d0",accent:"#33518a",text_main:"#000000",text_sec:"#2a2c2f",text_dim:"#494c51",border:"rgba(51, 81, 138, 0.25)",border_solid:"#767c84",font:"Inter"},
+    "RISC OS": {bg:"#d7d7c8",bg_panel:"rgba(232, 232, 220, 0.6)",bg_menu:"#e8e8dc",accent:"#005a9c",text_main:"#000000",text_sec:"#343430",text_dim:"#5a5a54",border:"rgba(0, 90, 156, 0.25)",border_solid:"#929288",font:"Inter"},
+    "GEOS": {bg:"#ffffff",bg_panel:"rgba(255, 255, 255, 0.6)",bg_menu:"#ffffff",accent:"#000000",text_main:"#000000",text_sec:"#3d3d3d",text_dim:"#6b6b6b",border:"rgba(0, 0, 0, 0.25)",border_solid:"#adadad",font:"Chicago"}
 };
 
 const EL_THEME_CATEGORIES = {
-    "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","WIN XP","OAKANIZER DARK"],
+    // "WIN XP" is retired from the picker (superseded by the Systems family's "WINDOWS XP")
+    // but stays defined in EL_THEMES so configs still set to it keep resolving.
+    "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","OAKANIZER DARK"],
     "BrewBalance": ["BREWBALANCE DARK","BREWBALANCE LIGHT","MOCHA","FLAT WHITE","MATCHA"],
     "Light & Minimal": ["PAPER","SOLARIZED LIGHT","CATPPUCCIN LATTE","GITHUB LIGHT","GRUVBOX LIGHT","ROSÉ PINE DAWN","NORD LIGHT","DAYBREAK","OAKANIZER LIGHT"],
     "Gaming Legends": ["GAME BOY DMG","PIP BOY","SEVASTOPOL","RIP AND TEAR CLASSIC","SUPER BROTHERS","GREEN HILL","NES","SNES","BLOODBORNE","METROID PRIME","SILENT HILL","DIABLO","HALF-LIFE","SHOVEL KNIGHT"],
@@ -2225,14 +2283,18 @@ const EL_THEME_CATEGORIES = {
     "Linux Ricing": ["DRACULA","GRUVBOX","NORD","SOLARIZED DARK","CATPPUCCIN FRAPPÉ","CATPPUCCIN MACCHIATO","CATPPUCCIN MOCHA","TOKYO NIGHT","EVERFOREST","ROSÉ PINE","OXOCARBON","MATERIAL DARK"],
     "Sci-Fi Universes": ["N7","TRON LEGACY","DEAD SPACE","COLONY SHIP","NECROMORPH"],
     "Horror Realm": ["CRIMSON PEAK","LAKESIDE CURSE","THE BACKROOMS"],
-    "PSIII Colors": ["PSIII CLASSIC","PSIII RED","PSIII GREEN","PSIII BLUE","PSIII PURPLE","PSIII GOLD","PSIII SILVER"]
+    "PSIII Colors": ["PSIII CLASSIC","PSIII RED","PSIII GREEN","PSIII BLUE","PSIII PURPLE","PSIII GOLD","PSIII SILVER"],
+    "Systems": ["MS-DOS","COMMODORE 64","MACOS 1.0","CLASSIC MACOS","WINDOWS 95","AMIGA WORKBENCH","WINDOWS XP","BEOS","NEXTSTEP","ZX SPECTRUM","ATARI ST","AMBER CRT","GREEN CRT","TELETEXT","WINDOWS 3.1","OS/2 WARP","IBM 3270","SOLARIS CDE","RISC OS","GEOS"]
 };
 
 function applyTheme(name, save = true) {
     const t = EL_THEMES[name];
     if (!t) return;
     const root = document.documentElement;
-    Object.keys(t).forEach(k => root.style.setProperty(`--${k}`, t[k]));
+    // `font` is not a color token — a Systems theme carries its era face here and it becomes
+    // --ui-font. Always reset it so switching back to a normal theme restores Raleway.
+    Object.keys(t).forEach(k => { if (k !== 'font') root.style.setProperty(`--${k}`, t[k]); });
+    root.style.setProperty('--ui-font', t.font ? `'${t.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
     _activeTheme = name;
     if (save) {
         window.api.setSetting('el_theme', name);
@@ -2691,11 +2753,7 @@ function wireUI() {
     });
 
     document.getElementById('btn-close-yt-search').addEventListener('click', () => closeModal('modal-trailer-search'));
-    document.getElementById('btn-close-player').addEventListener('click', () => {
-        closeModal('modal-trailer-player');
-        const vid = document.getElementById('detail-video-player');
-        vid.pause(); vid.removeAttribute('src'); vid.load();
-    });
+    document.getElementById('btn-close-player').addEventListener('click', closeTrailerPlayer);
 
     window.api.onDownloadProgress(pct => {
         const fill = document.getElementById('dl-progress-fill');
@@ -3785,11 +3843,20 @@ function wireUI() {
     // Manage Systems reachable from the hub (close Settings first so two blurred modals don't stack)
     document.getElementById('btn-settings-manage-systems').addEventListener('click', () => { closeModal('modal-settings'); openSystemsModal(); });
 
+    // About — the CN/EL rail badge. Escape is handled by the global keydown handler below;
+    // like the other modals here, the backdrop is not click-to-close.
+    document.getElementById('btn-about').addEventListener('click', () => openModal('modal-about'));
+    document.getElementById('btn-close-about').addEventListener('click', () => closeModal('modal-about'));
+    // Stamp the shipped version in, straight from package.json via app.getVersion().
+    window.api.getAppVersion?.().then(v => {
+        const el = document.getElementById('about-version');
+        if (el && v) el.textContent = `VERSION ${v}`;
+    }).catch(() => {});
+
     // Keyboard
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
-            const open = document.querySelector('.modal-overlay.active');
-            if (open) { open.classList.remove('active'); return; }
+            if (closeTopmostModal()) return;
             if (currentView === 'view-gamepage') { switchView('view-gallery'); renderGallery(getFilteredGames()); }
         }
         if (e.key === 'ArrowLeft'  && document.getElementById('modal-slideshow').classList.contains('active')) {

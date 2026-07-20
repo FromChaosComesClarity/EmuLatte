@@ -280,6 +280,9 @@ function enterCouch(win) {
 }
 function exitCouch(win) { if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
 const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
+// Shipped version, straight from package.json, so the About dialog can never drift from the build.
+ipcMain.handle('get-app-version', () => { try { return app.getVersion(); } catch { return ''; } });
+
 ipcMain.handle('enter-couch-mode', e => { enterCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 ipcMain.handle('exit-couch-mode', e => { exitCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 // Pull Couch Mode back to the foreground after a launched game exits / the return combo fires.
@@ -955,6 +958,9 @@ ipcMain.handle('ra-list-remaps', () => {
 });
 ipcMain.handle('ra-remap-toggle', (_, file, enable) => {
     try {
+        // Same containment guard as ra-remap-delete below: only touch paths inside the remaps folder.
+        const dir = path.resolve(remapsDir());
+        if (!path.resolve(file).startsWith(dir)) return { ok: false, error: 'Refusing to rename outside the remaps folder.' };
         const target = enable ? file.replace(/\.disabled$/i, '') : (/\.disabled$/i.test(file) ? file : file + '.disabled');
         if (target !== file) fs.renameSync(file, target);
         return { ok: true, path: target };
