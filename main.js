@@ -238,6 +238,8 @@ app.whenReady().then(() => {
             PRIMARY KEY (ra_game_id, ach_id)
         )`).run();
 
+        rehomeArtPaths();
+
         const raVariant = detectRetroArch();
         db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', raVariant);
     } catch (err) {
@@ -296,7 +298,9 @@ ipcMain.handle('open-user-manual', event => {
         frame: false,
         backgroundColor: '#2C1E16',
         title: 'EmuLatte User Manual',
-        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+        // No preload: the manual is a static local page that uses no IPC. It only needs
+        // localStorage (to read el_theme_cache) and window.close(), both of which work without one.
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
     userManualWin.setMenu(null);
     userManualWin.loadFile('usermanual.html');
@@ -3081,6 +3085,52 @@ ipcMain.handle('open-manual-viewer', (event, opts = {}) => {
     manualWin.on('closed', () => { discardManualCache(manualWin?._cachePath); manualWin = null; });
     return { ok: true };
 });
+
+// Art paths are stored absolute, and baseDir follows the AppImage. Restoring a backup into a
+// different folder (or onto another machine, or under a different username) therefore puts the
+// image files in the right place while every row still points at the *old* absolute path, and
+// all artwork silently disappears. Re-point anything that used to live in some EmuLatte
+// images/<subdir>/ at the current one.
+//
+// Only paths that still resolve to a real file under the current imagesDir are rewritten, so a
+// user-picked local image kept outside the config folder is left exactly as it is.
+function rehomeArtPaths() {
+    const FIELDS = ['cover', 'hero', 'logo', 'screenshot'];
+    const SUBDIRS = ['covers', 'heroes', 'logos', 'screenshots'];
+
+    const rehomeOne = p => {
+        if (!p) return p;
+        if (p.startsWith(imagesDir)) return p;                       // already local
+        const norm = p.replace(/\\/g, '/');                          // tolerate Windows-style separators
+        const m = norm.match(new RegExp(`/images/(${SUBDIRS.join('|')})/([^/]+)$`));
+        if (!m) return p;                                            // not one of ours — leave alone
+        const candidate = path.join(imagesDir, m[1], m[2]);
+        return fs.existsSync(candidate) ? candidate : p;             // only if the file really is there
+    };
+
+    let changed = 0;
+    try {
+        const rows = db.prepare('SELECT id, cover, hero, logo, screenshot FROM games').all();
+        const upd = db.prepare('UPDATE games SET cover=?, hero=?, logo=?, screenshot=? WHERE id=?');
+        const tx = db.transaction(() => {
+            for (const r of rows) {
+                const next = {};
+                for (const f of FIELDS) {
+                    // screenshot holds a pipe-delimited list; the rest are single paths.
+                    next[f] = f === 'screenshot'
+                        ? (r[f] ? r[f].split('|').map(rehomeOne).join('|') : r[f])
+                        : rehomeOne(r[f]);
+                }
+                if (FIELDS.some(f => next[f] !== r[f])) {
+                    upd.run(next.cover, next.hero, next.logo, next.screenshot, r.id);
+                    changed++;
+                }
+            }
+        });
+        tx();
+    } catch (e) { console.error('art re-home failed:', e.message); return; }
+    if (changed) console.log(`Re-homed art paths for ${changed} game(s) after a move/restore.`);
+}
 
 // Find (and optionally delete) managed art/trailers no longer referenced by any game.
 ipcMain.handle('clean-unused-media', (_, dryRun = true) => {
