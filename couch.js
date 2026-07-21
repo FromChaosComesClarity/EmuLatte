@@ -90,7 +90,26 @@ async function init() {
     showScreen('start');
     applyStartMode();   // reflect the remembered carousel/tiles view
     resetIdle();
+    couchReady = true;
+    window.api.signalReady?.();   // releases a --game=<id> that arrived before the library loaded (start-in-couch)
 }
+
+// Opened with --game=<id> while Couch Mode is up. Stay in Couch Mode — the user is across the
+// room with a pad — and just navigate to the couch game page rather than dropping them onto the
+// desktop UI. Ignored while a game is running, so a stray click can't steal the sleep screen.
+let couchReady = false;
+window.api.onOpenGame?.(id => {
+    const tryOpen = (attempt = 0) => {
+        if (gameRunning) return;
+        if (couchReady && gamesById.has(Number(id))) {
+            wokeSaver(); closeMenu(); closeOSK(); closeInfo();
+            openGamepage(Number(id));
+            return;
+        }
+        if (attempt < 20) setTimeout(() => tryOpen(attempt + 1), 250);
+    };
+    tryOpen();
+});
 let gpLayout = 'xbox';
 function applyGamepadLayout(layout) {   // paint every .gp-glyph with the chosen layout's mask image
     gpLayout = GP_GLYPHS[layout] ? layout : 'xbox';

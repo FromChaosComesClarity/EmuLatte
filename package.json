@@ -1,6 +1,6 @@
 {
   "name": "emulatte_electron_build",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "EmuLatte by Cafe Neurotico",
   "main": "main.js",
   "scripts": {

@@ -39,6 +39,7 @@ const ffmpegPath     = path.join(binDir, 'ffmpeg');
 const ytDlpConfigPath = path.join(binDir, 'yt-dlp.conf');
 
 let db;
+let mainWin = null;   // the library/couch window; not the user manual or any other child window
 
 function getSavedBounds() {
     try {
@@ -66,6 +67,8 @@ function createWindow() {
         }
     });
     win.setMenu(null);
+    mainWin = win;
+    win.on('closed', () => { if (mainWin === win) mainWin = null; });
     if (shouldStartCouch()) enterCouch(win); else win.loadFile('index.html');
 
     win.on('close', () => {
@@ -92,9 +95,13 @@ const gameIdFromArgv = (argv) => {
 };
 let pendingGameId = gameIdFromArgv(process.argv);
 
+// Always the library/couch window: the user manual opens its own frameless window with no preload,
+// so getAllWindows()[0] is not safe to assume here.
+const libraryWindow = () => (mainWin && !mainWin.isDestroyed()) ? mainWin : null;
+
 function openGameInWindow(id) {
     if (!id) return;
-    const w = BrowserWindow.getAllWindows()[0];
+    const w = libraryWindow();
     if (!w) return;
     if (w.isMinimized()) w.restore();
     w.focus();
@@ -106,7 +113,7 @@ if (!gotLock) {
     app.quit();
 } else {
     app.on('second-instance', (_e, argv) => {
-        const w = BrowserWindow.getAllWindows()[0];
+        const w = libraryWindow();
         if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
         openGameInWindow(gameIdFromArgv(argv));
     });
@@ -308,7 +315,7 @@ function enterCouch(win) {
     if (target) { win.setFullScreen(false); win.setBounds(target.bounds); }   // move first (honoured on X11/Win/macOS)
     win.setFullScreen(true);
     win.loadFile('couch.html');
-    win.show();   // couch.js doesn't send 'renderer-ready'; show immediately (esp. start-in-couch)
+    win.show();   // show immediately (esp. start-in-couch) rather than waiting on couch.js's own 'renderer-ready'
 }
 function exitCouch(win) { if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
 const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
