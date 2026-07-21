@@ -1308,6 +1308,17 @@ function openImageLightbox(src) {
     document.body.appendChild(ov);
 }
 
+// Opened with --game=<id> (the Clock links its artwork back here). If the library hasn't
+// finished loading, wait for it rather than silently doing nothing.
+window.api.onOpenGame?.(id => {
+    const tryOpen = (attempt = 0) => {
+        const game = gamesById?.get(Number(id));
+        if (game) { openGamePage(game); return; }
+        if (attempt < 20) setTimeout(() => tryOpen(attempt + 1), 250);
+    };
+    tryOpen();
+});
+
 function openGamePage(game) {
     currentGame = game;
 

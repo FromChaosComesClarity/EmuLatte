@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
     signalReady: () => ipcRenderer.send('renderer-ready'),
+    onOpenGame: (cb) => ipcRenderer.on('open-game', (_, id) => cb(id)),
     setZoom:     (f) => webFrame.setZoomFactor(f),
     getAppVersion:  () => ipcRenderer.invoke('get-app-version'),
     openUserManual: () => ipcRenderer.invoke('open-user-manual'),
