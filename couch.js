@@ -715,21 +715,25 @@ const SYS_LOGOS = {
 };
 const sysLogo = short => SYS_LOGOS[short] ? encodeURI('assets/logos/' + SYS_LOGOS[short]) : '';   // encodeURI handles spaces in filenames
 function buildCategories() {
+    const prevKey = categories[catIndex]?.key;   // rebuilds can add/remove a row (RECENT, playlists) — keep the selection put
     const counts = {}; games.forEach(g => counts[g.system_id] = (counts[g.system_id] || 0) + 1);
     const sys = systems.filter(s => counts[s.id]).map(s => ({ key: 'sys:' + s.id, label: s.name, count: counts[s.id], logo: sysLogo(s.short_name) }))
                        .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
     categories = [{ key: 'all', label: 'ALL GAMES', count: games.length }];
     const favs = games.filter(g => g.fav).length;
     if (favs) categories.push({ key: 'favs', label: 'FAVOURITES', count: favs });
-    categories.push({ key: 'recent', label: 'RECENT', count: Math.min(games.filter(g => g.last_played).length, 60) });
+    const played = games.filter(g => g.last_played > 0).length;
+    if (played) categories.push({ key: 'recent', label: 'RECENT', count: Math.min(played, 60) });
     categories = categories.concat(sys);
     // Playlists last (so a left-wrap from the first item lands on them) — tagged for the "Playlist" subtitle
     const pls = playlists.map(p => ({ key: 'pl:' + p.id, label: p.name, count: (playlistGames[p.id] || []).length, type: 'playlist', plId: p.id }));
     categories = categories.concat(pls);
+    if (prevKey) { const i = categories.findIndex(c => c.key === prevKey); if (i >= 0) catIndex = i; }
 }
 function gamesInCategory(key) {
     if (key === 'favs')   return games.filter(g => g.fav);
-    if (key === 'recent') return [...games].sort((a, b) => (b.last_played || 0) - (a.last_played || 0)).slice(0, 60);
+    if (key === 'recent') return games.filter(g => g.last_played > 0)          // never-played ROMs would otherwise pad this out to 60
+                                      .sort((a, b) => b.last_played - a.last_played).slice(0, 60);
     if (key.startsWith('sys:')) { const id = Number(key.slice(4)); return games.filter(g => g.system_id === id); }
     if (key.startsWith('pl:'))  { const ids = new Set(playlistGames[Number(key.slice(3))] || []); return games.filter(g => ids.has(g.id)); }
     return games;
@@ -936,6 +940,7 @@ function enterWall() {
 function wallGamesList() {
     let list = gamesInCategory(wallFilter);
     if (wallSearch) { const q = wallSearch.toLowerCase(); list = list.filter(g => (g.title || '').toLowerCase().includes(q)); }
+    if (wallFilter === 'recent' && couchSort === 'alpha') return list;   // RECENT is a recency list — don't let the default A–Z undo it
     return sortCouch(list);
 }
 const _isScraped = g => !!(g.cover || g.logo || g.screenshot || g.description);   // mirrors renderer isScraped
@@ -1227,6 +1232,7 @@ async function doLaunch(id, opts) {
     clearTimeout(saverTimer); clearTimeout(_nowTimer);   // pause the screensaver / any toast while a game runs
     enterGameRunning(g);
     const r = await window.api.launchGameEx(id, opts);
+    if (r && r.ok) { g.last_played = Date.now(); buildCategories(); }   // mirror the DB stamp so RECENT is right without a reload
     if (!r || !r.ok) {   // failed to launch — drop out of the now-playing screen and surface the error briefly
         exitGameRunning();
         showNow(g); $('couch-now').querySelector('.now-label').textContent = 'COULD NOT LAUNCH';

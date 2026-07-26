@@ -100,7 +100,10 @@ function getFilteredGames() {
         games = allGames;
         if      (currentFilter === 'favs')   games = games.filter(g => g.fav);
         else if (currentFilter === 'want')   games = games.filter(g => g.want);
-        else if (currentFilter === 'recent') games = [...games].sort((a,b) => (b.last_played||0)-(a.last_played||0)).slice(0,50);
+        // Only games that were actually played — otherwise never-played ROMs (last_played 0) pad the list out to 50.
+        else if (currentFilter === 'recent') games = games.filter(g => g.last_played > 0)
+                                                          .sort((a,b) => b.last_played - a.last_played)
+                                                          .slice(0,50);
         else if (currentFilter !== 'all')    games = games.filter(g => g.system_id === Number(currentFilter));
     }
     const q = document.getElementById('gallery-search')?.value.trim().toLowerCase();
@@ -114,6 +117,9 @@ function getFilteredGames() {
         );
     }
     if (currentCategory !== 'all') games = games.filter(g => systemCategory(g.system_short) === currentCategory);
+    // RECENTLY PLAYED is a recency list — keep that order unless a sort was explicitly picked
+    // (the default A–Z would otherwise re-alphabetise it and hide the "recent" part entirely).
+    if (currentFilter === 'recent' && currentSort === 'alpha') return games;
     return sortGames(games);
 }
 
@@ -1082,7 +1088,7 @@ function smSelectSlot(i) {
 async function smLaunch(opts) {
     if (!_smGame) return;
     const r = await window.api.launchGameEx(_smGame.id, opts);
-    if (r.ok) { closeModal('modal-save-manager'); showNowPlaying(allGames.find(g => g.id === _smGame.id) || _smGame); }
+    if (r.ok) { markPlayed(_smGame.id); closeModal('modal-save-manager'); showNowPlaying(allGames.find(g => g.id === _smGame.id) || _smGame); }
     else showLaunchToast(r.error || 'Launch failed', null);
 }
 
@@ -1196,23 +1202,29 @@ function renderList(games) {
 }
 
 // ── HERO CYCLE ────────────────────────────────────────────────────────────────
+const shuffled = arr => {   // Fisher–Yates, in place
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    return arr;
+};
 function startHeroCycle() {
     clearInterval(heroCycleTimer);
     const img = document.getElementById('hero-kb-img');
     const nameEl = document.getElementById('hero-game-name');
     const games = getFilteredGames().filter(g => g.hero);
-    heroQueue = games.length ? games : allGames.filter(g => g.hero);
+    // Random pick from whatever the gallery is currently showing (a shuffled pass, so nothing
+    // repeats until every game has had a turn — then it reshuffles for a fresh order).
+    heroQueue = shuffled(games.length ? games : allGames.filter(g => g.hero));
     if (!heroQueue.length) { img.style.opacity = 0; nameEl.textContent = ''; return; }
     let i = 0;
     const show = () => {
-        const g = heroQueue[i % heroQueue.length];
+        if (i >= heroQueue.length) { shuffled(heroQueue); i = 0; }
+        const g = heroQueue[i++];
         img.style.opacity = 0;
         setTimeout(() => {
             img.src = g.hero;
             img.style.opacity = 1;
             nameEl.textContent = g.title;
         }, 500);
-        i++;
     };
     show();
     heroCycleTimer = setInterval(show, 6000);
@@ -1456,8 +1468,20 @@ function closeGamePage() { switchView(_bgView || 'view-gallery'); renderCurrentV
 async function launchGame(id) {
     const result = await window.api.launchGame(id);
     if (!result.ok) { showLaunchToast(result.error || 'No launch command configured', result.cmd); return; }
+    markPlayed(id);
     const game = allGames.find(g => g.id === id);
     if (game) showNowPlaying(game);
+}
+
+// The launch handlers stamp last_played in the DB; mirror it into the in-memory copies so
+// RECENTLY PLAYED and the "Last Played" sort are right straight away, with no reload.
+function markPlayed(id) {
+    const t = Date.now();
+    const g = gamesById.get(id);                        if (g) g.last_played = t;
+    const p = currentPlaylistGames.find(x => x.id === id); if (p) p.last_played = t;   // playlist views hold their own rows
+    if (currentFilter === 'recent' || currentSort === 'played') {
+        if (currentView === 'view-gallery' || currentView === 'view-list') renderCurrentView();
+    }
 }
 
 // ── Now Playing popup (mirrors CafeNeurotico) ─────────────────────────────────
