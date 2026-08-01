@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('api', {
     repairDiscRefsGame:   (id) => ipcRenderer.invoke('repair-disc-refs-game', id),
     repairDiscRefsSystem: (id) => ipcRenderer.invoke('repair-disc-refs-system', id),
 
+    // ROM locations (re-point the library after the ROM folder/drive moves)
+    romLocations:        ()            => ipcRenderer.invoke('rom-locations'),
+    romRelocatePreview:  (from, to)    => ipcRenderer.invoke('rom-relocate-preview', from, to),
+    romRelocateApply:    (from, to, o) => ipcRenderer.invoke('rom-relocate-apply', from, to, o),
+
     // RetroArch launch settings (override editor)
     getRaOverride: (scope, refId) => ipcRenderer.invoke('get-ra-override', scope, refId),
     setRaOverride: (scope, refId, data) => ipcRenderer.invoke('set-ra-override', scope, refId, data),

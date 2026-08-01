@@ -1285,6 +1285,11 @@
               <div id="backup-status" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
               <div class="hint">Restore overwrites the current data and restarts EmuLatte. ROM paths &amp; RetroArch folders are machine-specific — use “Re-import Paths” after restoring on another computer.</div>
             </div>
+            <div class="tool-card" data-search="rom location path folder moved drive mount relocate re-point redirect missing broken external ssd usb">
+              <div class="tool-card-title">ROM Locations</div>
+              <div id="rom-locations-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+              <div class="hint">If your ROM folder or drive moved, re-point the library here — your art, favourites and play history are kept. Don’t re-scan for that: it re-imports the same ROMs as blank duplicates.</div>
+            </div>
             <div class="tool-card" data-search="library maintenance duplicate duplicates orphan unused images videos clean disk space remove">
               <div class="tool-card-title">Library Maintenance</div>
               <button id="btn-find-duplicates" style="width:100%;">Find Duplicate Games…</button>
@@ -1506,6 +1511,32 @@
     </div>
     <div class="modal-float-btns">
       <button id="btn-duplicates-close" class="btn-modal-x">✕</button>
+    </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: RELOCATE ROMS ──────────────────────────────────────────────── -->
+  <div id="modal-rom-relocate" class="modal-overlay">
+    <div class="modal-wrapper">
+    <div class="modal-box wide">
+      <div class="modal-hdr">
+        <div class="modal-title">Re-point ROM Folder</div>
+      </div>
+      <div class="ra-pane-hint">Rewrites where the library looks for these ROMs. Nothing is re-imported and no game is removed — art, favourites and play history stay exactly as they are.</div>
+      <label style="margin-top:10px;">Current folder</label>
+      <input id="relocate-old" type="text" readonly style="width:100%; opacity:.75;">
+      <label style="margin-top:10px;">New folder</label>
+      <div class="row">
+        <input id="relocate-new" type="text" placeholder="Choose where these ROMs live now…" style="flex:1;">
+        <button id="btn-relocate-browse">Browse…</button>
+      </div>
+      <div id="relocate-preview" style="margin-top:12px; font-size:12px; line-height:1.7;"></div>
+      <div class="row" style="margin-top:12px;">
+        <button id="btn-relocate-apply" style="flex:1; font-weight:900;" disabled>Re-point Library</button>
+      </div>
+    </div>
+    <div class="modal-float-btns">
+      <button id="btn-relocate-close" class="btn-modal-x">✕</button>
     </div>
     </div>
   </div>

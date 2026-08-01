@@ -2634,6 +2634,7 @@ function wireUI() {
         coresEl.textContent = allCores.length ? `${allCores.length} core${allCores.length !== 1 ? 's' : ''} scanned.` : '';
         document.getElementById('ra-config-status').textContent = '';
         refreshRaConfigInfo();
+        loadRomLocations();
         await loadCouchSettings();
         openModal('modal-settings');
     });
@@ -2860,6 +2861,7 @@ function wireUI() {
     });
     document.getElementById('btn-scan-import').addEventListener('click', async () => {
         const items = document.querySelectorAll('.scan-item-system');
+        if (!await confirmBulkImport(items)) return;
         let count = 0;
         for (const sel of items) {
             if (!sel.value) continue;
@@ -3380,7 +3382,8 @@ function wireUI() {
         btn.disabled = false;
         if (result.ok) {
             await loadCores();
-            statusEl.textContent = `${result.count} core${result.count !== 1 ? 's' : ''} found.`;
+            statusEl.textContent = `${result.count} core${result.count !== 1 ? 's' : ''} found.`
+                + (result.pruned ? ` ${result.pruned} missing core${result.pruned !== 1 ? 's' : ''} removed.` : '');
             statusEl.style.color = 'var(--accent)';
         } else {
             statusEl.textContent = result.error || 'Scan failed.';
@@ -3617,6 +3620,17 @@ function wireUI() {
         status.style.color = 'var(--accent)';
         status.textContent = res.ok ? `Deleted ${res.count} file${res.count !== 1 ? 's' : ''}, freed ${(res.bytes / 1048576).toFixed(1)} MB.` : (res.error || 'Failed.');
     });
+
+    // ── DATA: ROM LOCATIONS ──────────────────────────────────────────────────
+    document.getElementById('btn-relocate-close').addEventListener('click', () => closeModal('modal-rom-relocate'));
+    document.getElementById('btn-relocate-browse').addEventListener('click', async () => {
+        const dir = await window.api.selectDirectory();
+        if (!dir) return;
+        document.getElementById('relocate-new').value = dir;
+        refreshRelocatePreview();
+    });
+    document.getElementById('relocate-new').addEventListener('input', refreshRelocatePreview);
+    document.getElementById('btn-relocate-apply').addEventListener('click', applyRelocate);
 
     // ── DATA: DUPLICATE FINDER ───────────────────────────────────────────────
     document.getElementById('btn-find-duplicates').addEventListener('click', openDuplicatesModal);
@@ -4274,6 +4288,147 @@ function findDuplicateGroups() {
     }
     return groups.sort((a, b) => (a[0].title || '').localeCompare(b[0].title || ''));
 }
+// Guard for the folder-scan importer. Importing a whole drive into one system is how a moved ROM
+// drive gets "recovered" the wrong way: every game comes back as a metadata-less duplicate under the
+// new path, filed under whichever system was selected. If most of what's about to be imported is a
+// filename we already have somewhere else, say so and point at Re-point instead.
+async function confirmBulkImport(items) {
+    const picked = [...items].filter(sel => sel.value);
+    if (picked.length < 25) return true;
+
+    const baseOf = p => (p || '').split('/').pop().toLowerCase();
+    const known = new Map();   // basename -> dir of the copy already in the library
+    for (const g of allGames) {
+        if (g.rom_path) known.set(baseOf(g.rom_path), g.rom_path.slice(0, g.rom_path.lastIndexOf('/')));
+    }
+    let dupes = 0;
+    for (const sel of picked) {
+        const e = _scanEntries[Number(sel.dataset.idx)];
+        if (!e?.path) continue;
+        const dir = known.get(baseOf(e.path));
+        if (dir !== undefined && dir !== e.path.slice(0, e.path.lastIndexOf('/'))) dupes++;
+    }
+    const sysIds = new Set(picked.map(s => String(s.value)));
+    const sysName = sysIds.size === 1
+        ? (allSystems.find(s => String(s.id) === [...sysIds][0])?.name || 'one system')
+        : null;
+
+    if (dupes > picked.length / 2) {
+        return showConfirm(
+            `${dupes} of these ${picked.length} ROMs are already in your library from a different folder.\n\n`
+            + `If your ROM drive moved, importing them again creates blank duplicates — the copies you already have keep the art, favourites and play history.\n\n`
+            + `Close this and use Settings → Data → ROM Locations → Re-point instead.`,
+            'Import Anyway', true, 'Possible Duplicate Import');
+    }
+    if (sysName) {
+        return showConfirm(
+            `Import ${picked.length} ROMs into ${sysName}?\n\nThat is a lot for one system — check the folder and system are right.`,
+            'Import', false, 'Large Import');
+    }
+    return true;
+}
+
+// ── ROM LOCATIONS ────────────────────────────────────────────────────────────
+// One row per folder the library points at, so a moved drive is obvious at a glance: the row that
+// went missing is the one to re-point.
+let relocateFrom = null;
+
+async function loadRomLocations() {
+    const box = document.getElementById('rom-locations-list');
+    if (!box) return;
+    box.innerHTML = '<div class="hint">Checking…</div>';
+    const res = await window.api.romLocations();
+    if (!res.ok || !res.locations.length) {
+        box.innerHTML = '<div class="hint">No ROM folders in the library yet.</div>';
+        return;
+    }
+    box.innerHTML = '';
+    for (const loc of res.locations) {
+        const broken = loc.missing > 0;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:8px;';
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1; min-width:0;';
+        const p = document.createElement('div');
+        p.style.cssText = 'font-size:12px; word-break:break-all;' + (broken ? ' color:#ef5350;' : '');
+        p.textContent = loc.prefix;
+        const sub = document.createElement('div');
+        sub.style.cssText = 'font-size:11px; color:var(--text_dim); margin-top:2px;';
+        sub.textContent = broken
+            ? `${loc.missing} of ${loc.games} game${loc.games !== 1 ? 's' : ''} not found here`
+            : `${loc.games} game${loc.games !== 1 ? 's' : ''} — all found`;
+        info.append(p, sub);
+        const btn = document.createElement('button');
+        btn.textContent = broken ? 'Re-point…' : 'Move…';
+        if (broken) { btn.style.background = 'var(--accent)'; btn.style.color = 'var(--bg)'; btn.style.fontWeight = '900'; }
+        btn.addEventListener('click', () => openRelocateModal(loc.prefix));
+        row.append(info, btn);
+        box.appendChild(row);
+    }
+}
+
+function openRelocateModal(prefix) {
+    relocateFrom = prefix;
+    document.getElementById('relocate-old').value = prefix;
+    document.getElementById('relocate-new').value = '';
+    document.getElementById('relocate-preview').innerHTML = '';
+    document.getElementById('btn-relocate-apply').disabled = true;
+    openModal('modal-rom-relocate');
+}
+
+async function refreshRelocatePreview() {
+    const to = document.getElementById('relocate-new').value.trim();
+    const out = document.getElementById('relocate-preview');
+    const applyBtn = document.getElementById('btn-relocate-apply');
+    applyBtn.disabled = true;
+    if (!to || !relocateFrom) { out.innerHTML = ''; return; }
+    const res = await window.api.romRelocatePreview(relocateFrom, to);
+    if (!res.ok) {
+        out.innerHTML = `<span style="color:#ef5350;">${res.error}</span>`;
+        return;
+    }
+    const lines = [];
+    lines.push(`<b>${res.rows}</b> game${res.rows !== 1 ? 's' : ''} would be re-pointed.`);
+    if (res.rows) {
+        const colour = res.resolves === res.rows ? 'var(--accent)' : (res.resolves ? '#e6a23c' : '#ef5350');
+        lines.push(`<span style="color:${colour};"><b>${res.resolves}</b> of ${res.rows} would be found on disk afterwards.</span>`);
+    }
+    if (res.missing) {
+        lines.push(`<span style="color:var(--text_dim);">Not found at the new folder, e.g.:<br>${
+            res.unresolved.slice(0, 3).map(u => `<code style="font-size:10px;">${u}</code>`).join('<br>')}</span>`);
+    }
+    if (res.cfgKeys.length) lines.push(`<span style="color:var(--text_dim);">Also updates ${res.cfgKeys.length} RetroArch path setting${res.cfgKeys.length !== 1 ? 's' : ''} (${res.cfgKeys.join(', ')}).</span>`);
+    if (res.m3u)           lines.push(`<span style="color:var(--text_dim);">Also updates ${res.m3u} multi-disc playlist${res.m3u !== 1 ? 's' : ''}.</span>`);
+    out.innerHTML = lines.join('<br>');
+    applyBtn.disabled = res.rows === 0;
+}
+
+async function applyRelocate() {
+    const to = document.getElementById('relocate-new').value.trim();
+    if (!to || !relocateFrom) return;
+    const res0 = await window.api.romRelocatePreview(relocateFrom, to);
+    if (!res0.ok) { showAlert(res0.error, 'Re-point ROM Folder'); return; }
+    const warn = res0.missing
+        ? `\n\n${res0.missing} of ${res0.rows} would NOT be found at the new folder. You can re-point again afterwards.`
+        : '';
+    if (!await showConfirm(
+        `Re-point ${res0.rows} game${res0.rows !== 1 ? 's' : ''} to:\n${to}${warn}\n\nThe database is backed up first.`,
+        'Re-point', false, 'Re-point ROM Folder')) return;
+
+    const btn = document.getElementById('btn-relocate-apply');
+    btn.disabled = true; btn.textContent = 'Re-pointing…';
+    const res = await window.api.romRelocateApply(relocateFrom, to, {});
+    btn.textContent = 'Re-point Library';
+    if (!res.ok) { btn.disabled = false; showAlert(res.error || 'Failed.', 'Re-point ROM Folder'); return; }
+    await loadGames();
+    closeModal('modal-rom-relocate');
+    loadRomLocations();
+    renderCurrentView();
+    const extra = [res.cfgKeys ? `${res.cfgKeys} RetroArch path${res.cfgKeys !== 1 ? 's' : ''}` : null,
+                   res.m3u ? `${res.m3u} playlist${res.m3u !== 1 ? 's' : ''}` : null].filter(Boolean);
+    showLaunchToast(`Re-pointed ${res.rows} game${res.rows !== 1 ? 's' : ''}${extra.length ? ' + ' + extra.join(' + ') : ''}.`, null);
+}
+
 function openDuplicatesModal() {
     const groups = findDuplicateGroups();
     const body = document.getElementById('dup-list');
