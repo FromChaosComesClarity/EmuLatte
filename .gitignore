@@ -3,6 +3,7 @@ dist/
 *.AppImage
 *.AppImage.old
 .DS_Store
+.claude/
 assets/bin/
 assets/ss_dev.json
 assets/ss_dev.dat
