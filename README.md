@@ -12,11 +12,11 @@
 
 <br>
 
-[![Version 1.0](https://img.shields.io/badge/Version-1.0-D4A373?style=flat-square&labelColor=2C1E16)](https://github.com/shampoo-is-a-lie/EmuLatte/releases/latest)
+[![Version 1.0](https://img.shields.io/badge/Version-1.0-D4A373?style=flat-square&labelColor=2C1E16)](https://github.com/FromChaosComesClarity/EmuLatte/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-8B5A2B?style=flat-square&labelColor=2C1E16)](LICENSE)
-[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-D4A373?style=flat-square&labelColor=2C1E16)](https://github.com/shampoo-is-a-lie)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-D4A373?style=flat-square&labelColor=2C1E16)](https://github.com/FromChaosComesClarity)
 [![Built with Electron](https://img.shields.io/badge/Built%20with-Electron%2041-A47148?style=flat-square&labelColor=2C1E16)](https://electronjs.org)
-[![Part of CN Ecosystem](https://img.shields.io/badge/Part%20of-Cafe%20Neurotico-D4A373?style=flat-square&labelColor=432818)](https://github.com/shampoo-is-a-lie)
+[![Part of CN Ecosystem](https://img.shields.io/badge/Part%20of-Cafe%20Neurotico-D4A373?style=flat-square&labelColor=432818)](https://github.com/FromChaosComesClarity)
 
 </div>
 
@@ -28,7 +28,7 @@
 
 ## ◈ &nbsp; What It Is
 
-EmuLatte is the emulation side of the [Cafe Neurotico Ecosystem](https://github.com/shampoo-is-a-lie). It manages your ROM libraries across every system you care about — scraping art and metadata from multiple sources, tracking achievements, downloading trailers, and launching games exactly the way you configured them.
+EmuLatte is the emulation side of the [Cafe Neurotico Ecosystem](https://github.com/FromChaosComesClarity). It manages your ROM libraries across every system you care about — scraping art and metadata from multiple sources, tracking achievements, downloading trailers, and launching games exactly the way you configured them.
 
 It keeps everything emulation-related in one self-contained app so neither it nor CNGM gets in the other's way. It is also a fully standalone app in its own right — nothing here requires the rest of the suite.
 
@@ -228,7 +228,7 @@ All data lives in `GameManagerConfig/EmuLatte/` — backs up with everything els
 
 A full gallery of both faces — desktop, Couch Mode, CRT layout, themes — lives on the website:
 
-**[shampoo-is-a-lie.github.io/CafeNeuroticoWebSite/emulatte.html](https://shampoo-is-a-lie.github.io/CafeNeuroticoWebSite/emulatte.html)**
+**[fromchaoscomesclarity.github.io/CafeNeuroticoWebSite/emulatte.html](https://fromchaoscomesclarity.github.io/CafeNeuroticoWebSite/emulatte.html)**
 
 <br>
 
@@ -255,7 +255,7 @@ EmuLatte stores its data in a `GameManagerConfig/` folder **next to the AppImage
 ### Building from Source
 
 ```bash
-git clone https://github.com/shampoo-is-a-lie/EmuLatte
+git clone https://github.com/FromChaosComesClarity/EmuLatte
 cd EmuLatte
 npm install
 npm run dist
