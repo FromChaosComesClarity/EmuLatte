@@ -1,14 +1,14 @@
 # EmuLatte Couch Mode — Build Plan
 
-A second, gamepad-first **play-only** fullscreen "face" of EmuLatte (a port of CREMA's UX,
+A second, gamepad-first **play-only** fullscreen "face" of EmuLatte (a port of Couch Mode's UX,
 re-pointed at EmuLatte's data and stripped of PC-gaming features), alongside the existing
 mouse/keyboard **Desktop Mode**. Written for a general-public release — display/fullscreen
 logic is platform-adaptive and density/aspect are user-driven, not tied to any one rig.
 
 ## 1. Concept & guardrails
 - Same app, same `emulatte.db`, same launch pipeline. Couch Mode = browse → pick → play.
-- Port CREMA's **UX patterns** (focus model, navigation, sleep, ambient sound), not its code
-  wholesale — CREMA reads the suite `games.db` and is full of PC-gaming features.
+- Port Couch Mode's **UX patterns** (focus model, navigation, sleep, ambient sound), not its code
+  wholesale — Couch Mode reads the suite `games.db` and is full of PC-gaming features.
 - **Fluid, not fixed-canvas** (decided): no 1920×1080 transform-scale. Density comes from
   `webFrame.setZoomFactor`, so 4:3 and 16:9 both reflow correctly.
 - All heavy configuration stays in Desktop Mode.
@@ -18,7 +18,7 @@ logic is platform-adaptive and density/aspect are user-driven, not tied to any o
   `preload.js`, existing IPC, and `emulatte.db`. Shared helpers (escHtml, cover-shaping,
   category map) extracted to a small shared module.
 - Entry: a **"GO FULLSCREEN" pill** on the desktop faux-titlebar (same placement/styling as
-  CafeNeurotico's pill, no CREMA branding) + a Settings toggle + `--couch` flag + F11.
+  Clarity's pill, no Couch Mode branding) + a Settings toggle + `--couch` flag + F11.
 - One window, content swap by default (`loadFile('couch.html')` ↔ `loadFile('index.html')`);
   relaunch only when the display path requires it (see §3).
 
@@ -52,7 +52,7 @@ perspective/flow/difficulty modifiers; anything bound to the suite `games.db` sc
 swapped to EmuLatte IPC/`emulatte.db`).
 
 ## 6. Gamepad model
-Port CREMA's Gamepad-API polling + focus engine (`.ggp-focused`, D-pad/stick nav, A=select,
+Port Couch Mode's Gamepad-API polling + focus engine (`.ggp-focused`, D-pad/stick nav, A=select,
 B=back, X/Y context, bumpers=system/tab jump, Start+Select=wake/exit). Button-prompt layouts
 (Xbox/PS/Nintendo). Keyboard fallback (arrows/Enter/Esc). Cursor hidden (setting, default on).
 
@@ -80,7 +80,7 @@ cross-output path). Reuse `get-monitors`, `get-games`, `launch-game`, settings g
 - Wayland cross-output is the only real unknown → Phase 0 validates; "Current screen" default sidesteps.
 - Fractional-scaled main monitors: only use XWayland during couch mode (Desktop stays native).
 - Controller variety: standard Gamepad API covers most; exotic pads may need mapping.
-- i18n: CREMA has en/pt_BR; decide English-first vs porting the i18n layer.
+- i18n: Couch Mode has en/pt_BR; decide English-first vs porting the i18n layer.
 
 ---
 Status: planning blueprint (2026-06-28). Implementation starts at Phase 0.

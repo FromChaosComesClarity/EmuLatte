@@ -7,7 +7,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const SS_DEV_KEY = 'EmuLatte::cafeneurotico::ss-dev::xor::v1';
+const SS_DEV_KEY = 'EmuLatte::clarity::ss-dev::xor::v1';
 const jsonPath = path.join(__dirname, '..', 'assets', 'ss_dev.json');
 const datPath  = path.join(__dirname, '..', 'assets', 'ss_dev.dat');
 

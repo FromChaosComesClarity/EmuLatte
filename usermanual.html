@@ -149,7 +149,7 @@
             <div class="nav-group-label">Art &amp; Metadata</div>
             <button class="manual-nav-btn" data-target="man-8">9. Art Scraping</button>
             <button class="manual-nav-btn" data-target="man-9">10. Metadata Scraping</button>
-            <button class="manual-nav-btn" data-target="man-10">11. CNGM Credential Import</button>
+            <button class="manual-nav-btn" data-target="man-10">11. Clarity Credential Import</button>
 
             <div class="nav-group-label">Emulation</div>
             <button class="manual-nav-btn" data-target="man-11">12. Emulator Scanner</button>
@@ -167,7 +167,7 @@
             <button class="manual-nav-btn" data-target="man-20">20. Themes &amp; Fonts</button>
 
             <div class="nav-group-label">Ecosystem &amp; Data</div>
-            <button class="manual-nav-btn" data-target="man-21">21. Export to Cafe Neurotico</button>
+            <button class="manual-nav-btn" data-target="man-21">21. Export to Clarity</button>
             <button class="manual-nav-btn" data-target="man-22">22. Your Data &amp; Backups</button>
         </div>
 
@@ -189,7 +189,7 @@
                 <p>The <strong>desktop face</strong> is the one you are looking at: detail-obsessed, built for a mouse and keyboard, where all the management happens. <strong>Couch Mode</strong> is a fullscreen, gamepad-first, play-only face for a TV or CRT. Same library, same database, no duplication. See section 19.</p>
             </div>
 
-            <p>EmuLatte is part of the <strong>Cafe Neurotico</strong> ecosystem, and it is also a perfectly complete standalone app. Nothing here requires the rest of the suite.</p>
+            <p>EmuLatte is part of the <strong>Clarity</strong> ecosystem, and it is also a perfectly complete standalone app. Nothing here requires the rest of the suite.</p>
 
             <h2 id="man-2">2. Install &amp; First Run</h2>
             <p>EmuLatte ships as a single AppImage. Make it executable and run it:</p>
@@ -199,10 +199,10 @@
             </ul>
 
             <div class="warn-box">
-                <p><strong>Where you put the AppImage matters.</strong> EmuLatte stores its data in a <code>GameManagerConfig/</code> folder <em>next to the AppImage itself</em>. Put it somewhere permanent &mdash; for example <code>~/Games/CNGM/</code> &mdash; before you start building a library. Moving the AppImage later means moving that folder with it.</p>
+                <p><strong>Where you put the AppImage matters.</strong> EmuLatte stores its data in a <code>GameManagerConfig/</code> folder <em>next to the AppImage itself</em>. Put it somewhere permanent &mdash; for example <code>~/Games/Clarity/</code> &mdash; before you start building a library. Moving the AppImage later means moving that folder with it.</p>
             </div>
 
-            <p>If you already run Cafe Neurotico, drop EmuLatte alongside it so both share the same <code>GameManagerConfig/</code> parent. That is what makes credential import (section 11) and export (section 21) work without any configuration.</p>
+            <p>If you already run Clarity, drop EmuLatte alongside it so both share the same <code>GameManagerConfig/</code> parent. That is what makes credential import (section 11) and export (section 21) work without any configuration.</p>
 
             <p>On first launch the library is empty and no systems are defined. That is expected. The order of operations is: <strong>add a system</strong> (section 3), <strong>import ROMs into it</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10).</p>
 
@@ -255,7 +255,7 @@
                 <tr><td><span class="key">Favourite</span></td><td>Flags the game as a favourite</td></tr>
                 <tr><td><span class="key">Want to Play</span></td><td>Flags the game for your backlog</td></tr>
                 <tr><td><span class="key">Playlist</span></td><td>Adds the game to one or more playlists</td></tr>
-                <tr><td><span class="key">Cafe Neurotico</span></td><td>Exports the game to CN's library (section 21)</td></tr>
+                <tr><td><span class="key">Clarity</span></td><td>Exports the game to CN's library (section 21)</td></tr>
                 <tr><td><span class="key">Scrape</span></td><td>Fetches metadata and artwork (sections 9&ndash;10)</td></tr>
                 <tr><td><span class="key">Trailer</span></td><td>Watches, or downloads, the game's trailer (section 17)</td></tr>
                 <tr><td><span class="key">Manual</span></td><td>Opens the scanned game manual PDF (section 18)</td></tr>
@@ -306,8 +306,8 @@
                 <p><strong>ScreenScraper enforces per-account rate limits.</strong> Scraping a very large collection in one sitting may pause partway through. This is the service protecting itself, not a fault in EmuLatte &mdash; wait, then continue.</p>
             </div>
 
-            <h2 id="man-10">11. CNGM Credential Import</h2>
-            <p>If Cafe Neurotico is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from CNGM</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
+            <h2 id="man-10">11. Clarity Credential Import</h2>
+            <p>If Clarity is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from Clarity</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
             <p>This reads CN's settings out of the shared <code>GameManagerConfig/</code> folder. If the button reports nothing found, the two apps are not sharing a parent folder &mdash; see section 2.</p>
 
             <h2 id="man-11">12. The Emulator Scanner</h2>
@@ -438,12 +438,12 @@
             <p>Couch Mode additionally offers a <strong>Press Start 2P</strong> interface font under <strong>Fonts</strong>, with long-form text kept in the readable face regardless.</p>
             <p><strong>UI Scale</strong> (50%&ndash;150%) is separate, under <strong>Settings &rarr; General</strong>.</p>
 
-            <h2 id="man-21">21. Exporting Games to Cafe Neurotico</h2>
+            <h2 id="man-21">21. Exporting Games to Clarity</h2>
             <div class="manual-box">
-                <p class="manual-box-title">How games actually get to Cafe Neurotico</p>
-                <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Cafe Neurotico does not read EmuLatte's database and has no "show emulation" toggle.</p>
+                <p class="manual-box-title">How games actually get to Clarity</p>
+                <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Clarity does not read EmuLatte's database and has no "show emulation" toggle.</p>
             </div>
-            <p>Press <strong>ADD TO CAFENEUROTICO</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into CN's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Cafe Neurotico or CREMA exactly as it does here.</p>
+            <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into CN's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
             <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; CN sees a game, not your library.</p>
             <p>This requires both apps to share a <code>GameManagerConfig/</code> parent folder (section 2).</p>
 
@@ -466,7 +466,7 @@
             <p>From <strong>Settings &rarr; Data</strong>:</p>
             <ul>
                 <li><strong>Back Up EmuLatte</strong> &mdash; the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states</li>
-                <li><strong>Back Up Cafe Neurotico Suite</strong> &mdash; everything in <code>GameManagerConfig</code> (EmuLatte, Cafe Neurotico, CREMA and the Clock) plus save states, as a full 1:1 copy</li>
+                <li><strong>Back Up Clarity Suite</strong> &mdash; everything in <code>GameManagerConfig</code> (EmuLatte, Clarity, Couch Mode and the Clock) plus save states, as a full 1:1 copy</li>
                 <li><strong>Restore from Backup</strong> &mdash; overwrites current data and restarts EmuLatte</li>
             </ul>
 
@@ -484,7 +484,7 @@
             <div class="manual-footer">
                 <p class="accent-line">EMULATTE</p>
                 <h3>&ldquo;I use RetroArch BTW&rdquo;</h3>
-                <p class="mono">Part of the Cafe Neurotico ecosystem</p>
+                <p class="mono">Part of the Clarity ecosystem</p>
                 <p class="mono">GPL-3.0-or-later &middot; Designed in Brazil by J.R.A.</p>
                 <p class="mono">shampooisalie@gmail.com</p>
             </div>

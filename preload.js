@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('api', {
     setGameFlag:     (id, f, v) => ipcRenderer.invoke('set-game-flag', id, f, v),
     updateLastPlayed:(id)       => ipcRenderer.invoke('update-last-played', id),
     launchGame:      (id)       => ipcRenderer.invoke('launch-game', id),
-    addToCngm:       (id)       => ipcRenderer.invoke('add-to-cngm', id),
+    addToClarity:       (id)       => ipcRenderer.invoke('add-to-clarity', id),
 
     // Settings
     getSetting: (k)    => ipcRenderer.invoke('get-setting', k),
@@ -117,8 +117,8 @@ contextBridge.exposeInMainWorld('api', {
     tgdbSearchArt: (name, type, sys) => ipcRenderer.invoke('tgdb-search-art', name, type, sys),
     igdbSearchArt: (name, type, sys) => ipcRenderer.invoke('igdb-search-art', name, type, sys),
 
-    // CNGM import
-    importCngmCredentials: () => ipcRenderer.invoke('import-cngm-credentials'),
+    // Clarity import
+    importClarityCredentials: () => ipcRenderer.invoke('import-clarity-credentials'),
 
     // IGDB
     testIgdbCredentials: (id, secret) => ipcRenderer.invoke('test-igdb-credentials', id, secret),

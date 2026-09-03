@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>EmuLatte by Cafe Neurotico</title>
+  <title>EmuLatte by Clarity</title>
   <style>
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Regular.ttf') format('truetype'); font-weight: 400; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
@@ -202,7 +202,7 @@
       border: 1px solid var(--border_solid); font-size: 14px; line-height: 1; cursor: pointer; display: none; }
     #view-gamepage.active #gamepage-overlay-close { display: flex; align-items: center; justify-content: center; }
     #gamepage-overlay-close:hover { background: var(--accent); color: var(--bg); }
-    /* Float the Play button at the panel's bottom-right, always visible (like CafeNeurotico).
+    /* Float the Play button at the panel's bottom-right, always visible (like Clarity).
        The panel's transform makes position:fixed resolve relative to the panel, so it pins to
        the corner and never scrolls with the content. */
     /* Floating Play button — lives OUTSIDE the scrolling panel (a fixed layer above it) so it
@@ -239,7 +239,7 @@
     .btn-hero-sq svg { display: block; }
     /* Fav / Want toggle: the outline icon fills in once the flag is set */
     #btn-gamepage-fav.active svg, #btn-gamepage-want.active svg { fill: currentColor; }
-    /* Busy state for Scrape / Add to CafeNeurotico while their async work runs */
+    /* Busy state for Scrape / Add to Clarity while their async work runs */
     .btn-hero.working { pointer-events: none; animation: btnpulse 1s ease-in-out infinite; }
     @keyframes btnpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
@@ -252,7 +252,7 @@
     .tool-card { background-color: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
     .tool-card-title { color: var(--accent); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid var(--border_solid); padding-bottom: 5px; margin-bottom: 2px; }
 
-    /* Settings as a Control-Panel hub (mirrors CafeNeurotico): wide modal, category rail + panes */
+    /* Settings as a Control-Panel hub (mirrors Clarity): wide modal, category rail + panes */
     .cp-panel { width: min(1080px, 95vw); height: 88vh; max-height: 88vh; background: var(--bg_menu); border-radius: 14px; border: 2px solid var(--border_solid); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.85); overflow: hidden; }
     .cp-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border_solid); flex-shrink: 0; }
     .cp-title { margin: 0; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; font-size: 15px; font-weight: 900; white-space: nowrap; }
@@ -463,7 +463,7 @@
 <body>
 
   <div id="titlebar">
-    <div class="titlebar-brand">CAFE NEUROTICO — EMULATTE</div>
+    <div class="titlebar-brand">CLARITY — EMULATTE</div>
     <button id="btn-go-fullscreen" class="titlebar-pill" title="Switch to fullscreen play mode">▶ GO FULLSCREEN</button>
     <div class="titlebar-controls">
       <button id="btn-min" class="win-btn">—</button>
@@ -529,7 +529,7 @@
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
         <!-- Branding -->
-        <div id="btn-about" class="rail-btn" title="EmuLatte by Cafe Neurotico" style="cursor:pointer; height:38px; flex-direction:column; gap:1px; margin-top:6px; border-top:1px solid var(--border_solid);">
+        <div id="btn-about" class="rail-btn" title="EmuLatte by Clarity" style="cursor:pointer; height:38px; flex-direction:column; gap:1px; margin-top:6px; border-top:1px solid var(--border_solid);">
           <span style="font-size:7px; font-weight:900; color:var(--text_dim); letter-spacing:1px; line-height:1;">CN</span>
           <span style="font-size:9px; font-weight:900; color:var(--accent); letter-spacing:0.5px; line-height:1;">EL</span>
         </div>
@@ -655,7 +655,7 @@
               <button id="btn-gamepage-fav" class="btn-hero btn-hero-sq" title="Add to favourites" aria-label="Add to favourites"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
               <button id="btn-gamepage-want" class="btn-hero btn-hero-sq" title="Want to play" aria-label="Want to play"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
               <button id="btn-gamepage-playlist" class="btn-hero btn-hero-sq" title="Add to playlist" aria-label="Add to playlist"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="15" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="11" y2="18"/><line x1="18" y1="9" x2="18" y2="19"/><line x1="13" y1="14" x2="23" y2="14"/></svg></button>
-              <button id="btn-gamepage-cngm" class="btn-hero btn-hero-sq" title="Add to CafeNeurotico library (Emulation category)" aria-label="Add to CafeNeurotico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg></button>
+              <button id="btn-gamepage-clarity" class="btn-hero btn-hero-sq" title="Add to Clarity library (Emulation category)" aria-label="Add to Clarity"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg></button>
               <button id="btn-gamepage-scrape" class="btn-hero btn-hero-sq" title="Scrape metadata &amp; artwork from ScreenScraper.fr" aria-label="Scrape"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
               <button id="btn-gamepage-trailer" class="btn-hero btn-hero-sq" style="display:none;" title="Watch trailer" aria-label="Watch trailer"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></button>
               <button id="btn-gamepage-manual" class="btn-hero btn-hero-sq" title="View game manual" aria-label="View game manual"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></button>
@@ -820,7 +820,7 @@
       <div class="modal-hdr" style="padding:18px 24px 14px; border-bottom:1px solid var(--border_solid); margin-bottom:0;">
         <div class="modal-title" style="font-size:11px;">Edit ROM Details</div>
         <div class="modal-hdr-btns">
-          <button id="btn-edit-cngm" title="Add to CafeNeurotico library (Emulation category)" style="font-size:11px; padding:5px 14px; border-radius:20px; background:var(--accent); color:var(--bg); border:none; font-weight:900; cursor:pointer; font-family:var(--ui-font);">ADD TO CAFENEUROTICO</button>
+          <button id="btn-edit-clarity" title="Add to Clarity library (Emulation category)" style="font-size:11px; padding:5px 14px; border-radius:20px; background:var(--accent); color:var(--bg); border:none; font-weight:900; cursor:pointer; font-family:var(--ui-font);">ADD TO CLARITY</button>
           <button id="btn-edit-delete" class="danger" style="font-size:11px; padding:5px 14px; border-radius:20px;">Delete ROM</button>
           <button id="btn-edit-save" class="btn-modal-save-x">Save</button>
           <button id="btn-edit-cancel" class="btn-modal-x">✕</button>
@@ -1090,7 +1090,7 @@
               <div class="form-row">
                 <button id="btn-settings-user-manual" style="width:100%;">Open User Manual</button>
               </div>
-              <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">Every feature, explained &mdash; including Couch Mode and exporting to Cafe Neurotico.</p>
+              <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">Every feature, explained &mdash; including Couch Mode and exporting to Clarity.</p>
             </div>
             <div class="tool-card" data-search="appearance theme color palette ui scale zoom interface">
               <div class="tool-card-title">Appearance</div>
@@ -1230,14 +1230,14 @@
               <div id="settings-ra-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
               <div class="hint">Free account at retroachievements.org — API key in your profile settings.</div>
             </div>
-            <div class="tool-card" style="flex-direction:row; align-items:center; justify-content:space-between; gap:12px;" data-search="cngm sync import credentials igdb steamgriddb">
+            <div class="tool-card" style="flex-direction:row; align-items:center; justify-content:space-between; gap:12px;" data-search="clarity sync import credentials igdb steamgriddb">
               <div>
-                <div class="tool-card-title" style="border:none; padding:0; margin:0;">CNGM Sync</div>
-                <div class="hint" style="margin:0;">Import IGDB &amp; SteamGridDB credentials from your CNGM installation.</div>
+                <div class="tool-card-title" style="border:none; padding:0; margin:0;">Clarity Sync</div>
+                <div class="hint" style="margin:0;">Import IGDB &amp; SteamGridDB credentials from your Clarity installation.</div>
               </div>
-              <button id="btn-import-cngm-creds" style="flex-shrink:0;">Import from CNGM</button>
+              <button id="btn-import-clarity-creds" style="flex-shrink:0;">Import from Clarity</button>
             </div>
-            <div id="settings-cngm-import-status" style="font-size:11px; color:var(--text_dim); margin-top:-8px; display:none;"></div>
+            <div id="settings-clarity-import-status" style="font-size:11px; color:var(--text_dim); margin-top:-8px; display:none;"></div>
             <div class="tool-card" data-search="igdb metadata art twitch client api credentials">
               <div class="tool-card-title">IGDB</div>
               <div class="form-row"><label>Client ID</label><input type="text" id="settings-igdb-client-id" placeholder="Twitch / IGDB Client ID"></div>
@@ -1275,12 +1275,12 @@
               <div class="tool-card-title">Data</div>
               <button id="btn-settings-open-data-dir" style="width:100%;">Open Data Folder</button>
             </div>
-            <div class="tool-card" data-search="backup restore zip export import save states credentials portable 1:1 copy machine suite cafeneurotico">
+            <div class="tool-card" data-search="backup restore zip export import save states credentials portable 1:1 copy machine suite clarity">
               <div class="tool-card-title">Backup &amp; Restore</div>
               <button id="btn-backup-emulatte" style="width:100%;">Back Up EmuLatte</button>
               <div class="hint" style="margin-top:4px;">EmuLatte's library, art, trailers, credentials &amp; RetroArch config — plus your RetroArch save states.</div>
-              <button id="btn-backup-suite" style="width:100%; margin-top:10px; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Back Up CafeNeurotico Suite</button>
-              <div class="hint" style="margin-top:4px;">Everything in GameManagerConfig (EmuLatte + CafeNeurotico + CREMA + Clock) + save states — a full 1:1 copy.</div>
+              <button id="btn-backup-suite" style="width:100%; margin-top:10px; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Back Up Clarity Suite</button>
+              <div class="hint" style="margin-top:4px;">Everything in GameManagerConfig (EmuLatte + Clarity + Couch Mode + Clock) + save states — a full 1:1 copy.</div>
               <button id="btn-restore-backup" style="width:100%; margin-top:10px;">Restore from Backup…</button>
               <div id="backup-status" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
               <div class="hint">Restore overwrites the current data and restarts EmuLatte. ROM paths &amp; RetroArch folders are machine-specific — use “Re-import Paths” after restoring on another computer.</div>
@@ -1908,7 +1908,7 @@
     </div>
   </div>
 
-  <!-- ── NOW PLAYING POPUP (mirrors CafeNeurotico) ──────────────────────────── -->
+  <!-- ── NOW PLAYING POPUP (mirrors Clarity) ──────────────────────────── -->
   <style>
     #modal-now-playing { z-index: 40000; }
     #np-card {
@@ -2009,7 +2009,7 @@
 
       <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">EmuLatte keeps your ROM collection in order across 56 systems &mdash; importing, scraping art and metadata from four sources, tracking achievements, pulling trailers, and launching everything exactly the way you configured it. <strong>Couch Mode</strong> is the other half: a fullscreen, gamepad-first face for the TV, with its own display types, save-state manager and shaders.</p>
 
-      <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">It is part of the <strong>Cafe Neurotico</strong> ecosystem and works perfectly well alone. Games you want on the other side get <strong>exported to Cafe Neurotico</strong> from the game page; management of the collection always stays here. Check the <span id="btn-open-user-manual" style="color:var(--accent); cursor:pointer; text-decoration:underline; font-weight:bold;">manual</span> for everything else.</p>
+      <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">It is part of the <strong>Clarity</strong> ecosystem and works perfectly well alone. Games you want on the other side get <strong>exported to Clarity</strong> from the game page; management of the collection always stays here. Check the <span id="btn-open-user-manual" style="color:var(--accent); cursor:pointer; text-decoration:underline; font-weight:bold;">manual</span> for everything else.</p>
 
       <hr style="border:none; border-top:1px solid var(--border_solid); width:100%; margin:0;">
 

@@ -502,7 +502,7 @@ ipcMain.handle('set-setting', (_, key, value) => {
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
 // Build the shell launch command for a game row (joined with its system fields).
-// Shared by launch-game and add-to-cngm so EmuLatte and CafeNeurotico run it identically.
+// Shared by launch-game and add-to-clarity so EmuLatte and Clarity run it identically.
 // ── RETROARCH LAUNCH OVERRIDES ────────────────────────────────────────────────
 // EmuLatte writes its OWN .cfg files and layers them onto a launch with --appendconfig, so the
 // user's host retroarch.cfg is never modified. Scopes stack global → system → game (game wins).
@@ -745,7 +745,7 @@ ipcMain.handle('get-ra-override', (_, scope, refId) => {
 ipcMain.handle('set-ra-override', (_, scope, refId, data) => {
     if (!db) return { ok: false };
     db.prepare('INSERT OR REPLACE INTO ra_overrides (scope, ref_id, data) VALUES (?,?,?)').run(scope, refId || 0, JSON.stringify(data || {}));
-    writeRaOverride(scope, refId || 0);   // keep the .cfg in sync immediately (so CNGM-stored commands pick it up)
+    writeRaOverride(scope, refId || 0);   // keep the .cfg in sync immediately (so Clarity-stored commands pick it up)
     return { ok: true };
 });
 ipcMain.handle('get-monitors', () => {
@@ -1187,15 +1187,15 @@ ipcMain.handle('restore-ra-settings', async () => {
 
 // ── FULL BACKUP / RESTORE (config folder + RetroArch saves) ───────────────────
 // scope 'emulatte' → just GameManagerConfig/EmuLatte; scope 'suite' → all of GameManagerConfig
-// (CafeNeurotico Suite, same as CafeNeurotico's own backup). Both bundle RetroArch save states +
+// (Clarity Suite, same as Clarity's own backup). Both bundle RetroArch save states +
 // savefiles (which live OUTSIDE GameManagerConfig) under a known prefix so restore can re-home them.
 const BK_STATES = '__ra_saves__/states/';
 const BK_SAVES  = '__ra_saves__/saves/';
 ipcMain.handle('create-backup', async (_, scope = 'emulatte') => {
     const isSuite = scope === 'suite';
     const { canceled, filePath } = await dialog.showSaveDialog({
-        title: isSuite ? 'Back Up CafeNeurotico Suite' : 'Back Up EmuLatte',
-        defaultPath: isSuite ? `CafeNeurotico Suite ${dateStamp()}.zip` : `EmuLatte ${dateStamp()}.zip`,
+        title: isSuite ? 'Back Up Clarity Suite' : 'Back Up EmuLatte',
+        defaultPath: isSuite ? `Clarity Suite ${dateStamp()}.zip` : `EmuLatte ${dateStamp()}.zip`,
         filters: [{ name: 'Zip archive', extensions: ['zip'] }],
     });
     if (canceled || !filePath) return { ok: false, canceled: true };
@@ -1221,7 +1221,7 @@ ipcMain.handle('restore-backup', async () => {
     try {
         const zip = new AdmZip(filePaths[0]);
         const entries = zip.getEntries();
-        if (!entries.some(e => e.entryName.startsWith('GameManagerConfig/'))) return { ok: false, error: 'This ZIP is not an EmuLatte or CafeNeurotico Suite backup.' };
+        if (!entries.some(e => e.entryName.startsWith('GameManagerConfig/'))) return { ok: false, error: 'This ZIP is not an EmuLatte or Clarity Suite backup.' };
         const stateDir = savestateDir(), saveDir = savefileDir();
         // Finalize + close the DB before overwriting it, so a later WAL checkpoint can't clobber the restore.
         try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
@@ -1246,20 +1246,20 @@ ipcMain.handle('restore-backup', async () => {
     return result;
 });
 
-// Push a game into CafeNeurotico's library under the Emulation category. CNGM shares the
+// Push a game into Clarity's library under the Emulation category. Clarity shares the
 // GameManagerConfig folder, buckets by the Store column, stores art as relative
 // GameManagerConfig/images/<file> paths, and shell-execs LaunchCommand — so we copy the art
 // across and write a row whose LaunchCommand is EmuLatte's own RetroArch command.
-function copyArtToCngm(srcAbs, cngmImagesDir, gameId, type) {
+function copyArtToClarity(srcAbs, clarityImagesDir, gameId, type) {
     if (!srcAbs || !fs.existsSync(srcAbs)) return '';
     const ext = path.extname(srcAbs) || '.jpg';
     const fn  = `emulatte_${gameId}_${type}${ext}`;
-    try { fs.copyFileSync(srcAbs, path.join(cngmImagesDir, fn)); }
+    try { fs.copyFileSync(srcAbs, path.join(clarityImagesDir, fn)); }
     catch { return ''; }
     return `GameManagerConfig/images/${fn}`;
 }
 
-ipcMain.handle('add-to-cngm', (_, gameId) => {
+ipcMain.handle('add-to-clarity', (_, gameId) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     const game = gameWithSystem(gameId);
     if (!game) return { ok: false, error: 'Game not found' };
@@ -1268,20 +1268,20 @@ ipcMain.handle('add-to-cngm', (_, gameId) => {
     const cmd = buildLaunchCommand(game);
     if (!cmd) return { ok: false, error: 'No launch command for this game — set a Launch Template/core first.' };
 
-    const cngmDir = path.join(baseDir, 'GameManagerConfig');
-    const cngmDb  = path.join(cngmDir, 'games.db');
-    if (!fs.existsSync(cngmDb)) return { ok: false, error: 'CafeNeurotico database not found in the shared GameManagerConfig folder.' };
-    const cngmImages = path.join(cngmDir, 'images');
-    fs.mkdirSync(cngmImages, { recursive: true });
+    const clarityDir = path.join(baseDir, 'GameManagerConfig');
+    const clarityDb  = path.join(clarityDir, 'games.db');
+    if (!fs.existsSync(clarityDb)) return { ok: false, error: 'Clarity database not found in the shared GameManagerConfig folder.' };
+    const clarityImages = path.join(clarityDir, 'images');
+    fs.mkdirSync(clarityImages, { recursive: true });
 
     let cdb;
     try {
-        cdb = new Database(cngmDb, { timeout: 4000 });
-        const cover = copyArtToCngm(game.cover, cngmImages, gameId, 'cover');
-        const hero  = copyArtToCngm(game.hero,  cngmImages, gameId, 'hero');
-        const logo  = copyArtToCngm(game.logo,  cngmImages, gameId, 'logo');
+        cdb = new Database(clarityDb, { timeout: 4000 });
+        const cover = copyArtToClarity(game.cover, clarityImages, gameId, 'cover');
+        const hero  = copyArtToClarity(game.hero,  clarityImages, gameId, 'hero');
+        const logo  = copyArtToClarity(game.logo,  clarityImages, gameId, 'logo');
         const shots = (game.screenshot || '').split('|').filter(Boolean)
-            .map((s, i) => copyArtToCngm(s, cngmImages, gameId, `ss${i}`)).filter(Boolean).join('|');
+            .map((s, i) => copyArtToClarity(s, clarityImages, gameId, `ss${i}`)).filter(Boolean).join('|');
 
         // Dedupe on the launch command (unique per rom+core): update in place if present.
         const existing = cdb.prepare('SELECT id FROM games WHERE LaunchCommand=?').get(cmd);
@@ -1384,7 +1384,7 @@ const PLATFORM_MAP = {
 // the same approach ES-DE uses). assets/ss_dev.json is the plaintext source kept for local dev;
 // both files are gitignored, and predist regenerates the .dat from the .json before packaging.
 // The key below is obfuscation, not encryption — it only defeats `strings`/secret-scanners.
-const SS_DEV_KEY = 'EmuLatte::cafeneurotico::ss-dev::xor::v1';
+const SS_DEV_KEY = 'EmuLatte::clarity::ss-dev::xor::v1';
 function ssDevXor(buf) {
     const out = Buffer.allocUnsafe(buf.length);
     for (let i = 0; i < buf.length; i++) out[i] = buf[i] ^ SS_DEV_KEY.charCodeAt(i % SS_DEV_KEY.length);
@@ -2135,12 +2135,12 @@ ipcMain.handle('bios-scan-folder', async (event) => {
     return { ok: true, installed: [...installed], systemDir: sysDir };
 });
 
-// ── CNGM CREDENTIAL IMPORT ────────────────────────────────────────────────────
-ipcMain.handle('import-cngm-credentials', () => {
-    const cngmDb = path.join(baseDir, 'GameManagerConfig', 'games.db');
-    if (!fs.existsSync(cngmDb)) return { ok: false, error: 'CNGM database not found. Make sure CNGM is installed in the same folder.' };
+// ── Clarity CREDENTIAL IMPORT ────────────────────────────────────────────────────
+ipcMain.handle('import-clarity-credentials', () => {
+    const clarityDb = path.join(baseDir, 'GameManagerConfig', 'games.db');
+    if (!fs.existsSync(clarityDb)) return { ok: false, error: 'Clarity database not found. Make sure Clarity is installed in the same folder.' };
     try {
-        const cdb = new Database(cngmDb, { readonly: true, timeout: 3000 });
+        const cdb = new Database(clarityDb, { readonly: true, timeout: 3000 });
         const get = (key) => cdb.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || '';
         const result = {
             igdb_client_id:     get('igdb_client_id'),
@@ -2149,7 +2149,7 @@ ipcMain.handle('import-cngm-credentials', () => {
         };
         cdb.close();
         const found = Object.values(result).some(v => v);
-        if (!found) return { ok: false, error: 'No IGDB or SteamGridDB credentials found in CNGM.' };
+        if (!found) return { ok: false, error: 'No IGDB or SteamGridDB credentials found in Clarity.' };
         return { ok: true, ...result };
     } catch(e) { return { ok: false, error: e.message }; }
 });

@@ -36,7 +36,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     await loadCores();
     await loadSystemPresets();
     retroarchVariant = await window.api.getSetting('retroarch_variant') || 'none';
-    const savedTheme = await window.api.getSetting('el_theme') || 'CREMA';
+    const savedTheme = await window.api.getSetting('el_theme') || 'Couch Mode';
     applyTheme(savedTheme, false);
     wireUI();
     enhanceAllSelects();
@@ -1484,7 +1484,7 @@ function markPlayed(id) {
     }
 }
 
-// ── Now Playing popup (mirrors CafeNeurotico) ─────────────────────────────────
+// ── Now Playing popup (mirrors Clarity) ─────────────────────────────────
 let _npTimer = null;
 function showNowPlaying(game) {
     const modal    = document.getElementById('modal-now-playing');
@@ -1575,15 +1575,15 @@ function showLaunchToast(msg, cmd, label) {
     toast.onclick = () => { toast.style.display = 'none'; clearTimeout(toastTimer); };
 }
 
-async function pushGameToCngm(gameId, btn) {
+async function pushGameToClarity(gameId, btn) {
     if (!gameId) return;
     if (btn) { btn.disabled = true; btn.classList.add('working'); }
-    const r = await window.api.addToCngm(gameId);
+    const r = await window.api.addToClarity(gameId);
     if (btn) { btn.disabled = false; btn.classList.remove('working'); }
     showLaunchToast(
-        r.ok ? (r.updated ? 'Updated in CafeNeurotico.' : 'Added to CafeNeurotico (Emulation category).')
-             : (r.error || 'Failed to add to CafeNeurotico.'),
-        null, 'CAFENEUROTICO');
+        r.ok ? (r.updated ? 'Updated in Clarity.' : 'Added to Clarity (Emulation category).')
+             : (r.error || 'Failed to add to Clarity.'),
+        null, 'CLARITY');
 }
 
 // ── RETROACHIEVEMENTS ────────────────────────────────────────────────────────
@@ -2206,11 +2206,11 @@ async function setFilter(filter) {
 }
 
 // ── THEME SYSTEM ──────────────────────────────────────────────────────────────
-let _activeTheme = 'CREMA';
+let _activeTheme = 'Couch Mode';
 
 const EL_THEMES = {
     "DARK GRAY": {bg:"#141414",bg_panel:"rgba(0,0,0,0.5)",bg_menu:"#222222",accent:"#ffffff",text_main:"#ffffff",text_sec:"#bbbbbb",text_dim:"#777777",border:"rgba(255,255,255,0.1)",border_solid:"#555555"},
-    "CREMA": {bg:"#2C1E16",bg_panel:"rgba(67, 40, 24, 0.6)",bg_menu:"#432818",accent:"#D4A373",text_main:"#FFE6A7",text_sec:"#E6CC98",text_dim:"#A47148",border:"rgba(212, 163, 115, 0.2)",border_solid:"#8B5A2B"},
+    "Couch Mode": {bg:"#2C1E16",bg_panel:"rgba(67, 40, 24, 0.6)",bg_menu:"#432818",accent:"#D4A373",text_main:"#FFE6A7",text_sec:"#E6CC98",text_dim:"#A47148",border:"rgba(212, 163, 115, 0.2)",border_solid:"#8B5A2B"},
     "CYBERPUNK": {bg:"#09090b",bg_panel:"rgba(26, 26, 46, 0.7)",bg_menu:"#1a1a2e",accent:"#f3e600",text_main:"#00ffcc",text_sec:"#e0e0e0",text_dim:"#ff003c",border:"rgba(243, 230, 0, 0.2)",border_solid:"#ff003c"},
     "VAPOUR OS": {bg:"#171a21",bg_panel:"rgba(27, 40, 56, 0.7)",bg_menu:"#1b2838",accent:"#66c0f4",text_main:"#c7d5e0",text_sec:"#8f98a0",text_dim:"#556b82",border:"rgba(102, 192, 244, 0.2)",border_solid:"#2a475e"},
     "PSIV BLUE": {bg:"#000022",bg_panel:"rgba(0, 67, 156, 0.4)",bg_menu:"#001144",accent:"#ffffff",text_main:"#ffffff",text_sec:"#aaaaaa",text_dim:"#666666",border:"rgba(0, 112, 204, 0.3)",border_solid:"#00439c"},
@@ -2283,7 +2283,7 @@ const EL_THEMES = {
     "MOCHA": {bg:"#1a1210",bg_panel:"rgba(36, 24, 19, 0.6)",bg_menu:"#241813",accent:"#c98a5e",text_main:"#f0dfcf",text_sec:"#c7a98f",text_dim:"#8a6a54",border:"rgba(201, 138, 94, 0.2)",border_solid:"#4a3226"},
     "FLAT WHITE": {bg:"#f6f1e9",bg_panel:"rgba(253, 250, 244, 0.78)",bg_menu:"#fdfaf4",accent:"#8a5a2b",text_main:"#33291f",text_sec:"#6b5a48",text_dim:"#a4917a",border:"rgba(138, 90, 43, 0.18)",border_solid:"#e0d4c0"},
     "MATCHA": {bg:"#12160f",bg_panel:"rgba(26, 32, 21, 0.6)",bg_menu:"#1a2015",accent:"#9bbf6b",text_main:"#e6efd8",text_sec:"#b3c79b",text_dim:"#6d8556",border:"rgba(155, 191, 107, 0.2)",border_solid:"#33422a"},
-    // ── Systems (imported from CafeNeurotico) — retro-OS palettes; each carries its era
+    // ── Systems (imported from Clarity) — retro-OS palettes; each carries its era
     //    `font`, applied as --ui-font while that theme is active. ────────────────────
     "MS-DOS": {bg:"#0a0a0a",bg_panel:"rgba(0, 0, 0, 0.6)",bg_menu:"#000000",accent:"#ffffff",text_main:"#d2d2d2",text_sec:"#a2a2a2",text_dim:"#7e7e7e",border:"rgba(255, 255, 255, 0.25)",border_solid:"#4a4a4a",font:"PxPlus IBM VGA8"},
     "COMMODORE 64": {bg:"#0000aa",bg_panel:"rgba(0, 0, 170, 0.6)",bg_menu:"#0000aa",accent:"#b9b6ff",text_main:"#d0ccff",text_sec:"#9e9beb",text_dim:"#7976db",border:"rgba(185, 182, 255, 0.25)",border_solid:"#4341c5",font:"C64 Pro Mono"},
@@ -2310,7 +2310,7 @@ const EL_THEMES = {
 const EL_THEME_CATEGORIES = {
     // "WIN XP" is retired from the picker (superseded by the Systems family's "WINDOWS XP")
     // but stays defined in EL_THEMES so configs still set to it keep resolving.
-    "Originals & System": ["DARK GRAY","CREMA","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","OAKANIZER DARK"],
+    "Originals & System": ["DARK GRAY","Couch Mode","CYBERPUNK","SNOW","MOVIESFLIX","VAPOUR OS","PSIV BLUE","GREEN BOX","OAKANIZER DARK"],
     "BrewBalance": ["BREWBALANCE DARK","BREWBALANCE LIGHT","MOCHA","FLAT WHITE","MATCHA"],
     "Light & Minimal": ["PAPER","SOLARIZED LIGHT","CATPPUCCIN LATTE","GITHUB LIGHT","GRUVBOX LIGHT","ROSÉ PINE DAWN","NORD LIGHT","DAYBREAK","OAKANIZER LIGHT"],
     "Gaming Legends": ["GAME BOY DMG","PIP BOY","SEVASTOPOL","RIP AND TEAR CLASSIC","SUPER BROTHERS","GREEN HILL","NES","SNES","BLOODBORNE","METROID PRIME","SILENT HILL","DIABLO","HALF-LIFE","SHOVEL KNIGHT"],
@@ -2625,8 +2625,8 @@ function wireUI() {
         document.getElementById('settings-igdb-status').textContent = '';
         document.getElementById('settings-tgdb-status').textContent = '';
         document.getElementById('settings-sgdb-status').textContent = '';
-        const cngmImportEl = document.getElementById('settings-cngm-import-status');
-        cngmImportEl.style.display = 'none'; cngmImportEl.textContent = '';
+        const clarityImportEl = document.getElementById('settings-clarity-import-status');
+        clarityImportEl.style.display = 'none'; clarityImportEl.textContent = '';
         const raStatusEl = document.getElementById('settings-retroarch-status');
         raStatusEl.textContent = retroarchStatusLabel(retroarchVariant);
         raStatusEl.style.color = retroarchStatusColor(retroarchVariant);
@@ -2700,9 +2700,9 @@ function wireUI() {
         await loadGames();
     });
 
-    // Gamepage → CafeNeurotico
-    document.getElementById('btn-gamepage-cngm').addEventListener('click', e => {
-        if (currentGame) pushGameToCngm(currentGame.id, e.currentTarget);
+    // Gamepage → Clarity
+    document.getElementById('btn-gamepage-clarity').addEventListener('click', e => {
+        if (currentGame) pushGameToClarity(currentGame.id, e.currentTarget);
     });
 
     // Gamepage cover → click to view full size
@@ -2985,9 +2985,9 @@ function wireUI() {
         await loadGames();
     });
 
-    document.getElementById('btn-edit-cngm').addEventListener('click', e => {
+    document.getElementById('btn-edit-clarity').addEventListener('click', e => {
         const id = Number(document.getElementById('edit-game-id').value);
-        if (id) pushGameToCngm(id, e.currentTarget);
+        if (id) pushGameToClarity(id, e.currentTarget);
     });
 
     // ── MODAL: SYSTEMS ───────────────────────────────────────────────────────
@@ -3471,12 +3471,12 @@ function wireUI() {
         }
     });
 
-    document.getElementById('btn-import-cngm-creds').addEventListener('click', async () => {
-        const btn      = document.getElementById('btn-import-cngm-creds');
-        const statusEl = document.getElementById('settings-cngm-import-status');
+    document.getElementById('btn-import-clarity-creds').addEventListener('click', async () => {
+        const btn      = document.getElementById('btn-import-clarity-creds');
+        const statusEl = document.getElementById('settings-clarity-import-status');
         btn.textContent = 'Importing…'; btn.disabled = true;
-        const result = await window.api.importCngmCredentials();
-        btn.textContent = 'Import from CNGM'; btn.disabled = false;
+        const result = await window.api.importClarityCredentials();
+        btn.textContent = 'Import from Clarity'; btn.disabled = false;
         statusEl.style.display = 'block';
         if (result.ok) {
             if (result.igdb_client_id)     document.getElementById('settings-igdb-client-id').value     = result.igdb_client_id;
@@ -3591,7 +3591,7 @@ function wireUI() {
         status.textContent = r.ok ? `✓ Saved backup${r.withSaves ? ' (incl. save states)' : ''}.` : (r.error || 'Backup failed.');
     };
     document.getElementById('btn-backup-emulatte').addEventListener('click', () => runBackup('emulatte', 'EmuLatte'));
-    document.getElementById('btn-backup-suite').addEventListener('click', () => runBackup('suite', 'the CafeNeurotico Suite'));
+    document.getElementById('btn-backup-suite').addEventListener('click', () => runBackup('suite', 'the Clarity Suite'));
     document.getElementById('btn-restore-backup').addEventListener('click', async () => {
         if (!await showConfirm('Restore from a backup ZIP?\nThis OVERWRITES your current library and settings, then restarts EmuLatte.', 'Restore', true, 'Restore Backup')) return;
         const status = document.getElementById('backup-status');
@@ -4087,7 +4087,7 @@ function refreshManualButton(game) {
 
 // Hand a downloaded PDF to the independent viewer window, styled to match the current theme.
 function launchManualViewer(game, filePath, isCache) {
-    const theme = EL_THEMES[_activeTheme] || EL_THEMES['CREMA'];
+    const theme = EL_THEMES[_activeTheme] || EL_THEMES['Couch Mode'];
     window.api.openManualViewer({
         path:   filePath,
         gameId: game.id,
