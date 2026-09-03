@@ -17,7 +17,7 @@ If EmuLatte is **already running**, the request goes to the window that's alread
 
 ## Why it exists
 
-[**CafeNeuroticoClock**](https://github.com/shampoo-is-a-lie/CafeNeuroticoClock) shows a slideshow of your library's art. Click the game name under a piece of art that came from EmuLatte and the ROM's page opens here, ready to launch. The Clock resolves art files against `emulatte.db` read-only — it never writes to your library, and it works whether or not EmuLatte is running.
+[**ClarityClock**](https://github.com/shampoo-is-a-lie/ClarityClock) shows a slideshow of your library's art. Click the game name under a piece of art that came from EmuLatte and the ROM's page opens here, ready to launch. The Clock resolves art files against `emulatte.db` read-only — it never writes to your library, and it works whether or not EmuLatte is running.
 
 That resolution is exact for EmuLatte art, because every art file EmuLatte writes is named `<romId>_<type>`.
 

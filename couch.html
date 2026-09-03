@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>EmuLatte — Couch Mode</title>
   <style>
-    /* Raleway bundled locally (same files as CREMA / desktop EmuLatte) */
+    /* Raleway bundled locally (same files as Couch Mode / desktop EmuLatte) */
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Regular.ttf') format('truetype'); font-weight: 400; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
@@ -35,7 +35,7 @@
     .pb { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 50%; font-size: 11px; font-weight: 900; color: var(--bg); }
     .pb.a { background: #6cc24a; } .pb.b { background: #e05a4f; } .pb.y { background: #f4c430; } .pb.x { background: #4a90d9; }
     .pb.lr { background: var(--text_sec); border-radius: 6px; padding: 0 8px; }
-    /* masked gamepad glyphs (CREMA assets/gamepad_icons, layout-switchable + theme-tinted) */
+    /* masked gamepad glyphs (Couch Mode assets/gamepad_icons, layout-switchable + theme-tinted) */
     .gp-glyph { display: inline-block; width: 1.6em; height: 1.6em; vertical-align: middle; margin: 0 1px; background-color: var(--accent);
                 -webkit-mask-size: contain; -webkit-mask-position: center; -webkit-mask-repeat: no-repeat; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); }
 
@@ -78,7 +78,7 @@
     .cz-tile-label { font-size: 88px; font-weight: 900; letter-spacing: 1px; line-height: 1.02; color: #fff; text-shadow: 0 2px 6px #000; white-space: nowrap; }   /* JS shrinks this to fit the tile */
     .cz-tile-count { display: inline-block; margin-top: 12px; font-size: 22px; font-weight: 900; color: var(--accent); background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 12px; }
 
-    /* ── GALLERY (CREMA gallery-screen, exact CSS, kept fluid) ── */
+    /* ── GALLERY (Couch Mode gallery-screen, exact CSS, kept fluid) ── */
     #screen-wall { padding: 0; }
     #screen-wall > .prompts { position: relative; z-index: 2; }   /* sit above #gallery-bg-grad (z1) */
     #gallery-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
@@ -195,7 +195,7 @@
     body.horiz #gp-cover .cover-frame:not(.jewel) img { height: 100%; width: auto; max-width: 100%; }
     body.horiz #gp-cover .cover-frame.jewel { height: 100%; width: auto; }
 
-    /* ── LIST VIEW (CREMA main-screen, exact CSS, kept fluid) ── */
+    /* ── LIST VIEW (Couch Mode main-screen, exact CSS, kept fluid) ── */
     #screen-list { padding: 40px; }
     .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--border); padding-bottom: 18px; margin-bottom: 18px; flex-shrink: 0; }
     .header-title { display: flex; align-items: center; gap: 20px; font-size: 44px; font-weight: bold; margin: 0; color: var(--text_main); }
@@ -222,7 +222,7 @@
     .mini-dock { flex: 1; background-color: var(--bg_panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; display: flex; justify-content: center; align-items: center; min-height: 90px; }
     .mini-prompt { color: var(--text_dim); font-size: 20px; font-weight: bold; text-align: center; padding: 20px; }
 
-    /* ── Settings menu overlay (CREMA, exact visuals) ── */
+    /* ── Settings menu overlay (Couch Mode, exact visuals) ── */
     #overlay-backdrop { position: absolute; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.35); }
     #overlay-backdrop.hidden { display: none; }
     .overlay-modal { background-color: var(--bg_menu); border: 2px solid var(--border_solid); border-radius: 15px; width: 600px; max-width: 92vw; padding: 30px; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
@@ -234,7 +234,7 @@
     .overlay-item.selected { font-size: 32px; font-weight: bold; background-color: var(--border_solid); color: var(--text_main); border-radius: 8px; }
     #overlay-hint { text-align: center; color: var(--text_dim); font-size: 14px; margin-top: 25px; opacity: 0.7; line-height: 1.5; flex-shrink: 0; }
 
-    /* ── OSK search (CREMA on-screen keyboard) ── */
+    /* ── OSK search (Couch Mode on-screen keyboard) ── */
     #osk-backdrop { position: absolute; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); backdrop-filter: blur(4px); }
     #osk-backdrop.hidden { display: none; }
     .osk-modal { width: min(800px, 92vw); text-align: center; }
@@ -279,7 +279,7 @@
     .now-label { font-size: 12px; font-weight: 900; letter-spacing: 5px; color: var(--accent); }
     .now-title { font-size: clamp(22px, 4vw, 40px); font-weight: 900; color: #fff; text-align: center; max-width: 80vw; }
 
-    /* ── Now Playing / sleep screen (CREMA 1:1): blocks input during a game until the return combo ── */
+    /* ── Now Playing / sleep screen (Couch Mode 1:1): blocks input during a game until the return combo ── */
     #sleep-screen { position: fixed; inset: 0; z-index: 3000; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
     #sleep-screen.hidden { display: none; }
     .sleep-cover { width: 340px; height: 510px; max-height: 60vh; border-radius: 15px; border: 4px solid var(--border_solid); object-fit: cover; box-shadow: 0 20px 50px rgba(0,0,0,0.9); margin-bottom: 30px; }
@@ -758,7 +758,7 @@
     </div>
   </div>
 
-  <!-- ── OSK SEARCH (CREMA on-screen keyboard) ── -->
+  <!-- ── OSK SEARCH (Couch Mode on-screen keyboard) ── -->
   <div id="osk-backdrop" class="hidden">
     <div class="overlay-modal osk-modal">
       <div id="osk-title">SEARCH</div>

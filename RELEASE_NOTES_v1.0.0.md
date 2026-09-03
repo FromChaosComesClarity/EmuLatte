@@ -1,6 +1,6 @@
 A ROM library manager for people who alphabetise things. **EmuLatte 1.0** keeps your emulation collection in order across 56 systems — importing, scraping, launching — and then hands you a second, fullscreen, gamepad-first face for the TV when you're done managing and want to actually play something.
 
-It's the emulation pillar of the Cafe Neurotico ecosystem, and a completely standalone app. Nothing here needs the rest of the suite.
+It's the emulation pillar of the Clarity ecosystem, and a completely standalone app. Nothing here needs the rest of the suite.
 
 *"I use RetroArch BTW"*
 
@@ -10,7 +10,7 @@ It's the emulation pillar of the Cafe Neurotico ecosystem, and a completely stan
 2. `chmod +x EmuLatte.AppImage`
 3. Run it
 
-On first launch it creates a `GameManagerConfig` folder **next to the AppImage** — that folder is your entire library. Put the AppImage somewhere permanent before you start building one. If you already run Cafe Neurotico, drop EmuLatte alongside it so both share the same folder; that's what makes credential import and export work with no configuration.
+On first launch it creates a `GameManagerConfig` folder **next to the AppImage** — that folder is your entire library. Put the AppImage somewhere permanent before you start building one. If you already run Clarity, drop EmuLatte alongside it so both share the same folder; that's what makes credential import and export work with no configuration.
 
 ```sh
 ./EmuLatte.AppImage            # the desktop face — where the managing happens
@@ -37,11 +37,11 @@ Both faces read and write the same database.
 
 **92 themes across 10 families.** Both faces carry all of them — Catppuccin, Gruvbox, Nord, Dracula, Game Boy, Pip-Boy, BrewBalance, and twenty retro operating systems (MS-DOS, Commodore 64, Amiga Workbench, BeOS, NeXTSTEP, Windows 3.1/95/XP, ZX Spectrum, Teletext, amber and green phosphor…), each with **its own era typeface**. All fonts are bundled; nothing is fetched from the network.
 
-**Local-only. Yours.** Everything lives in one folder next to the AppImage. No account, no telemetry, no cloud. Back up EmuLatte alone or the whole Cafe Neurotico suite in one archive.
+**Local-only. Yours.** Everything lives in one folder next to the AppImage. No account, no telemetry, no cloud. Back up EmuLatte alone or the whole Clarity suite in one archive.
 
-## Working with Cafe Neurotico
+## Working with Clarity
 
-Games reach Cafe Neurotico by **exporting them from inside EmuLatte** — the `ADD TO CAFENEUROTICO` button on a game page. Cafe Neurotico does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in CN's library with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Cafe Neurotico or CREMA exactly as it does here.
+Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on a game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in CN's library with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
 
 Export is one-directional and per-game; re-exporting updates in place. **Management of the ROM collection always stays in EmuLatte.**
 
@@ -55,13 +55,13 @@ Everything else works out of the box. BIOS files are never supplied or downloade
 
 ## Documentation
 
-The full manual ships **inside the app** — 22 searchable sections reachable from the About dialog or Settings → General, covering every feature including the complete Couch Mode control reference, BIOS handling, backups and the Cafe Neurotico export.
+The full manual ships **inside the app** — 22 searchable sections reachable from the About dialog or Settings → General, covering every feature including the complete Couch Mode control reference, BIOS handling, backups and the Clarity export.
 
 ## Also on the menu
 
-[**Cafe Neurotico**](https://github.com/shampoo-is-a-lie/CafeNeurotico) — the rest of the library: Steam, GOG, Epic, Flatpak, itch.io and PICO-8, in one binary with three faces. EmuLatte works perfectly without it.
+[**Clarity**](https://github.com/shampoo-is-a-lie/Clarity) — the rest of the library: Steam, GOG, Epic, Flatpak, itch.io and PICO-8, in one binary with three faces. EmuLatte works perfectly without it.
 
-[**CafeNeuroticoClock**](https://github.com/shampoo-is-a-lie/CafeNeuroticoClock) — a desk clock that runs a slideshow of your library's art.
+[**ClarityClock**](https://github.com/shampoo-is-a-lie/ClarityClock) — a desk clock that runs a slideshow of your library's art.
 
 ## Notes
 

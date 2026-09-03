@@ -1,7 +1,7 @@
 {
   "name": "emulatte_electron_build",
   "version": "1.2.0",
-  "description": "EmuLatte by Cafe Neurotico",
+  "description": "EmuLatte by Clarity",
   "main": "main.js",
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
@@ -9,7 +9,7 @@
     "pack": "electron-builder --dir",
     "predist": "node scripts/scramble-ssdev.js",
     "dist": "electron-builder --linux AppImage",
-    "postdist": "D=/home/jose/Games/CNGM; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\""
+    "postdist": "D=/home/jose/Games/Clarity; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\""
   },
   "keywords": [
     "emulation",
@@ -29,7 +29,7 @@
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "com.cafeneurotico.emulatte",
+    "appId": "com.clarity.emulatte",
     "productName": "EmuLatte",
     "linux": {
       "target": "AppImage",

@@ -1,11 +1,11 @@
 # EmuLatte 1.0 — Release Handoff
 
-**Written:** 2026-07-20, from the CafeNeurotico monorepo session that shipped CN 1.0.
+**Written:** 2026-07-20, from the Clarity monorepo session that shipped CN 1.0.
 **For:** a fresh Claude session started in `/home/jose/Documents/DEVELOPMENT/CLAUDE/EmuLatte_Electron_Build/`.
 
 Open that session and say: **"Read RELEASE_HANDOFF.md and let's start."**
 
-This document is the complete plan to take EmuLatte to a 1.0 release the same way Cafe Neurotico
+This document is the complete plan to take EmuLatte to a 1.0 release the same way Clarity
 1.0 was taken there: code audit, version/About plumbing, in-app manual, README rewrite, a website
 in the same visual language, a screenshot gallery, and the GitHub release.
 
@@ -47,7 +47,7 @@ Jose (`shampoo-is-a-lie`, joserobertoazevedo@gmail.com). Read these before makin
 | Version | `package.json` already says **1.0.0** ✅ |
 | License | `LICENSE` present, GPL-3.0 ✅ |
 | Build | `npm run dist` → `dist/EmuLatte.AppImage`, currently **213 MB** ✅ |
-| `postdist` | copies the AppImage to `/home/jose/Games/CNGM/` ✅ |
+| `postdist` | copies the AppImage to `/home/jose/Games/Clarity/` ✅ |
 | Electron | 41.3.0; deps `better-sqlite3`, `adm-zip` ✅ |
 
 **Shape of the app** — two faces in one binary, like CN:
@@ -81,7 +81,7 @@ I ran CN's audit probes against this repo. **These four are real and already con
 
 `README.md`, "Ecosystem Integration" says:
 
-> "CNGM and CREMA can each optionally read EmuLatte's library and surface your ROMs under an
+> "Clarity and Couch Mode can each optionally read EmuLatte's library and surface your ROMs under an
 > **Emulation** category — no import, no duplication. **They read EmuLatte's DB directly** and use
 > the same launch commands it stores."
 
@@ -89,7 +89,7 @@ I ran CN's audit probes against this repo. **These four are real and already con
 2026-07-20. The truth, confirmed in CN's code (`check-emulatte` only detects the AppImage for the
 launcher button):
 
-> Games reach Cafe Neurotico **only by exporting them to Cafe Neurotico from inside EmuLatte**. CN
+> Games reach Clarity **only by exporting them to Clarity from inside EmuLatte**. CN
 > does not read EmuLatte's DB and has no "show emulation" toggle. Exported games land as ordinary
 > `games.db` rows with `Store` = `Emulation`. Management of the ROM collection always stays in EmuLatte.
 
@@ -109,23 +109,23 @@ IPC handler feeding an About dialog so the shipped version is visible in-app. Em
 equivalent. Add:
 - `ipcMain.handle('get-app-version', () => app.getVersion())` in `main.js`
 - expose it in `preload.js`
-- an About entry in the app menu showing name, version, GPL-3.0, the Cafe Neurotico ecosystem line
+- an About entry in the app menu showing name, version, GPL-3.0, the Clarity ecosystem line
   and the contact/GitHub links. Mirror CN's About wording.
 
 ### 3.4 ⚠️ Theme drift between the two faces
 
 - `renderer.js` → `EL_THEMES` = **70** themes
 - `couch.js` → `THEMES` = **69** themes
-- The only difference is `CREMA`, present on the desktop face and missing from Couch Mode.
+- The only difference is `Couch Mode`, present on the desktop face and missing from Couch Mode.
 
-Decide with Jose whether that's intentional (a "CREMA" theme inside EmuLatte's couch face is a bit
+Decide with Jose whether that's intentional (a "Couch Mode" theme inside EmuLatte's couch face is a bit
 odd) or an oversight. **The bigger question:** CN's three faces all carry **93 themes in 10
 categories** after the LatteWrite "Systems" import. EmuLatte is at ~70 and never received the 20
 retro-OS "Systems" themes. Ask whether 1.0 should bring EmuLatte to parity — it's a copy-paste of
 the theme defs plus the era-font wiring, and it's the single most visible consistency gap in the
 ecosystem.
 
-**This is the known trap:** CREMA silently fell behind by exactly this mechanism and nobody noticed
+**This is the known trap:** Couch Mode silently fell behind by exactly this mechanism and nobody noticed
 for two waves, because a face that's missing a theme just falls back instead of erroring.
 
 ### 3.5 Probes that came back CLEAN — don't waste time re-checking
@@ -155,7 +155,7 @@ Expect: no `GameManagerConfig`, no `.db`, no `ss_dev.json`, and no plaintext Scr
 
 ### 3.7 Decision needed: internationalization
 
-CN and CREMA ship English + pt_BR. EmuLatte has **no i18n layer at all** (`main.js:1378` `LANG_PREF`
+CN and Couch Mode ship English + pt_BR. EmuLatte has **no i18n layer at all** (`main.js:1378` `LANG_PREF`
 is only ScreenScraper's metadata-language preference, unrelated). Options: ship 1.0 English-only and
 say so, or port CN's i18n system. **Ask Jose — do not decide this alone.** English-only is the
 sensible 1.0 scope; the ecosystem memory has `project_i18n.md` if he wants it done.
@@ -169,7 +169,7 @@ Findings above came from targeted probes. Still to do:
 2. Every modal/overlay: confirm each one closes on **all** exit paths. CN's audit found a whole class
    of "config screen stays visible after transition" bugs — fixed by making all 4 transitions hide it.
 3. Couch Mode input routing: whatever EmuLatte's equivalent of an overlay-state allowlist is, confirm
-   a newly added menu is registered in it. In CREMA a missing state looks like a **total app freeze**,
+   a newly added menu is registered in it. In Couch Mode a missing state looks like a **total app freeze**,
    not a broken menu — it cost a whole bug on the font picker. There is no `gameState` symbol in
    `couch.js`, so the model differs; find it before assuming it's fine.
 4. Dead code sweep — CN removed an unreachable pre-merge `manual.html` and a dead input handler.
@@ -199,11 +199,11 @@ Write one covering, at minimum:
 1. What EmuLatte is · 2. Install & first run · 3. Adding systems · 4. Importing ROMs ·
 5. The library & gallery views · 6. The game page · 7. Editing game details · 8. Art scraping
 (SGDB / ScreenScraper / TGDB / IGDB — which source gives which asset) · 9. Metadata scraping ·
-10. CNGM credential import · 11. Emulator Scanner · 12. RetroArch cores & per-game overrides ·
+10. Clarity credential import · 11. Emulator Scanner · 12. RetroArch cores & per-game overrides ·
 13. Custom emulator commands · 14. BIOS handling (`assets/bios_db.json`) · 15. Playlists ·
 16. RetroAchievements setup · 17. Trailers · 18. Game manual PDFs (`manual.html`) ·
 19. **Couch Mode** — display types, navigation, save states, screensaver, sound, shaders ·
-20. Themes & fonts · 21. **Exporting games to Cafe Neurotico** (get §3.1 right here) ·
+20. Themes & fonts · 21. **Exporting games to Clarity** (get §3.1 right here) ·
 22. Data layout, backup, and where everything lives.
 
 Match the app's own theme tokens so it inherits the active theme. Keep Jose's voice: direct,
@@ -227,7 +227,7 @@ See §5 for the full spec. Gate the publish on his say-so.
 - [ ] ⚠️ **`gh` CLI is NOT installed on this machine.** Either install it, or Jose does the release
       through the GitHub web UI. Don't assume `gh` exists — I checked.
 
-> **Note on CN's tag:** as of 2026-07-20 CafeNeurotico itself is merged and pushed but the `v1.0.0`
+> **Note on CN's tag:** as of 2026-07-20 Clarity itself is merged and pushed but the `v1.0.0`
 > tag was still not created. If Jose wants the ecosystem tagged consistently, mention it.
 
 ---
@@ -237,8 +237,8 @@ See §5 for the full spec. Gate the publish on his say-so.
 ### 5.1 First decision: where it lives
 
 **Recommended — add `emulatte.html` to the existing `CN_website` repo.**
-`/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/` → `github.com/shampoo-is-a-lie/CafeNeuroticoWebSite`
-→ published at `https://shampoo-is-a-lie.github.io/CafeNeuroticoWebSite/`.
+`/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/` → `github.com/shampoo-is-a-lie/ClarityWebSite`
+→ published at `https://shampoo-is-a-lie.github.io/ClarityWebSite/`.
 One repo, one Pages deploy, shared `assets/`, and CN's landing page **already links to EmuLatte**
 (`index.html:358`) — that link just changes from the GitHub repo to `emulatte.html`. Cheapest to
 maintain and keeps the ecosystem visually welded together.
@@ -286,13 +286,13 @@ already on CN's site as EmuLatte's card and should headline the EmuLatte page.
 - Wordmark + kicker + "I use RetroArch BTW"
 - Download button → `https://github.com/shampoo-is-a-lie/EmuLatte/releases/latest`, meta line
   "version 1.0 · single AppImage · GPL-3.0"
-- A three-line menu block mirroring CN's Manager/GRINDER/CREMA list — e.g. Library / Scrapers /
+- A three-line menu block mirroring CN's Manager/Installer/Couch Mode list — e.g. Library / Scrapers /
   Couch Mode
 - **"what's in the cup"** feature board (7-ish items): 56 systems with core defaults · emulator
   scanner · four scraping sources in one picker · RetroAchievements · trailers via yt-dlp ·
   **Couch Mode** · local-only data
 - **"a look inside"** screenshot gallery — §5.4
-- **"also on the menu"** — a card pointing back at Cafe Neurotico (and the Clock), mirroring how CN's
+- **"also on the menu"** — a card pointing back at Clarity (and the Clock), mirroring how CN's
   page points here. **Use the export wording from §3.1.**
 - Support block: reuse CN's Ko-fi button, PIX modal (QR + key `b734a9e2-e479-42f9-abd6-c88d1b8b880e`)
   and GitHub button verbatim
@@ -358,13 +358,13 @@ Once live, update CN's `index.html:358` link and the EmuLatte repo's website fie
 |---|---|
 | CN website (the visual reference) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/index.html` |
 | CN release notes (structure to mirror) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/RELEASE_NOTES_v1.0.0.md` |
-| The CN monorepo (manual, About, themes, i18n to copy from) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/CafeNeurotico/` |
+| The CN monorepo (manual, About, themes, i18n to copy from) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/Clarity/` |
 | EmuLatte architecture notes (DB schema, IPC handlers, hard parts) | CN memory `project_emulatte_plan.md` |
 | EmuLatte concept + ecosystem rules | CN memory `project_emulatte_concept.md` |
 | Couch Mode original plan | `docs/couch-mode-plan.md` (this repo) |
 
 Memory lives at
-`/home/jose/.claude/projects/-var-home-jose-Documents-DEVELOPMENT-CLAUDE-CafeNeurotico/memory/`.
+`/home/jose/.claude/projects/-var-home-jose-Documents-DEVELOPMENT-CLAUDE-Clarity/memory/`.
 A session started in the EmuLatte folder gets a **different** memory directory and will not see it —
 read those files directly if you need them.
 

@@ -28,9 +28,9 @@
 
 ## ◈ &nbsp; What It Is
 
-EmuLatte is the emulation side of the [Cafe Neurotico Ecosystem](https://github.com/FromChaosComesClarity). It manages your ROM libraries across every system you care about — scraping art and metadata from multiple sources, tracking achievements, downloading trailers, and launching games exactly the way you configured them.
+EmuLatte is the emulation side of the [Clarity Ecosystem](https://github.com/FromChaosComesClarity). It manages your ROM libraries across every system you care about — scraping art and metadata from multiple sources, tracking achievements, downloading trailers, and launching games exactly the way you configured them.
 
-It keeps everything emulation-related in one self-contained app so neither it nor CNGM gets in the other's way. It is also a fully standalone app in its own right — nothing here requires the rest of the suite.
+It keeps everything emulation-related in one self-contained app so neither it nor Clarity gets in the other's way. It is also a fully standalone app in its own right — nothing here requires the rest of the suite.
 
 Two faces, one binary: a **desktop face** for managing the collection, and **Couch Mode** — a fullscreen, gamepad-first, play-only face for a TV or a real CRT.
 
@@ -83,7 +83,7 @@ Every game has a full-screen detail page:
 - **Save states** — browse, label, launch straight into and delete RetroArch states
 - **Game manual** — fetches the scanned booklet from ScreenScraper and opens it in its own window
 - **Per-game RetroArch override** — different core or settings for the one game that needs it
-- **▶ PLAY** button, **WATCH TRAILER**, **EDIT DETAILS**, **ADD TO CAFENEUROTICO**
+- **▶ PLAY** button, **WATCH TRAILER**, **EDIT DETAILS**, **ADD TO CLARITY**
 
 <br>
 
@@ -107,7 +107,7 @@ ScreenScraper is the best all-round source for console ROMs and the only one tha
 
 Scraped assets go directly into the game's record. You can also pick a **local file** for any asset type, or delete individual images with the ✕ button. Every source has a **Test** button so you find out a key is wrong before starting a scrape, not during one.
 
-> **CNGM credential import** — if you already have SGDB or IGDB keys configured in CNGM, EmuLatte can import them so you don't enter them twice.
+> **Clarity credential import** — if you already have SGDB or IGDB keys configured in Clarity, EmuLatte can import them so you don't enter them twice.
 
 <br>
 
@@ -201,18 +201,18 @@ Each Systems theme carries **its own era typeface** — the interface actually c
 ## ◈ &nbsp; Ecosystem Integration
 
 ```
-  CNGM           Central hub — PC game library, store sync, launches all companion apps
+  Clarity           Central hub — PC game library, store sync, launches all companion apps
     │
-    ├──▸  CREMA       Fullscreen / gamepad counterpart for CNGM + EmuLatte
+    ├──▸  Couch Mode       Fullscreen / gamepad counterpart for Clarity + EmuLatte
     │
-    ├──▸  GRINDER     GOG & Epic install engine — feeds games back into CNGM
+    ├──▸  Installer     GOG & Epic install engine — feeds games back into Clarity
     │
-    ├──▸  EmuLatte ◈  ROM library manager — exports games into CNGM's library
+    ├──▸  EmuLatte ◈  ROM library manager — exports games into Clarity's library
     │
-    └──▸  CN Clock    Floating desktop clock — shows art from CNGM + EmuLatte
+    └──▸  CN Clock    Floating desktop clock — shows art from Clarity + EmuLatte
 ```
 
-Games reach Cafe Neurotico by **exporting them from inside EmuLatte** — the `ADD TO CAFENEUROTICO` button on the game page. CNGM does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in CNGM's `games.db` with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from CNGM or CREMA exactly as it does here.
+Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on the game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in Clarity's `games.db` with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
 
 Management of the ROM collection always stays in EmuLatte. Export is one-directional and re-exporting an already-exported game updates it in place.
 
@@ -228,7 +228,7 @@ All data lives in `GameManagerConfig/EmuLatte/` — backs up with everything els
 
 A full gallery of both faces — desktop, Couch Mode, CRT layout, themes — lives on the website:
 
-**[fromchaoscomesclarity.github.io/CafeNeuroticoWebSite/emulatte.html](https://fromchaoscomesclarity.github.io/CafeNeuroticoWebSite/emulatte.html)**
+**[fromchaoscomesclarity.github.io/ClarityWebSite/emulatte.html](https://fromchaoscomesclarity.github.io/ClarityWebSite/emulatte.html)**
 
 <br>
 
@@ -244,11 +244,11 @@ chmod +x EmuLatte.AppImage
 ./EmuLatte.AppImage
 ```
 
-Place it alongside your CNGM installation (e.g. `~/Games/CNGM/`) so the shared `GameManagerConfig/` directory is found automatically.
+Place it alongside your Clarity installation (e.g. `~/Games/Clarity/`) so the shared `GameManagerConfig/` directory is found automatically.
 
 EmuLatte stores its data in a `GameManagerConfig/` folder **next to the AppImage**, so put the AppImage somewhere permanent before building a library.
 
-> **Language:** EmuLatte 1.0 is English-only. (Cafe Neurotico and CREMA also ship pt_BR; EmuLatte does not yet.)
+> **Language:** EmuLatte 1.0 is English-only. (Clarity and Couch Mode also ship pt_BR; EmuLatte does not yet.)
 
 <br>
 
