@@ -259,7 +259,7 @@ It is the reference implementation. The essentials:
 --amber:#ffb000; --amber-dim:#9a6a00;
 --chalk:#f4efe6; --chalk-dim:#bcae97;
 --board:#1d2420; --board2:#161b18;
---crema:#D4A373; --kofi:#FF5E5B; --pix:#32BCAD;
+--couch:#D4A373; --kofi:#FF5E5B; --pix:#32BCAD;
 ```
 
 **Type:** `Caveat` (handwritten — headings, captions, feature copy), `Raleway` 400/700/900
@@ -267,7 +267,7 @@ It is the reference implementation. The essentials:
 tags, counters). Loaded from Google Fonts on the site; that's fine here.
 
 **The concept:** a chalkboard café menu. Dashed 2px `rgba(244,239,230,.18)` rules between sections,
-handwritten Caveat headings in `--crema`, uppercase Raleway-900 labels, a faint chalk-dust grain
+handwritten Caveat headings in `--couch`, uppercase Raleway-900 labels, a faint chalk-dust grain
 overlay, everything centred in a 780px column on a dark board-green ground.
 
 **The boot terminal:** a fake amber CRT boot sequence with scanlines and flicker covers the page,
