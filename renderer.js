@@ -36,6 +36,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     await loadCores();
     await loadSystemPresets();
     retroarchVariant = await window.api.getSetting('retroarch_variant') || 'none';
+    // ⚠️ Before the theme is resolved, not after: the desktop's palette lives in the theme
+    // table under a key this registers, and applyTheme() on a key that is not there yet is a
+    // silent no-op, which would drop anyone wearing it back to the built-in default.
+    await initOmarchy();
     const savedTheme = await window.api.getSetting('el_theme') || 'Couch Mode';
     applyTheme(savedTheme, false);
     wireUI();
@@ -2331,6 +2335,9 @@ function applyTheme(name, save = true) {
     Object.keys(t).forEach(k => { if (k !== 'font') root.style.setProperty(`--${k}`, t[k]); });
     root.style.setProperty('--ui-font', t.font ? `'${t.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
     _activeTheme = name;
+    // Geometry follows the palette: the desktop's corner radius is worn only while its colours
+    // are, so it needs no toggle of its own beyond the one in the Desktop pane.
+    syncOmarchyGeometry(name);
     if (save) {
         window.api.setSetting('el_theme', name);
         try { localStorage.setItem('el_theme_cache', JSON.stringify(t)); } catch(e) {}
@@ -2347,7 +2354,13 @@ function renderThemeCategories() {
     backBtn.style.display = 'none';
     cats.innerHTML = '';
     grid.innerHTML = '';
-    Object.keys(EL_THEME_CATEGORIES).forEach(cat => {
+    // The desktop's own palette leads the list where there is one: it is the theme most likely
+    // to be wanted on a machine that has it, and the only one here that is not ours.
+    const catNames = Object.keys(EL_THEME_CATEGORIES);
+    const orderedCats = catNames.includes('Your Desktop')
+        ? ['Your Desktop', ...catNames.filter(c => c !== 'Your Desktop')]
+        : catNames;
+    orderedCats.forEach(cat => {
         const btn = document.createElement('button');
         btn.className = 'theme-cat-btn';
         btn.textContent = cat;
@@ -2359,7 +2372,7 @@ function renderThemeCategories() {
         cats.appendChild(btn);
     });
     // Show first category by default
-    const firstCat = Object.keys(EL_THEME_CATEGORIES)[0];
+    const firstCat = orderedCats[0];
     cats.querySelector('.theme-cat-btn')?.classList.add('active');
     renderThemesInCategory(firstCat);
 }
@@ -2394,6 +2407,312 @@ function renderThemesInCategory(cat) {
         });
         grid.appendChild(wrap);
     });
+}
+
+
+// ── OMARCHY: WEARING THE DESKTOP ─────────────────────────────────────────────
+// Omarchy declares its palette in named roles (background, foreground, accent, …) and every
+// app on the system is themed from that one file. EmuLatte's own themes have the same shape,
+// so the right integration is not "pick whichever of our themes looks closest": it is to
+// build a theme from the user's actual palette and keep matching when they switch.
+//
+// The mapping lives in the main process (omarchy-theme.js) and arrives here already in this
+// app's token shape, so this half only has to register it and re-register it on a change.
+
+const OMARCHY_THEME = 'YOUR DESKTOP';
+let _omarchyThemeName = '';     // the Omarchy theme's own display name, for the pane
+let _omarchyStatus = null;      // last answer from omarchy-status, for the pane
+
+/*
+ * Put the desktop's palette in the theme table under one STABLE key.
+ *
+ * ⚠️ The key deliberately does not carry the Omarchy theme's name. `el_theme` stores whichever
+ * theme is active, and a key like "OMARCHY TOKYO-NIGHT" would stop resolving the moment the
+ * user ran `omarchy theme set` on something else, silently dropping them back to a default.
+ * One key, repopulated, means following the desktop is a decision made once.
+ */
+function registerOmarchyTheme(desc) {
+    if (!desc || !desc.available || !desc.theme) {
+        delete EL_THEMES[OMARCHY_THEME];
+        delete EL_THEME_CATEGORIES['Your Desktop'];
+        _omarchyThemeName = '';
+        return false;
+    }
+    EL_THEMES[OMARCHY_THEME] = desc.theme;
+    EL_THEME_CATEGORIES['Your Desktop'] = [OMARCHY_THEME];
+    _omarchyThemeName = desc.name || '';
+    return true;
+}
+
+/*
+ * The desktop's corner radius, not just its colours.
+ *
+ * Matching the palette makes the app look like the desktop; matching the geometry makes it sit
+ * in it. Omarchy defaults to square corners, and an app full of rounded cards on a square
+ * desktop reads as foreign in a way that is hard to name until the two are side by side.
+ *
+ * ⚠️ Cached in localStorage for the same reason the palette is: the value arrives over an
+ * async round trip, and anything applied after that lands on a window the user is already
+ * looking at. The early script in index.html reads the cache before the first paint.
+ */
+function applyOmarchyGeometry(rounding) {
+    const root = document.documentElement;
+    if (rounding === null || rounding === undefined) {
+        root.style.removeProperty('--radius');
+        try { localStorage.removeItem('el_radius_cache'); } catch (e) {}
+        return;
+    }
+    const px = `${Math.max(0, Number(rounding) || 0)}px`;
+    root.style.setProperty('--radius', px);
+    try { localStorage.setItem('el_radius_cache', px); } catch (e) {}
+}
+
+/*
+ * Apply or drop the desktop's corner radius for a theme about to be worn. Called from
+ * applyTheme(), which is the only place a theme changes, so the two can never disagree.
+ */
+function syncOmarchyGeometry(themeName) {
+    if (!_omarchyStatus) return;
+    const on = themeName === OMARCHY_THEME && _omarchyStatus.settings.matchGeometry;
+    applyOmarchyGeometry(on ? (_omarchyStatus.geometry ? _omarchyStatus.geometry.rounding : null) : null);
+}
+
+/*
+ * Called once at start. Everything here is a no-op off Omarchy, and the pane's rail button
+ * stays hidden, so nothing about this appears on any other desktop.
+ */
+async function initOmarchy() {
+    let s;
+    try { s = await window.api.omarchyStatus(); } catch (e) { return; }
+    if (!s) return;
+    _omarchyStatus = s;
+
+    // The window-management half is true for anyone on Hyprland, Omarchy or not, so the pane
+    // is offered to them too: the rules, the idle inhibitor and the corner radius are all
+    // theirs. Someone on neither never sees any of it.
+    if (!s.isOmarchy && !s.isHyprland) return;
+    const railBtn = document.getElementById('settings-rail-omarchy');
+    if (railBtn) railBtn.style.display = '';
+
+    registerOmarchyTheme(s.theme);
+
+    // `omarchy theme set` rewrites the state directory and the main process notices. Re-register
+    // the palette, and re-apply it if it is the one being worn.
+    window.api.onOmarchyTheme(desc => {
+        registerOmarchyTheme(desc);
+        if (_activeTheme === OMARCHY_THEME) {
+            if (desc && desc.available) applyTheme(OMARCHY_THEME);
+            else applyTheme('Couch Mode');   // the theme went away; do not leave a stale palette on
+        }
+        if (document.getElementById('modal-settings')?.classList.contains('open')) renderOmarchyPane();
+    });
+}
+
+// ── THE DESKTOP PANE ─────────────────────────────────────────────────────────
+// Rendered on entry rather than at start, so an install the user just did in a terminal is
+// reflected by reopening the pane. Every probe behind it is a file read or a short spawn.
+
+function omarchyCard(title, search, body) {
+    return `<div class="tool-card" data-search="omarchy hyprland desktop ${search}">
+        <div class="tool-card-title">${title}</div>${body}</div>`;
+}
+
+function omarchyToggle(id, key, on, label, hint) {
+    return `<label class="core-all-toggle" style="margin-top:6px;">
+        <input type="checkbox" id="${id}" data-omarchy-flag="${key}" ${on ? 'checked' : ''}> ${label}</label>
+        ${hint ? `<div class="hint">${hint}</div>` : ''}`;
+}
+
+async function renderOmarchyPane() {
+    const host = document.getElementById('omarchy-pane');
+    if (!host) return;
+    let s;
+    try { s = await window.api.omarchyStatus(); } catch (e) { return; }
+    if (!s) return;
+    _omarchyStatus = s;
+    registerOmarchyTheme(s.theme);
+
+    const cards = [];
+
+    // 1. What this machine is. Reported rather than assumed: the version comes from
+    //    /etc/os-release and the compositor's from hyprctl.
+    cards.push(omarchyCard('This Desktop', 'version hyprland compositor detect os-release', `
+        <div class="hint" style="margin-top:0;">
+            ${s.isOmarchy ? `<b>${escHtml(s.prettyName || 'Omarchy')}</b>${s.version ? ` ${escHtml(s.version)}` : ''}`
+                          : 'Not Omarchy, but Hyprland is running, so the window behaviour below is yours too.'}
+            ${s.isHyprland ? `<br>${escHtml((s.hyprland || 'Hyprland').split(' built')[0])} · ${s.monitors} monitor${s.monitors === 1 ? '' : 's'}` : ''}
+            ${s.theme && s.theme.available ? `<br>Desktop theme: <b>${escHtml(s.theme.name)}</b> (${escHtml(s.theme.mode)})` : ''}
+        </div>`));
+
+    // 2. The palette. One button, deliberately, rather than a silent takeover: overriding a
+    //    theme somebody picked on purpose would be worse than asking once.
+    if (s.theme && s.theme.available) {
+        const wearing = _activeTheme === OMARCHY_THEME;
+        cards.push(omarchyCard('Match My Desktop Theme', 'theme colors palette match follow colors.toml', `
+            <button id="btn-omarchy-match-theme" class="primary" style="width:100%;" ${wearing ? 'disabled' : ''}>
+                ${wearing ? `Wearing ${escHtml(s.theme.name)}` : `Use ${escHtml(s.theme.name)}`}
+            </button>
+            <div class="hint">Builds a theme from your desktop's own palette rather than picking the
+            closest of ours, and follows it the moment you run <code>omarchy theme set</code>. It is
+            also in the theme picker, under <b>Your Desktop</b>.</div>
+            ${omarchyToggle('omarchy-geometry-chk', 'omarchy_match_geometry', s.settings.matchGeometry,
+                'Take the desktop’s corner radius too',
+                `Your desktop is currently set to ${s.geometry ? s.geometry.rounding : 0}px corners. Applied only while you are wearing the desktop palette.`)}`));
+    } else {
+        cards.push(omarchyCard('Match My Desktop Theme', 'theme colors palette', `
+            <div class="hint" style="margin-top:0;">Your current desktop theme does not ship a
+            <code>colors.toml</code>, so there is no palette to read. Switch to one that does and this
+            appears on its own.</div>`));
+    }
+
+    // 3. What is missing. RetroArch is the headline because 53 of the 56 shipped presets
+    //    launch through it, and Omarchy's own installer brings the whole core set in one step.
+    const missingInst = s.installers.filter(i => !i.present);
+    if (missingInst.length) {
+        cards.push(omarchyCard('Missing for Emulation', 'retroarch install cores controller xbox gamepad missing', `
+            ${missingInst.map(i => `
+                <div style="margin-top:8px;">
+                    <button class="${i.headline ? 'primary' : ''}" style="width:100%;" data-omarchy-installer="${escHtml(i.key)}">Install ${escHtml(i.label)}</button>
+                    <div class="hint">${escHtml(i.why)}</div>
+                </div>`).join('')}
+            <div class="hint" style="margin-top:10px;">Each opens a terminal running Omarchy's own
+            installer. Nothing here ever runs <code>sudo</code> for you: you see the command and type
+            your own password.</div>`));
+    } else {
+        cards.push(omarchyCard('Missing for Emulation', 'retroarch install cores controller', `
+            <div class="hint" style="margin-top:0;">Nothing missing. RetroArch and controller support
+            are both installed.</div>`));
+    }
+
+    // 4. The optional tools. Selected, then installed in one command, because repo and AUR
+    //    packages take different commands and mixing them produces a "target not found".
+    const missingTools = s.tools.filter(t => !t.present);
+    if (missingTools.length) {
+        cards.push(omarchyCard('Optional Tools', 'gamemode mangohud gamescope flatpak wmctrl packages install', `
+            ${missingTools.map(t => `
+                <label class="core-all-toggle" style="margin-top:6px;">
+                    <input type="checkbox" data-omarchy-tool="${escHtml(t.key)}"> ${escHtml(t.label)}${t.extra ? ' <span style="opacity:.6;">(extra)</span>' : ''}
+                </label>
+                <div class="hint">${escHtml(t.why)}</div>`).join('')}
+            <button id="btn-omarchy-install-tools" style="width:100%; margin-top:10px;">Install Selected…</button>
+            <div class="hint">Opens a terminal with the command. <b>Extra</b> means this app never calls
+            it itself, so nothing here degrades without it.</div>`));
+    }
+
+    // 5. Window behaviour. The learned-class list is shown because it is the one part of this
+    //    the user cannot otherwise see, and a missing entry explains a game that did not
+    //    fullscreen: it was that emulator's first launch.
+    if (s.isHyprland) {
+        const mode = s.settings.gameWindowMode;
+        const learned = s.settings.knownGameClasses;
+        cards.push(omarchyCard('How Emulators Open', 'window rules fullscreen float tile hyprland tiling', `
+            <div class="form-row" style="margin-top:6px;">
+                <label>When a game starts</label>
+                <select id="omarchy-window-mode">
+                    <option value="fullscreen" ${mode === 'fullscreen' ? 'selected' : ''}>Fullscreen (recommended)</option>
+                    <option value="float" ${mode === 'float' ? 'selected' : ''}>Floating window</option>
+                    <option value="tile" ${mode === 'tile' ? 'selected' : ''}>Leave it to the compositor</option>
+                </select>
+            </div>
+            <div class="hint">Tiled, an emulator is resized by the layout rather than by its aspect
+            ratio, which is what turns a clean 4:3 picture into a smeared one.</div>
+            ${omarchyToggle('omarchy-rules-chk', 'omarchy_window_rules', s.settings.windowRules,
+                'Let EmuLatte set window rules',
+                'Session-only, and nothing is ever written to your Hyprland config.')}
+            <div class="hint" style="margin-top:10px;">Emulators recognised so far:
+                <b>${learned.length ? escHtml(learned.join(', ')) : 'none yet'}</b>.
+                A new emulator is recognised by reading back the window it actually opens, so its
+                first launch is not affected and every one after it is.</div>
+            <button id="btn-omarchy-reload-rules" style="width:100%; margin-top:10px;">Apply Now</button>
+            <div class="hint">Rules normally take effect at the next start, because Hyprland cannot
+            withdraw one once it is set. This reloads your Hyprland config to clear them, which also
+            drops runtime rules set by other tools this session.</div>`));
+    }
+
+    // 6. Getting out of the way while you play.
+    cards.push(omarchyCard('While You Play', 'idle lock screen sleep power profile performance battery', `
+        ${omarchyToggle('omarchy-idle-chk', 'omarchy_hold_idle', s.settings.holdIdle,
+            'Hold the screen awake while a game runs',
+            'A pad-only Couch session produces no keyboard or mouse input at all, so the desktop’s idea of idle and yours have nothing in common. Held for exactly as long as the game runs, and released with it, so a crash cannot leave your lock screen disabled.')}
+        ${s.isOmarchy ? omarchyToggle('omarchy-power-chk', 'omarchy_power_profile', s.settings.powerProfile,
+            'Switch to the performance power profile while a game runs',
+            'The previous profile is captured before switching and put back afterwards, so this cannot strand a laptop on performance.') : ''}`));
+
+    // 7. Kernel tuning. This REPORTS. It never tunes: kernel parameters belong to the
+    //    distribution and to the person running the machine.
+    if (s.isOmarchy) {
+        const rows = s.tuning.map(t => {
+            const mark = t.ok === null ? '?' : t.ok ? '✓' : '✕';
+            const colour = t.ok === null ? 'var(--text_dim)' : t.ok ? 'var(--accent)' : 'var(--text_sec)';
+            return `<div style="margin-top:8px;">
+                <div style="font-size:12px;"><span style="color:${colour}; font-weight:900;">${mark}</span>
+                    ${escHtml(t.label)} <span style="color:var(--text_dim);">= ${escHtml(String(t.value))}</span></div>
+                ${t.ok ? '' : `<div class="hint">${escHtml(t.why)}</div>`}</div>`;
+        }).join('');
+        cards.push(omarchyCard('System Tuning', 'sysctl kernel tuning max_map_count split lock file limit', `
+            ${rows}
+            ${s.tuningCommand ? `
+                <button id="btn-omarchy-tuning" style="width:100%; margin-top:10px;">Fix in a Terminal…</button>
+                <div class="hint">Writes a <code>sysctl.d</code> drop-in so the change survives a reboot.
+                This app reports these and never changes them for you: kernel parameters belong to your
+                machine, and you see the command and type your own password.</div>`
+              : '<div class="hint" style="margin-top:10px;">Everything is already where it should be.</div>'}`));
+    }
+
+    host.innerHTML = cards.join('');
+    wireOmarchyPane();
+}
+
+function wireOmarchyPane() {
+    const status = el => { const n = document.getElementById(el); return n; };
+
+    document.getElementById('btn-omarchy-match-theme')?.addEventListener('click', () => {
+        applyTheme(OMARCHY_THEME);
+        if (_omarchyStatus?.settings.matchGeometry) applyOmarchyGeometry(_omarchyStatus.geometry?.rounding);
+        renderOmarchyPane();
+    });
+
+    document.querySelectorAll('#omarchy-pane [data-omarchy-flag]').forEach(chk => {
+        chk.addEventListener('change', async () => {
+            const key = chk.dataset.omarchyFlag;
+            await window.api.omarchySetFlag(key, chk.checked);
+            if (key === 'omarchy_match_geometry') {
+                applyOmarchyGeometry(chk.checked && _activeTheme === OMARCHY_THEME ? _omarchyStatus?.geometry?.rounding : null);
+            }
+        });
+    });
+
+    document.querySelectorAll('#omarchy-pane [data-omarchy-installer]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const r = await window.api.omarchyRunInstaller(btn.dataset.omarchyInstaller);
+            btn.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+        });
+    });
+
+    document.getElementById('btn-omarchy-install-tools')?.addEventListener('click', async (e) => {
+        const keys = [...document.querySelectorAll('#omarchy-pane [data-omarchy-tool]:checked')].map(c => c.dataset.omarchyTool);
+        if (!keys.length) { e.target.textContent = 'Pick something first.'; return; }
+        const r = await window.api.omarchyInstallTools(keys);
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+    });
+
+    document.getElementById('omarchy-window-mode')?.addEventListener('change', async (e) => {
+        await window.api.omarchySetWindowMode(e.target.value);
+    });
+
+    document.getElementById('btn-omarchy-reload-rules')?.addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        const r = await window.api.omarchyReloadRules();
+        e.target.textContent = r?.ok ? `Applied to ${r.applied} rule${r.applied === 1 ? '' : 's'}.` : (r?.error || 'Hyprland refused the reload.');
+    });
+
+    document.getElementById('btn-omarchy-tuning')?.addEventListener('click', async (e) => {
+        const r = await window.api.omarchyRunTuning();
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+    });
+
+    if (typeof enhanceAllSelects === 'function') enhanceAllSelects();
 }
 
 // ── UI WIRING ─────────────────────────────────────────────────────────────────
@@ -3884,6 +4203,7 @@ function wireUI() {
         item.addEventListener('click', () => {
             const pane = item.dataset.pane;
             if (pane === 'express') renderExpressSettings();   // load fresh + render the chips on entry
+            if (pane === 'omarchy') renderOmarchyPane();       // re-probe on entry, so an install just done in a terminal shows
             document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b === item));
             document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
             document.getElementById('settings-content').scrollTop = 0;

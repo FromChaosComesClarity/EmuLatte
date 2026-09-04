@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, powerSaveBlocker } = require('electron');
 app.setName('emulatte');
 
 // ssimg:// proxies ScreenScraper thumbnails through the main process so the user's ssid/sspassword
@@ -16,6 +16,13 @@ const Database = require('better-sqlite3');
 const { spawn, spawnSync, execFile } = require('child_process');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
+
+// Desktop-level integration. All three import node builtins only and nothing from this app,
+// and the first two are the same files the sibling app carries: one module in two repos, so a
+// fix to either belongs in both. Everything they do gates itself off on other desktops.
+const omarchy = require('./omarchy');
+const omarchyTheme = require('./omarchy-theme');
+const desktopDescriptor = require('./desktop-descriptor');
 
 let baseDir;
 if (process.env.APPIMAGE) {
@@ -284,6 +291,7 @@ app.whenReady().then(() => {
     }
 
     createWindow();
+    omarchyStartup();
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -498,6 +506,224 @@ ipcMain.handle('get-setting', (_, key) => {
 ipcMain.handle('set-setting', (_, key, value) => {
     if (!db) return;
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? ''));
+});
+
+// ── OMARCHY ──────────────────────────────────────────────────────────────────
+// Everything in this section is desktop-level integration that switches itself on when
+// Omarchy (or, for the window-management half, any Hyprland session) is detected, and is
+// invisible everywhere else. There is no separate build and no separate platform: this is the
+// same Linux app, aware of the desktop it happens to be sitting on.
+//
+// See docs/omarchy-plan.md for what carries over from the sibling app and what does not.
+
+const settingGet = (key, fallback = null) => {
+    try { return db?.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? fallback; }
+    catch { return fallback; }
+};
+const settingSet = (key, value) => {
+    try { db?.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? '')); }
+    catch {}
+};
+// Settings that decide how windows behave default to ON, and are stored as '1'/'0' so an
+// absent row means "never chosen" and takes the default rather than reading as false.
+const settingFlag = (key, dflt) => { const v = settingGet(key); return v === null || v === '' ? dflt : v === '1'; };
+
+const gameWindowMode = () => settingGet('omarchy_game_window_mode', omarchy.GAME_WINDOW_MODE_DEFAULT);
+
+/*
+ * Emulator window classes learned in previous sessions.
+ *
+ * ⚠️ This is persisted rather than re-derived because learning costs a launch: the class is
+ * read back off the window the emulator actually opened, so the very first launch of a new
+ * emulator cannot be fullscreened, only every one after it. Throwing the list away between
+ * sessions would spend that first launch again every time the app restarted.
+ */
+function knownGameClasses() {
+    try {
+        const list = JSON.parse(settingGet('omarchy_game_classes', '[]'));
+        return Array.isArray(list) ? list.filter(c => typeof c === 'string' && c) : [];
+    } catch { return []; }
+}
+
+function rememberGameClass(cls) {
+    if (!cls) return false;
+    const known = knownGameClasses();
+    if (known.includes(cls)) return false;
+    known.push(cls);
+    settingSet('omarchy_game_classes', JSON.stringify(known));
+    return true;
+}
+
+// ── A game session ───────────────────────────────────────────────────────────
+// Counted, not boolean. Two emulators can be open at once, and the inhibitor has to survive
+// the first one closing.
+//
+// ⚠️ An idle INHIBITOR rather than flipping the desktop's idle setting: an inhibitor dies with
+// the process holding it, whereas a toggle left flipped by a crash would leave someone's lock
+// screen disabled indefinitely. Persistent state that outlives a crash is exactly what a game
+// launcher should not leave behind on a desktop.
+//
+// This matters more here than it does for a mouse-and-keyboard library: a pad-only Couch
+// session generates no input the desktop can see at all, so its idea of idle and the player's
+// have nothing in common.
+let _liveSessions = 0;
+
+function beginGameSession() {
+    if (++_liveSessions !== 1) return;
+    if (settingFlag('omarchy_hold_idle', true))  omarchy.inhibitIdle(true, powerSaveBlocker);
+    if (settingFlag('omarchy_power_profile', true)) omarchy.setGamingPower(true);
+}
+
+function endGameSession() {
+    if (_liveSessions === 0 || --_liveSessions !== 0) return;
+    omarchy.inhibitIdle(false, powerSaveBlocker);
+    omarchy.setGamingPower(false);
+}
+
+/*
+ * The one place an emulator is started. Every launch route goes through here so the session
+ * hooks cannot be forgotten by the next one that is added.
+ *
+ * ⚠️ `detached` + `unref` is what stops a game dying when EmuLatte is closed mid-play, and it
+ * does NOT stop us hearing about its exit: unref only releases the event loop's reference, the
+ * handle still emits, and the closure below keeps it alive. The 'error' listener is not
+ * optional either, spawn reports a failure asynchronously, so a try/catch alone would let an
+ * unhandled 'error' event take the whole app down.
+ */
+function launchEmulator(cmd) {
+    const child = spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    child.unref();
+    beginGameSession();
+    let ended = false;
+    const done = () => { if (!ended) { ended = true; endGameSession(); } };
+    child.on('exit', done);
+    child.on('close', done);
+    learnAndRuleFor(child.pid);
+    return child;
+}
+
+/*
+ * Find out what window class this emulator opens under, and rule it from now on.
+ *
+ * Nothing is awaited by the caller and nothing is reported: a class that never turns up is the
+ * normal outcome for a game that failed to start or was closed at once, and a window rule is
+ * never worth interrupting play over.
+ */
+function learnAndRuleFor(pid) {
+    if (!omarchy.isHyprland() || !settingFlag('omarchy_window_rules', true)) return;
+    omarchy.learnGameClass(pid).then(cls => {
+        if (!cls) return;
+        if (rememberGameClass(cls)) omarchy.applyGameWindowRule(cls, gameWindowMode());
+    }).catch(() => {});
+}
+
+// ── Wearing the desktop's palette ────────────────────────────────────────────
+// The renderer owns the theme table, so main.js only reports what Omarchy currently declares
+// and says when it changes. `omarchy theme set` rewrites the state directory, and the watcher
+// debounces the two or three events one switch produces.
+let _stopThemeWatch = null;
+
+function startThemeWatch() {
+    if (_stopThemeWatch || !omarchyTheme.isSupported()) return;
+    _stopThemeWatch = omarchyTheme.watch(desc => {
+        for (const w of BrowserWindow.getAllWindows()) {
+            if (!w.isDestroyed()) w.webContents.send('omarchy-theme-changed', desc);
+        }
+    });
+}
+
+app.on('will-quit', () => {
+    try { _stopThemeWatch && _stopThemeWatch(); } catch {}
+    // ⚠️ Put the power profile back even on an abrupt quit with a game still running. The
+    // inhibitor takes care of itself (it dies with this process); the profile does not.
+    if (_liveSessions > 0) { _liveSessions = 1; endGameSession(); }
+});
+
+/*
+ * Once per start: the window rules for this session, the theme watch, and telling the desktop
+ * where this installation is.
+ */
+function omarchyStartup() {
+    if (omarchy.isHyprland() && settingFlag('omarchy_window_rules', true)) {
+        omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() });
+    }
+    startThemeWatch();
+    try {
+        desktopDescriptor.publish({
+            version: app.getVersion(),
+            baseDir,
+            configDir,
+            libraryDb: dbPath,
+            imagesDir,
+            selfExecutable: process.execPath,
+        });
+    } catch {}
+}
+
+// ── IPC ──────────────────────────────────────────────────────────────────────
+// One call answers the whole Omarchy pane. Every probe in it is a filesystem read or a short
+// spawn, so it is cheap enough to re-run whenever the pane is opened, and re-running it is how
+// the pane reflects an install the user just did in a terminal.
+ipcMain.handle('omarchy-status', () => ({
+    ...omarchy.describe(),
+    theme: omarchyTheme.describe(),
+    geometry: omarchy.hyprGeometry(),
+    tools: omarchy.toolStatus(),
+    gap: omarchy.gapSummary(),
+    // The app reports only what it is responsible for: emulation, never the PC-gaming half.
+    installers: omarchy.installerStatus().filter(i => !i.pcGaming),
+    tuning: omarchy.systemTuning(),
+    tuningCommand: omarchy.tuningCommand(),
+    settings: {
+        windowRules:  settingFlag('omarchy_window_rules', true),
+        holdIdle:     settingFlag('omarchy_hold_idle', true),
+        powerProfile: settingFlag('omarchy_power_profile', true),
+        matchGeometry: settingFlag('omarchy_match_geometry', true),
+        gameWindowMode: gameWindowMode(),
+        knownGameClasses: knownGameClasses(),
+    },
+}));
+
+ipcMain.handle('omarchy-theme', () => omarchyTheme.describe());
+
+ipcMain.handle('omarchy-install-tools',  (_, keys) => omarchy.openInstallTerminal(Array.isArray(keys) ? keys : []));
+ipcMain.handle('omarchy-run-installer',  (_, key)  => omarchy.runInstaller(key));
+ipcMain.handle('omarchy-run-tuning',     ()        => {
+    const cmd = omarchy.tuningCommand();
+    return cmd ? omarchy.openTerminalWith(cmd) : { ok: false, error: 'Nothing to change, every setting is already where it should be.' };
+});
+
+ipcMain.handle('omarchy-set-flag', (_, key, on) => {
+    const allowed = ['omarchy_window_rules', 'omarchy_hold_idle', 'omarchy_power_profile', 'omarchy_match_geometry'];
+    if (!allowed.includes(key)) return { ok: false, error: `Unknown setting: ${key}` };
+    settingSet(key, on ? '1' : '0');
+    if (key === 'omarchy_window_rules' && on) {
+        omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() });
+    }
+    return { ok: true };
+});
+
+ipcMain.handle('omarchy-set-game-window-mode', (_, mode) => {
+    if (!Object.prototype.hasOwnProperty.call(omarchy.GAME_WINDOW_MODES, mode)) {
+        return { ok: false, error: `Unknown window mode: ${mode}` };
+    }
+    settingSet('omarchy_game_window_mode', mode);
+    // ⚠️ A Hyprland rule cannot be withdrawn once set, so the new mode cannot simply replace
+    // the old one: the compositor has to be made to forget every runtime rule first, which is
+    // what reload does. Nothing here calls that on its own, the user asked for the change.
+    return { ok: true, applied: false, needsReload: true };
+});
+
+// Make the change take effect now rather than next start.
+//
+// ⚠️ Not free, and the button that calls this says so: `hyprctl reload` drops every window
+// rule added at runtime this session, including ones other tools set, and only ours are put
+// back. It does not touch the user's own config, which is what it re-reads.
+ipcMain.handle('omarchy-reload-rules', () => {
+    const r = omarchy.reloadConfig();
+    if (!r.ok) return { ok: false, error: 'Hyprland did not accept the reload.' };
+    return { ok: true, ...omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() }) };
 });
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
@@ -732,7 +958,7 @@ ipcMain.handle('launch-game', (_, gameId) => {
     if (!cmd) return { ok: false, error: 'No launch command configured — set a Launch Template in System Manager or a Launch Override on this ROM.' };
 
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
-    spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+    launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
     return { ok: true };
 });
 
@@ -871,7 +1097,7 @@ ipcMain.handle('launch-game-ex', (_, gameId, opts = {}) => {
         if (opts.slot != null && opts.slot !== 'auto') cmd += ` --entryslot ${Number(opts.slot)}`;
     }
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
-    spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+    launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
     return { ok: true };
 });
 
@@ -912,6 +1138,10 @@ ipcMain.handle('launch-retroarch-config', () => {
     const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
     const exec = variant === 'flatpak' ? 'flatpak run org.libretro.RetroArch' : 'retroarch';
     const cmd = `${exec} --config "${ensureOwnedRaCfg()}" --menu`;
+    // ⚠️ Deliberately NOT launchEmulator(): this opens RetroArch's own settings menu, which is
+    // a configuration tool, not play. Holding the screen awake and switching a laptop to the
+    // performance profile for it would be wrong on both counts. The window rule still applies,
+    // since that is matched on class by the compositor rather than applied by us here.
     spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
     return { ok: true };
 });

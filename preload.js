@@ -186,6 +186,17 @@ contextBridge.exposeInMainWorld('api', {
     onManualProgress:  (cb)             => ipcRenderer.on('manual-progress', (_, d) => cb(d)),
     onManualChanged:   (cb)             => ipcRenderer.on('manual-changed', (_, d) => cb(d)),
 
+    // Omarchy (desktop integration; every one of these answers harmlessly off Omarchy)
+    omarchyStatus:        ()          => ipcRenderer.invoke('omarchy-status'),
+    omarchyTheme:         ()          => ipcRenderer.invoke('omarchy-theme'),
+    omarchyInstallTools:  (keys)      => ipcRenderer.invoke('omarchy-install-tools', keys),
+    omarchyRunInstaller:  (key)       => ipcRenderer.invoke('omarchy-run-installer', key),
+    omarchyRunTuning:     ()          => ipcRenderer.invoke('omarchy-run-tuning'),
+    omarchySetFlag:       (key, on)   => ipcRenderer.invoke('omarchy-set-flag', key, !!on),
+    omarchySetWindowMode: (mode)      => ipcRenderer.invoke('omarchy-set-game-window-mode', mode),
+    omarchyReloadRules:   ()          => ipcRenderer.invoke('omarchy-reload-rules'),
+    onOmarchyTheme:       (cb)        => ipcRenderer.on('omarchy-theme-changed', (_, d) => cb(d)),
+
     // Misc
     getBaseDir:   () => ipcRenderer.invoke('get-basedir'),
     getConfigDir: () => ipcRenderer.invoke('get-config-dir'),
