@@ -42,6 +42,9 @@
     "files": [
       "main.js",
       "preload.js",
+      "omarchy.js",
+      "omarchy-theme.js",
+      "desktop-descriptor.js",
       "renderer.js",
       "index.html",
       "couch.html",

@@ -144,14 +144,23 @@ function monitors() {
 //
 // A plain Arch box running Hyprland with a .conf config still has the legacy parser, so the
 // keyword form is kept as a fallback. Both are checked for a literal "ok".
-const APP_CLASS = 'emulatte';
+// ⚠️ MEASURED, not assumed, and the first version of this was wrong. `app.setName('emulatte')`
+// does NOT set the Wayland app_id: both a development run and the packaged AppImage report
+// `emulatte_electron_build`, which is package.json's `name` field. The rules below previously
+// matched `emulatte`, so they matched nothing at all and the manual windows never floated.
+// Nothing in the app's own behaviour hinted at it; only `hyprctl clients` did.
+//
+// Both names are listed so that renaming the npm package to something less ugly, which would
+// change the window class, cannot silently break these rules a second time.
+const APP_CLASSES = ['emulatte_electron_build', 'emulatte'];
+const APP_CLASS_RE = '(' + APP_CLASSES.join('|') + ')';
 
 const WINDOW_RULES = [
     // Both manual windows carry "Manual" in their title, and both are readers opened beside
     // the library rather than panes of it.
     {
-        lua: `o.window({ class = "^(${APP_CLASS})$", title = "^(.*Manual.*)$" }, { float = true, center = true, size = { 900, 940 } })`,
-        keyword: ['float', `class:^(${APP_CLASS})$,title:^(.*Manual.*)$`],
+        lua: `o.window({ class = "^${APP_CLASS_RE}$", title = "^(.*Manual.*)$" }, { float = true, center = true, size = { 900, 940 } })`,
+        keyword: ['float', `class:^${APP_CLASS_RE}$,title:^(.*Manual.*)$`],
     },
 ];
 
@@ -333,8 +342,9 @@ function processTree(pid) {
  * may have failed to start, or the user may have closed it immediately. Nothing here is worth
  * reporting as an error.
  *
- * ⚠️ `emulatte` itself is skipped. A launch is triggered from our own window, and on a slow
- * start ours can be the only thing in the tree matching for a moment.
+ * ⚠️ Our OWN windows are skipped. A launch is triggered from our own window, and on a slow
+ * start ours can be the only thing in the tree matching for a moment. Learning our own class
+ * as an emulator would then fullscreen the library itself on every later start.
  */
 function learnGameClass(pid, { timeoutMs = 25000, everyMs = 700 } = {}) {
     return new Promise(resolve => {
@@ -344,7 +354,7 @@ function learnGameClass(pid, { timeoutMs = 25000, everyMs = 700 } = {}) {
             const clients = hyprctlJson(['clients']);
             if (Array.isArray(clients)) {
                 const tree = processTree(pid);
-                const hit = clients.find(c => tree.has(Number(c.pid)) && c.class && c.class !== APP_CLASS);
+                const hit = clients.find(c => tree.has(Number(c.pid)) && c.class && !APP_CLASSES.includes(c.class));
                 if (hit) return resolve(String(hit.class));
             }
             if (Date.now() >= deadline) return resolve('');
@@ -777,7 +787,7 @@ module.exports = {
     hyprctl, hyprctlJson, monitors,
     TOOLS, toolStatus, missingTools, gapSummary,
     INSTALLERS, installerStatus, missingInstallers, runInstaller,
-    WINDOW_RULES, GAME_WINDOW_MODES, GAME_WINDOW_MODE_DEFAULT, APP_CLASS, SEED_GAME_CLASSES,
+    WINDOW_RULES, GAME_WINDOW_MODES, GAME_WINDOW_MODE_DEFAULT, APP_CLASSES, SEED_GAME_CLASSES,
     applyWindowRules, applyGameWindowRule, learnGameClass, reloadConfig,
     TUNING, systemTuning, tuningCommand, inhibitIdle, setGamingPower, powerProfile, hyprGeometry,
     installCommand, openInstallTerminal, openTerminalWith, terminalLauncher,
