@@ -691,6 +691,10 @@ ipcMain.handle('omarchy-status', () => ({
     theme: omarchyTheme.describe(),
     geometry: omarchy.hyprGeometry(),
     tools: omarchy.toolStatus(),
+    // Standalone emulators are carried separately from tools and never folded into `gap`:
+    // three of the shipped presets have no core and genuinely need one, the rest are a
+    // matter of taste, and neither belongs in a count of what this host is missing.
+    emulators: omarchy.emulatorStatus(),
     gap: omarchy.gapSummary(),
     // The app reports only what it is responsible for: emulation, never the PC-gaming half.
     installers: omarchy.installerStatus().filter(i => !i.pcGaming),
