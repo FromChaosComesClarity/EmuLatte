@@ -43,6 +43,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const savedTheme = await window.api.getSetting('el_theme') || 'Couch Mode';
     applyTheme(savedTheme, false);
     wireUI();
+    initZoomKeys();   // not Omarchy-only: an interface too large to use is too large anywhere
     enhanceAllSelects();
     updateTemplateButtonLabels();
     wireScrapeProgress();
@@ -2494,6 +2495,11 @@ async function initOmarchy() {
     const railBtn = document.getElementById('settings-rail-omarchy');
     if (railBtn) railBtn.style.display = '';
 
+    // On a tiling desktop the window is a tile, so both of these are on by default here and
+    // exist nowhere else.
+    applyCompactChrome(s.settings.compactChrome);
+    initResponsive();
+
     registerOmarchyTheme(s.theme);
 
     // `omarchy theme set` rewrites the state directory and the main process notices. Re-register
@@ -2505,6 +2511,103 @@ async function initOmarchy() {
             else applyTheme('Couch Mode');   // the theme went away; do not leave a stale palette on
         }
         if (document.getElementById('modal-settings')?.classList.contains('open')) renderOmarchyPane();
+    });
+}
+
+
+// ── COMPACT CHROME, AND A WINDOW THAT IS A TILE ──────────────────────────────
+
+/*
+ * Hide the title bar and rehome what it carried.
+ *
+ * ⚠️ The fullscreen button is MOVED, not duplicated and not recreated: appendChild relocates
+ * a node with its listeners intact, so the button in the rail is the same button that was in
+ * the bar and cannot drift from it. A copy would need its handler wiring again here, and
+ * would be the thing that breaks the next time that handler changes.
+ *
+ * ⚠️ The window controls are NOT rehomed, and that is the one asymmetry. Under a tiling
+ * compositor close, minimise and maximise belong to the compositor and are already bound to
+ * keys; carrying them into the rail would be offering a worse copy of something the desktop
+ * already does. The fullscreen pill has no such equivalent, so it has to keep a home.
+ */
+let _ctaHome = null;   // where the button was, so turning this off puts it back exactly
+
+function applyCompactChrome(on) {
+    const bar = document.getElementById('titlebar');
+    const cta = document.getElementById('btn-go-fullscreen');
+    const rail = document.getElementById('rail-top');
+    if (!bar || !cta || !rail) return;
+
+    if (on) {
+        if (!_ctaHome) _ctaHome = { parent: cta.parentNode, next: cta.nextSibling };
+        cta.classList.add('rail-cta');
+        cta.classList.remove('titlebar-pill');
+        cta.textContent = '▶';
+        cta.title = 'Switch to fullscreen play mode';
+        rail.appendChild(cta);
+    } else if (_ctaHome) {
+        cta.classList.remove('rail-cta');
+        cta.classList.add('titlebar-pill');
+        cta.textContent = '▶ GO FULLSCREEN';
+        _ctaHome.parent.insertBefore(cta, _ctaHome.next);
+    }
+    document.body.classList.toggle('compact-chrome', !!on);
+}
+
+/*
+ * Degrade the layout as the WINDOW narrows, not as the screen does.
+ *
+ * ⚠️ A ResizeObserver rather than a CSS media query, and the difference is not academic on a
+ * tiling desktop: a media query asks how big the screen is, and this app spends its life in
+ * half or a third of one. Half of a 1440px screen is 720px, a third is 480px, so a narrow
+ * window is the ordinary case rather than the exception a media query treats it as.
+ */
+const NARROW_AT = 900;
+const TIGHT_AT = 680;
+
+function initResponsive() {
+    const apply = () => {
+        const w = document.documentElement.clientWidth;
+        document.body.classList.toggle('narrow', w < NARROW_AT);
+        document.body.classList.toggle('tight', w < TIGHT_AT);
+    };
+    apply();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(apply).observe(document.documentElement);
+    else window.addEventListener('resize', apply);
+}
+
+/*
+ * Ctrl +, Ctrl - and Ctrl 0 change the interface scale from anywhere.
+ *
+ * ⚠️ The reason this is a key and not only a row of buttons: those buttons live inside the
+ * Control Panel, which is a modal drawn at the very scale you are trying to fix. An escape
+ * hatch must not live behind the thing it rescues you from.
+ *
+ * Persisted immediately, unlike the buttons, which are saved with the rest of the form when
+ * the panel is saved. A keystroke has no Save to wait for.
+ */
+const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+async function nudgeZoom(delta) {
+    const current = parseFloat(await window.api.getSetting('zoom')) || 1.0;
+    let i = ZOOM_STEPS.findIndex(z => Math.abs(z - current) < 0.001);
+    if (i < 0) i = ZOOM_STEPS.indexOf(1.0);
+    const next = delta === 0 ? 1.0 : ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + delta))];
+    window.api.setZoom(next);
+    await window.api.setSetting('zoom', String(next));
+    // Keep the Control Panel's own buttons honest, so opening it after using the keys does
+    // not show a scale you are not looking at.
+    document.querySelectorAll('.zoom-btn').forEach(b => b.classList.toggle('active', parseFloat(b.dataset.val) === next));
+}
+
+function initZoomKeys() {
+    window.addEventListener('keydown', e => {
+        if (!e.ctrlKey || e.altKey || e.metaKey) return;
+        // ⚠️ e.code, not e.key: with Ctrl held the produced character varies by layout, and on
+        // several the '+' is a shifted key whose e.key is not '+' at all.
+        if (e.code === 'Equal' || e.code === 'NumpadAdd') { e.preventDefault(); nudgeZoom(1); }
+        else if (e.code === 'Minus' || e.code === 'NumpadSubtract') { e.preventDefault(); nudgeZoom(-1); }
+        else if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); nudgeZoom(0); }
     });
 }
 
@@ -2563,6 +2666,18 @@ async function renderOmarchyPane() {
             <div class="hint" style="margin-top:0;">Your current desktop theme does not ship a
             <code>colors.toml</code>, so there is no palette to read. Switch to one that does and this
             appears on its own.</div>`));
+    }
+
+    // 2b. The window as a tile. Gated on Hyprland rather than on Omarchy: someone running
+    //     Hyprland on plain Arch has exactly the same title bar doing exactly as little.
+    if (s.isHyprland) {
+        cards.push(omarchyCard('Window Chrome', 'titlebar title bar compact chrome tiling drag rail fullscreen zoom scale', `
+            ${omarchyToggle('omarchy-chrome-chk', 'omarchy_compact_chrome', s.settings.compactChrome,
+                'Hide the title bar',
+                'You cannot drag a tiled window and the compositor owns close, minimise and maximise, so that row is 35px of nothing. On a tiled window it is a whole extra line of covers. The fullscreen button moves into the rail rather than being lost.')}
+            <div class="hint" style="margin-top:10px;"><b>Ctrl +</b>, <b>Ctrl −</b> and <b>Ctrl 0</b> change the
+            interface scale from anywhere, because the buttons that do it live inside this panel,
+            drawn at the very scale you would be trying to fix.</div>`));
     }
 
     // 3. What is missing. RetroArch is the headline because 53 of the 56 shipped presets
@@ -2679,6 +2794,9 @@ function wireOmarchyPane() {
             if (key === 'omarchy_match_geometry') {
                 applyOmarchyGeometry(chk.checked && _activeTheme === OMARCHY_THEME ? _omarchyStatus?.geometry?.rounding : null);
             }
+            // Live, not on the next start: the title bar is right there and the whole point of
+            // the toggle is being able to see what it costs you.
+            if (key === 'omarchy_compact_chrome') applyCompactChrome(chk.checked);
         });
     });
 

@@ -112,7 +112,37 @@
     .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; font-family: var(--ui-font); transition: opacity 0.15s; }
     .btn-play-gallery:hover { background: var(--accent); color: var(--bg); opacity: 0.8; transform: none; box-shadow: none; }
 
-    #icon-rail { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; background: var(--bg_menu); border-right: 1px solid var(--border_solid); overflow: hidden; }
+    #icon-rail { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; background: var(--bg_menu); border-right: 1px solid var(--border_solid); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+    /* ⚠️ The rail must never clip its own contents. It was `overflow: hidden`, so on a window
+       shorter than the rail the bottom buttons were unreachable with no way to scroll to them,
+       the Control Panel among them: the setting that fixes an oversized interface was hidden
+       BY the interface being oversized. A tiling desktop makes short windows ordinary, and
+       compact chrome adds a button to this rail, so this stopped being theoretical. */
+    #icon-rail::-webkit-scrollbar { width: 0; height: 0; }
+
+    /* ── Compact chrome, and the tiled window ──────────────────────────────────
+       Under a tiling compositor the title bar is 35px of nothing: you cannot drag a tiled
+       window, and the compositor owns close, minimise and maximise. On a tiled window that
+       row is a whole extra line of covers.
+       ⚠️ The fullscreen call-to-action is MOVED into the rail rather than deleted, by
+       relocating the node so it keeps its listeners. The rules below are only its size in
+       its new home. */
+    body.compact-chrome #titlebar { display: none; }
+    #icon-rail .rail-cta { width: 48px; height: 44px; flex-shrink: 0; border: none; background: transparent;
+      color: var(--accent); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      padding: 0; font-size: 14px; font-weight: 900; letter-spacing: 0; border-radius: 0; }
+    #icon-rail .rail-cta:hover { background: transparent; color: var(--text_main); box-shadow: none; transform: none; }
+
+    /* ⚠️ Driven by a ResizeObserver on the window, NOT by a CSS media query. A media query
+       reads the SCREEN, and on a tiling desktop the window and the screen are different
+       numbers: half of a 1440px screen is 720px and a third is 480px, so a narrow window is
+       the ordinary case here rather than an exception. */
+    body.narrow #gallery-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 10px; }
+    /* ⚠️ Overlaid, not collapsed. The side panel is opened from the rail, so giving it zero
+       width would leave those buttons doing nothing at all. Floating it over the list keeps
+       every route working and still gives the width back to the games. */
+    body.tight #side-panel.open { position: absolute; left: 48px; top: 0; bottom: 0; z-index: 50;
+      width: 200px; background: var(--bg_menu); box-shadow: 12px 0 30px rgba(0,0,0,0.45); }
     #rail-top, #rail-bottom { display: flex; flex-direction: column; align-items: center; padding: 6px 0; }
     .rail-btn { width: 48px; height: 44px; border: none; background: transparent; color: var(--text_dim); cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; transition: color 0.15s; padding: 0; text-transform: none; letter-spacing: 0; border-radius: 0; }
     .rail-btn:hover { color: var(--accent); background: transparent; box-shadow: none; transform: none; }

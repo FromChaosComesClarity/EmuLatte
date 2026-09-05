@@ -61,6 +61,9 @@ function autoDensity() {
 }
 async function init() {
     syncDesktop = (await window.api.getSetting('couch_sync_desktop')) === '1';
+    // ⚠️ Before applyActiveTheme, not after: the palette has to be in the table by the time a
+    // theme is resolved, or the first paint takes applyTheme's unknown-name fallback.
+    await initOmarchyTheme();
     await applyActiveTheme();
     const dRaw = (await window.api.getSetting('couch_density')) || 'auto';
     const density = dRaw === 'auto' ? autoDensity() : (parseFloat(dRaw) || 1);
@@ -241,6 +244,49 @@ function applyTheme(name) {
     Object.keys(t).forEach(k => { if (k !== 'font') r.style.setProperty('--' + k, t[k]); });
     r.style.setProperty('--ui-font', t.font ? `'${t.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
 }
+// ── The desktop's own palette, on the couch ──────────────────────────────────
+// Omarchy declares its colours in named roles and the desktop face maps them into a real
+// theme. Couch has its own theme table, so it has to register the same palette under the
+// same key or the two faces disagree.
+//
+// ⚠️ This is a correctness fix, not tidiness. applyTheme() below falls back to HALF-LIFE for
+// a name it does not know, silently. So with "Sync Desktop Colors" on and the desktop face
+// wearing the Omarchy palette, Couch would drop to a completely unrelated theme and give no
+// sign why: you would match your desktop on one face and not the other.
+//
+// The key is the same stable string the desktop face uses, and deliberately does not carry
+// the Omarchy theme's own name: `el_theme` records whichever theme is active, and a key like
+// "OMARCHY TOKYO-NIGHT" would stop resolving the moment somebody ran `omarchy theme set`.
+const OMARCHY_THEME = 'YOUR DESKTOP';
+
+function registerOmarchyTheme(desc) {
+    if (!desc || !desc.available || !desc.theme) {
+        delete THEMES[OMARCHY_THEME];
+        delete THEME_CATEGORIES['Your Desktop'];
+        return false;
+    }
+    // ⚠️ accent_menu is Couch's own token and the desktop face has no use for it, so the
+    // mapping does not always carry one. Falling back to `accent` keeps a menu highlight
+    // that belongs to the palette rather than to whatever was on screen before.
+    THEMES[OMARCHY_THEME] = Object.assign({}, desc.theme, {
+        accent_menu: desc.theme.accent_menu || desc.theme.accent,
+    });
+    THEME_CATEGORIES['Your Desktop'] = [OMARCHY_THEME];
+    return true;
+}
+
+async function initOmarchyTheme() {
+    if (!window.api.omarchyTheme) return;                 // an older build of the preload
+    try { registerOmarchyTheme(await window.api.omarchyTheme()); } catch (e) { return; }
+    // `omarchy theme set` rewrites the state directory and the main process notices. Couch is
+    // a face someone leaves running on a TV for hours, so following the switch matters more
+    // here than on the desktop, not less.
+    window.api.onOmarchyTheme(desc => {
+        registerOmarchyTheme(desc);
+        applyActiveTheme();
+    });
+}
+
 let syncDesktop = false;   // when on, Couch mirrors the desktop mode's color scheme (el_theme)
 async function applyActiveTheme() {
     if (syncDesktop) {
@@ -323,7 +369,13 @@ function closeMenu() { menuOpen = false; $('overlay-backdrop').classList.add('hi
 let _themeCat = null;
 async function openThemeMenu() {   // level 1: theme categories
     menuMode = 'themecat'; _themeCat = null;
-    renderOverlay('COLOR THEME', ['§CATEGORY', ...Object.keys(THEME_CATEGORIES), 'Back']);
+    // The desktop's own palette leads the list where there is one, the same order the desktop
+    // face uses. On a gamepad that matters more: every category costs a press to scroll past.
+    const cats = Object.keys(THEME_CATEGORIES);
+    const ordered = cats.includes('Your Desktop')
+        ? ['Your Desktop', ...cats.filter(c => c !== 'Your Desktop')]
+        : cats;
+    renderOverlay('COLOR THEME', ['§CATEGORY', ...ordered, 'Back']);
 }
 async function openThemeCatMenu(cat) {   // level 2: themes within a category
     menuMode = 'theme'; _themeCat = cat; const cur = await getCfg('couch_theme', 'HALF-LIFE');

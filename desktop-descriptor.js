@@ -77,18 +77,23 @@ function writeDescriptor(patch) {
 /*
  * Called once per start with everything main.js has already resolved.
  */
-function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecutable }) {
+function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecutable, gameClasses }) {
     return writeDescriptor({
         version: version || null,
         exec: appExecutable(baseDir, selfExecutable),
         // The argv each face answers to, so a consumer never has to know our CLI by heart.
-        // `game` is a template rather than a flag list because the id is interpolated into it.
+        // `game` and `play` are templates rather than flag lists because an id is interpolated
+        // into them: `--game=` opens the page, `--play=` starts the game.
         faces: { library: [], couch: ['--couch'] },
         game: '--game=<id>',
+        play: '--play=<id>',
         baseDir: baseDir || null,
         configDir: configDir || null,
         libraryDb: libraryDb || null,
         imagesDir: imagesDir || null,
+        // The window classes an emulator launched from here arrives under, seeded and learned.
+        // A widget asking "is a game running" reads this rather than keeping its own copy.
+        gameClasses: Array.isArray(gameClasses) ? gameClasses : [],
     });
 }
 

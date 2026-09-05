@@ -94,13 +94,18 @@ function createWindow() {
 // link a piece of art back here. Read from argv on first launch, and from the *second*
 // instance's argv when we are already running — otherwise the request would be dropped
 // on the floor and the user would just see the library.
-const gameIdFromArgv = (argv) => {
-    const hit = (argv || []).find(a => a.startsWith('--game='));
+const idFromArgv = (argv, flag) => {
+    const hit = (argv || []).find(a => a.startsWith(flag));
     if (!hit) return null;
-    const id = hit.slice('--game='.length).trim();
+    const id = hit.slice(flag.length).trim();
     return /^\d+$/.test(id) ? id : null;
 };
+const gameIdFromArgv = (argv) => idFromArgv(argv, '--game=');
+// `--play=<id>` starts the game itself, where `--game=<id>` opens its page. The desktop
+// launcher uses both: Enter plays, Shift+Enter opens the page.
+const playIdFromArgv = (argv) => idFromArgv(argv, '--play=');
 let pendingGameId = gameIdFromArgv(process.argv);
+let pendingPlayId = playIdFromArgv(process.argv);
 
 // Always the library/couch window: the user manual opens its own frameless window with no preload,
 // so getAllWindows()[0] is not safe to assume here.
@@ -120,6 +125,11 @@ if (!gotLock) {
     app.quit();
 } else {
     app.on('second-instance', (_e, argv) => {
+        // ⚠️ --play does NOT raise the window. The point of playing from the bar is to get a
+        // game up without the library appearing over it; focusing here would put the manager
+        // in front of the emulator that is about to open.
+        const play = playIdFromArgv(argv);
+        if (play) { playGame(play); return; }
         const w = libraryWindow();
         if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
         openGameInWindow(gameIdFromArgv(argv));
@@ -292,6 +302,9 @@ app.whenReady().then(() => {
 
     createWindow();
     omarchyStartup();
+    // A cold `--play=<id>`: the database is open by now and playGame needs nothing else, so
+    // the game starts without waiting for the renderer it does not use.
+    if (pendingPlayId) { const id = pendingPlayId; pendingPlayId = null; playGame(id); }
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -657,6 +670,11 @@ function omarchyStartup() {
             libraryDb: dbPath,
             imagesDir,
             selfExecutable: process.execPath,
+            // ⚠️ Published rather than duplicated. A desktop widget asking "is a game running"
+            // has to know what an emulator's window looks like, and that list is learned here
+            // at runtime. A copy in the plugin would be right the day it was written and wrong
+            // the first time someone added an emulator.
+            gameClasses: [...new Set([...omarchy.SEED_GAME_CLASSES, ...knownGameClasses()])],
         });
     } catch {}
 }
@@ -680,6 +698,9 @@ ipcMain.handle('omarchy-status', () => ({
         holdIdle:     settingFlag('omarchy_hold_idle', true),
         powerProfile: settingFlag('omarchy_power_profile', true),
         matchGeometry: settingFlag('omarchy_match_geometry', true),
+        // On by default wherever Hyprland is running: the title bar is dead weight under any
+        // tiling compositor, not only under Omarchy.
+        compactChrome: settingFlag('omarchy_compact_chrome', true),
         gameWindowMode: gameWindowMode(),
         knownGameClasses: knownGameClasses(),
     },
@@ -695,7 +716,8 @@ ipcMain.handle('omarchy-run-tuning',     ()        => {
 });
 
 ipcMain.handle('omarchy-set-flag', (_, key, on) => {
-    const allowed = ['omarchy_window_rules', 'omarchy_hold_idle', 'omarchy_power_profile', 'omarchy_match_geometry'];
+    const allowed = ['omarchy_window_rules', 'omarchy_hold_idle', 'omarchy_power_profile',
+                     'omarchy_match_geometry', 'omarchy_compact_chrome'];
     if (!allowed.includes(key)) return { ok: false, error: `Unknown setting: ${key}` };
     settingSet(key, on ? '1' : '0');
     if (key === 'omarchy_window_rules' && on) {
@@ -948,7 +970,16 @@ const gameWithSystem = (gameId) => db.prepare(`
     WHERE g.id=?
 `).get(gameId);
 
-ipcMain.handle('launch-game', (_, gameId) => {
+/*
+ * Play a game by id. One implementation, reached from the library, from Couch Mode and from
+ * `--play=<id>` on the command line.
+ *
+ * ⚠️ The deeplink calls THIS rather than building a command of its own. A desktop launcher
+ * that spawned the emulator itself would be a second implementation of the template
+ * resolution, the ScummVM safety net, the RetroArch config overrides and the last-played
+ * write: correct on the day it was written and wrong by the next release.
+ */
+function playGame(gameId) {
     if (!db) return { ok: false, error: 'DB not ready' };
     const game = gameWithSystem(gameId);
     if (!game) return { ok: false, error: 'Game not found' };
@@ -960,7 +991,9 @@ ipcMain.handle('launch-game', (_, gameId) => {
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
     launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
     return { ok: true };
-});
+}
+
+ipcMain.handle('launch-game', (_, gameId) => playGame(gameId));
 
 // ── RETROARCH SETTINGS (override editor) ──────────────────────────────────────
 ipcMain.handle('get-ra-override', (_, scope, refId) => {
