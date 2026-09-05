@@ -2721,21 +2721,37 @@ async function renderWelcomeDetection() {
     card.style.display = '';
 }
 
+// One opener for both ways in, so the button in Settings cannot drift from the automatic
+// first run. `noshowChecked` is the state to give the checkbox: ticked on a genuine first
+// run, because that is the answer most people want; whatever is stored when it is opened
+// deliberately, because finding the box already ticked on a screen you asked for reads as
+// the choice having been made for you.
+async function showWelcome(noshowChecked) {
+    const chk = document.getElementById('chk-welcome-noshow');
+    if (chk) chk.checked = noshowChecked;
+    openModal('modal-welcome');
+    renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
+}
+
 function dismissWelcome() {
     closeModal('modal-welcome');
-    // ⚠️ Written only on dismissal, never on open. A first run that is interrupted, by a
-    // crash or by closing the window, should come back rather than be silently spent.
-    if (document.getElementById('chk-welcome-noshow')?.checked) {
-        window.api.setSetting('welcome_shown', '1');
-    }
+    // ⚠️ Both directions, and only on dismissal.
+    //
+    // Only on dismissal, because a first run interrupted by a crash or by closing the window
+    // should come back rather than be silently spent.
+    //
+    // Both directions, because writing '1' and never clearing it makes the checkbox a one-way
+    // switch: untick it on a later visit and nothing happens, since last time's '1' is still
+    // there. That is the second way back to this screen, and it has to actually work.
+    const on = !!document.getElementById('chk-welcome-noshow')?.checked;
+    window.api.setSetting('welcome_shown', on ? '1' : '0');
 }
 
 async function maybeShowWelcome() {
     let seen = '';
     try { seen = await window.api.getSetting('welcome_shown'); } catch {}
     if (seen === '1') return;
-    openModal('modal-welcome');
-    renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
+    await showWelcome(true);
 }
 
 async function renderOmarchyPane() {
@@ -4483,6 +4499,15 @@ function wireUI() {
 
     // About, opened from the CL/EL rail badge. Escape is handled by the global keydown
     // handler below; like the other modals here, the backdrop is not click-to-close.
+    // Settings, then General: the same screen on demand. Settings closes first so two
+    // blurred overlays cannot stack, which is what the Manage Systems button does too.
+    document.getElementById('btn-settings-first-run')?.addEventListener('click', async () => {
+        closeModal('modal-settings');
+        let seen = '';
+        try { seen = await window.api.getSetting('welcome_shown'); } catch {}
+        await showWelcome(seen === '1');
+    });
+
     document.getElementById('btn-welcome-done')?.addEventListener('click', dismissWelcome);
     document.getElementById('btn-welcome-manual')?.addEventListener('click', () => { dismissWelcome(); window.api.openUserManual(); });
 
