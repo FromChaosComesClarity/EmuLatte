@@ -47,6 +47,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     enhanceAllSelects();
     updateTemplateButtonLabels();
     wireScrapeProgress();
+    maybeShowWelcome();       // first run only; a no-op on every later start
     window.api.signalReady();
 });
 
@@ -2626,6 +2627,133 @@ function omarchyToggle(id, key, on, label, hint) {
         ${hint ? `<div class="hint">${hint}</div>` : ''}`;
 }
 
+
+// ── FIRST RUN ─────────────────────────────────────────────────────────────────
+// Shown once, on a machine that has never opened this app.
+//
+// It leads with what the host actually HAS, because the first thing a new user reads should
+// be a fact rather than a form. Everything is measured when the modal opens; nothing is
+// remembered from a previous run and nothing is assumed.
+//
+// ⚠️ Deliberately narrow. RetroArch and the three systems that ship without a core are the
+// only things offered here, because they are the only ones whose absence stops something
+// working. The optional tools and the alternative emulators are a matter of taste and live
+// in Settings under Omarchy; putting them here would turn a first impression into a list of
+// eight things to buy, and train people to dismiss the screen without reading it.
+//
+// ⚠️ Nothing is offered on a host this app cannot act on. Off Omarchy the installer commands
+// do not exist, so the report states what is missing and stops there: an offer that cannot
+// be honoured is worse than no offer.
+async function renderWelcomeDetection() {
+    const card = document.getElementById('wlc-detect-card');
+    const body = document.getElementById('wlc-detect-body');
+    const acts = document.getElementById('wlc-actions');
+    const note = document.getElementById('wlc-detect-note');
+    if (!card || !body || !acts) return;
+
+    const lines = [];
+    const buttons = [];
+    let s = null;
+    try { s = await window.api.omarchyStatus(); } catch {}
+
+    // ⚠️ `isOmarchy`, not `detected`. This module reports the former; the sibling app's copy
+    // reports the latter, and reading the wrong one is silently falsy, so every Omarchy host
+    // is told it is not running Omarchy and every install offer disappears.
+    if (s?.isOmarchy) {
+        lines.push(`<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Omarchy</b><span class="wlc-detail">${escHtml(s.version || 'detected')}${s.isHyprland ? ', Hyprland' : ''}</span></div>`);
+    } else {
+        lines.push(`<div class="wlc-line"><span class="wlc-dot wlc-off"></span><b>Omarchy</b><span class="wlc-detail">not detected, so nothing can be installed from here</span></div>`);
+    }
+
+    // RetroArch is the headline: 53 of the 56 shipped presets launch through it, and without
+    // it a freshly imported library is a list of games with nothing behind them.
+    const ra = (s?.installers || []).find(i => i.key === 'retroarch');
+    if (ra) {
+        lines.push(ra.present
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>RetroArch</b><span class="wlc-detail">installed${ra.via ? ', via ' + escHtml(ra.via) : ''}</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-warn"></span><b>RetroArch</b><span class="wlc-detail">missing, and 53 of the 56 presets launch through it</span></div>`);
+        if (!ra.present && s?.isOmarchy) {
+            buttons.push({ label: 'Install RetroArch and the full core set', primary: true,
+                           run: () => window.api.omarchyRunInstaller('retroarch') });
+        }
+    }
+
+    // The three systems with no libretro core. Reported as one line, because "PS3, Vita and
+    // Switch need an emulator" is one fact, not three.
+    const emus = s?.emulators || [];
+    const need = emus.filter(e => e.required && !e.present);
+    if (emus.length) {
+        lines.push(need.length
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-warn"></span><b>Standalone emulators</b><span class="wlc-detail">${need.length} of 3 missing, ${escHtml(need.map(e => e.label).join(', '))}. Only PS3, Vita and Switch need one</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Standalone emulators</b><span class="wlc-detail">PS3, Vita and Switch are all covered</span></div>`);
+        if (need.length && s?.isOmarchy) {
+            buttons.push({ label: `Install the ${need.length} missing emulator${need.length > 1 ? 's' : ''}`,
+                           run: () => window.api.omarchyInstallTools(need.map(e => e.key)) });
+        }
+    }
+
+    // The optional tools are counted but never offered here. Saying how many there are is
+    // useful; asking about them on first launch is not.
+    const g = s?.gap;
+    if (g && typeof g.total === 'number') {
+        const extras = (g.missingExtras || []).length;
+        lines.push(extras
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-off"></span><b>Optional extras</b><span class="wlc-detail">${extras} available, none required. Settings, then Omarchy</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Optional extras</b><span class="wlc-detail">all present</span></div>`);
+    }
+
+    body.innerHTML = lines.join('');
+    acts.innerHTML = '';
+    buttons.forEach((b, i) => {
+        const el = document.createElement('button');
+        el.textContent = b.label;
+        el.style.width = '100%';
+        if (b.primary) el.className = 'primary';
+        el.addEventListener('click', async () => {
+            el.disabled = true;
+            const r = await b.run();
+            el.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+            el.disabled = false;
+        });
+        acts.appendChild(el);
+    });
+    if (note) note.style.display = buttons.length ? '' : 'none';
+    card.style.display = '';
+}
+
+// One opener for both ways in, so the button in Settings cannot drift from the automatic
+// first run. `noshowChecked` is the state to give the checkbox: ticked on a genuine first
+// run, because that is the answer most people want; whatever is stored when it is opened
+// deliberately, because finding the box already ticked on a screen you asked for reads as
+// the choice having been made for you.
+async function showWelcome(noshowChecked) {
+    const chk = document.getElementById('chk-welcome-noshow');
+    if (chk) chk.checked = noshowChecked;
+    openModal('modal-welcome');
+    renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
+}
+
+function dismissWelcome() {
+    closeModal('modal-welcome');
+    // ⚠️ Both directions, and only on dismissal.
+    //
+    // Only on dismissal, because a first run interrupted by a crash or by closing the window
+    // should come back rather than be silently spent.
+    //
+    // Both directions, because writing '1' and never clearing it makes the checkbox a one-way
+    // switch: untick it on a later visit and nothing happens, since last time's '1' is still
+    // there. That is the second way back to this screen, and it has to actually work.
+    const on = !!document.getElementById('chk-welcome-noshow')?.checked;
+    window.api.setSetting('welcome_shown', on ? '1' : '0');
+}
+
+async function maybeShowWelcome() {
+    let seen = '';
+    try { seen = await window.api.getSetting('welcome_shown'); } catch {}
+    if (seen === '1') return;
+    await showWelcome(true);
+}
+
 async function renderOmarchyPane() {
     const host = document.getElementById('omarchy-pane');
     if (!host) return;
@@ -2712,6 +2840,36 @@ async function renderOmarchyPane() {
             <button id="btn-omarchy-install-tools" style="width:100%; margin-top:10px;">Install Selected…</button>
             <div class="hint">Opens a terminal with the command. <b>Extra</b> means this app never calls
             it itself, so nothing here degrades without it.</div>`));
+    }
+
+    // 4b. Standalone emulators. Two groups, and the split is the whole point of the card:
+    //     three presets ship with no core and cannot run at all until something is installed,
+    //     everything else already works and is only an upgrade. Presenting those as one list
+    //     would make eight optional installs look like eight missing dependencies.
+    const emus = Array.isArray(s.emulators) ? s.emulators : [];
+    const needEmu = emus.filter(e => e.required && !e.present);
+    const altEmu  = emus.filter(e => !e.required && !e.present);
+    if (needEmu.length || altEmu.length) {
+        const row = e => `
+            <label class="core-all-toggle" style="margin-top:6px;">
+                <input type="checkbox" data-omarchy-emu="${escHtml(e.key)}"${e.required ? ' checked' : ''}>
+                ${escHtml(e.label)} <span style="opacity:.6;">${escHtml(e.system)}</span>${e.repo === 'aur' ? ' <span style="opacity:.6;">(AUR)</span>' : ''}
+            </label>
+            <div class="hint">${escHtml(e.why)}</div>`;
+        cards.push(omarchyCard('Emulators', 'rpcs3 vita3k ryujinx dolphin pcsx2 duckstation ppsspp melonds ps3 vita switch standalone emulator install', `
+            ${needEmu.length ? `<div class="hint" style="margin-top:0;"><b>These three systems cannot run without one.</b>
+                PlayStation 3, PS Vita and Switch have no libretro core, so their presets launch a binary you
+                supply. Until one is installed those shelves have nothing behind them.</div>
+                ${needEmu.map(row).join('')}` : `<div class="hint" style="margin-top:0;">Every system that needs a
+                standalone emulator has one.</div>`}
+            ${altEmu.length ? `<div class="hint" style="margin-top:12px;"><b>Alternatives.</b> Each of these already
+                runs through a libretro core, so nothing here is missing. They are the standalone builds, which is
+                where the per-game fixes and the sharper upscaling live.</div>
+                ${altEmu.map(row).join('')}` : ''}
+            <button id="btn-omarchy-install-emus" style="width:100%; margin-top:10px;">Install Selected…</button>
+            <div class="hint">Opens a terminal running Omarchy's own package commands. Repo and AUR packages
+            are installed with different commands, so a mixed selection becomes two. Nothing here ever runs
+            <code>sudo</code> for you.</div>`));
     }
 
     // 5. Window behaviour. The learned-class list is shown because it is the one part of this
@@ -2806,6 +2964,15 @@ function wireOmarchyPane() {
             const r = await window.api.omarchyRunInstaller(btn.dataset.omarchyInstaller);
             btn.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
         });
+    });
+
+    document.getElementById('btn-omarchy-install-emus')?.addEventListener('click', async (e) => {
+        const keys = [...document.querySelectorAll('#omarchy-pane [data-omarchy-emu]:checked')].map(c => c.dataset.omarchyEmu);
+        if (!keys.length) { e.target.textContent = 'Pick something first.'; return; }
+        // Same handler as the tools button: installCommand() spans both catalogues, so a
+        // selection of emulators comes out as the same repo/AUR pair of commands.
+        const r = await window.api.omarchyInstallTools(keys);
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
     });
 
     document.getElementById('btn-omarchy-install-tools')?.addEventListener('click', async (e) => {
@@ -4330,8 +4497,20 @@ function wireUI() {
     // Manage Systems reachable from the hub (close Settings first so two blurred modals don't stack)
     document.getElementById('btn-settings-manage-systems').addEventListener('click', () => { closeModal('modal-settings'); openSystemsModal(); });
 
-    // About — the CN/EL rail badge. Escape is handled by the global keydown handler below;
-    // like the other modals here, the backdrop is not click-to-close.
+    // About, opened from the CL/EL rail badge. Escape is handled by the global keydown
+    // handler below; like the other modals here, the backdrop is not click-to-close.
+    // Settings, then General: the same screen on demand. Settings closes first so two
+    // blurred overlays cannot stack, which is what the Manage Systems button does too.
+    document.getElementById('btn-settings-first-run')?.addEventListener('click', async () => {
+        closeModal('modal-settings');
+        let seen = '';
+        try { seen = await window.api.getSetting('welcome_shown'); } catch {}
+        await showWelcome(seen === '1');
+    });
+
+    document.getElementById('btn-welcome-done')?.addEventListener('click', dismissWelcome);
+    document.getElementById('btn-welcome-manual')?.addEventListener('click', () => { dismissWelcome(); window.api.openUserManual(); });
+
     document.getElementById('btn-about').addEventListener('click', () => openModal('modal-about'));
     document.getElementById('btn-close-about').addEventListener('click', () => closeModal('modal-about'));
     // User manual — reachable from About and from Settings → General.

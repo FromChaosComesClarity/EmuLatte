@@ -572,7 +572,7 @@
         </button>
         <!-- Branding -->
         <div id="btn-about" class="rail-btn" title="EmuLatte by Clarity" style="cursor:pointer; height:38px; flex-direction:column; gap:1px; margin-top:6px; border-top:1px solid var(--border_solid);">
-          <span style="font-size:7px; font-weight:900; color:var(--text_dim); letter-spacing:1px; line-height:1;">CN</span>
+          <span style="font-size:7px; font-weight:900; color:var(--text_dim); letter-spacing:1px; line-height:1;">CL</span>
           <span style="font-size:9px; font-weight:900; color:var(--accent); letter-spacing:0.5px; line-height:1;">EL</span>
         </div>
       </div>
@@ -1120,7 +1120,7 @@
           </button>
           <!-- Only shown when the desktop is one this app can integrate with; wired in renderer.js. -->
           <button class="cp-rail-item" data-pane="omarchy" id="settings-rail-omarchy" style="display:none;">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Desktop</span>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Omarchy</span>
           </button>
           <span class="cp-rail-spacer"></span>
           <button class="cp-rail-item" data-pane="data">
@@ -1137,6 +1137,13 @@
                 <button id="btn-settings-user-manual" style="width:100%;">Open User Manual</button>
               </div>
               <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">Every feature, explained &mdash; including Couch Mode and exporting to Clarity.</p>
+            </div>
+            <div class="tool-card" data-search="first run welcome setup check detect retroarch packages missing emulators onboarding">
+              <div class="tool-card-title">First Run</div>
+              <div class="form-row">
+                <button id="btn-settings-first-run" style="width:100%;">Show the First Run Check</button>
+              </div>
+              <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">The check this app runs on a machine it has never opened on: the desktop, RetroArch, and the systems that need a standalone emulator. Everything is measured again each time it opens, so it is worth a second look after installing something.</p>
             </div>
             <div class="tool-card" data-search="appearance theme color palette ui scale zoom interface">
               <div class="tool-card-title">Appearance</div>
@@ -1347,7 +1354,7 @@
           </section>
 
           <section class="cp-pane" data-pane="omarchy">
-            <div class="cp-pane-title">Desktop</div>
+            <div class="cp-pane-title">Omarchy</div>
             <div id="omarchy-pane"></div>
           </section>
         </div>
@@ -1988,6 +1995,16 @@
       display: flex; align-items: center; justify-content: center; transition: 0.15s;
     }
     #np-close-btn:hover { background: rgba(0,0,0,0.75); color: var(--text_main); }
+    /* ── First run: what this machine has ─────────────────────────────────── */
+    .wlc-card      { border:1px solid var(--border_solid); border-radius:6px; padding:12px 14px; text-align:left; width:100%; box-sizing:border-box; }
+    .wlc-title     { font-size:10px; font-weight:900; letter-spacing:2px; color:var(--accent); margin-bottom:8px; }
+    .wlc-line      { display:flex; align-items:baseline; gap:8px; font-size:12px; color:var(--text_sec); padding:4px 0; line-height:1.5; }
+    .wlc-dot       { width:7px; height:7px; border-radius:50%; flex:0 0 auto; position:relative; top:-1px; }
+    .wlc-ok        { background:#4ade80; }
+    .wlc-warn      { background:#fbbf24; }
+    .wlc-off       { background:var(--text_dim); }
+    .wlc-detail    { color:var(--text_dim); }
+    .wlc-line b    { color:var(--text_main); font-weight:700; }
   </style>
   <div id="modal-now-playing" class="modal-overlay">
     <div id="np-card">
@@ -2072,6 +2089,34 @@
       </p>
 
       <button id="btn-close-about">Close</button>
+    </div>
+  </div>
+
+  <!-- ── MODAL: FIRST RUN ───────────────────────────────────────────────────── -->
+  <!-- Shown once, on a machine that has never opened this app. It leads with what the host
+       actually has rather than with a form, and every line is measured at open time. -->
+  <div id="modal-welcome" class="modal-overlay">
+    <div class="modal-box" style="text-align:center; max-width:580px;">
+      <div>
+        <h2 style="margin:0; color:var(--text_main); font-weight:900; letter-spacing:4px;">EMULATTE</h2>
+        <p style="font-size:12px; color:var(--accent); margin:4px 0 0; letter-spacing:2px; font-weight:900; font-style:italic;">I use RetroArch BTW</p>
+      </div>
+
+      <p style="font-size:12px; color:var(--text_sec); margin:0; text-align:justify; line-height:1.7;">Before anything else, here is what this machine already has. Emulation needs a few things that a fresh desktop does not ship, and the ones that matter can be installed from here.</p>
+
+      <div class="wlc-card" id="wlc-detect-card" style="display:none;">
+        <div class="wlc-title">THIS MACHINE</div>
+        <div id="wlc-detect-body"></div>
+        <div id="wlc-actions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
+        <div id="wlc-detect-note" class="hint" style="display:none; margin-top:8px;">Each opens a terminal running Omarchy's own installer. Nothing here ever runs <code>sudo</code> for you: you see the command and type your own password.</div>
+      </div>
+
+      <label class="core-all-toggle" style="align-self:flex-start;"><input type="checkbox" id="chk-welcome-noshow" checked> Don't show this again</label>
+
+      <div style="display:flex; gap:8px; width:100%;">
+        <button id="btn-welcome-manual" style="flex:1;">Open the manual</button>
+        <button id="btn-welcome-done" class="primary" style="flex:1;">Get started</button>
+      </div>
     </div>
   </div>
 

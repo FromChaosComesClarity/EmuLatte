@@ -573,6 +573,78 @@ const TOOLS = [
     { key: 'gamescope',bin: 'gamescope',                pkg: 'gamescope',          repo: 'extra',    required: false, extra: true,
       label: 'gamescope',
       why: 'a micro-compositor for integer scaling and framerate limiting. Emulators are the case it helps most: it can scale a low-resolution picture by a whole number instead of blurring it.' },
+
+    // ── Working with the collection itself ───────────────────────────────────
+    // ⚠️ None of these are called by this app either, and each one says so. They are here
+    // because a ROM library is a pile of disc images and archives, and these are what turn
+    // that pile into something a core can read.
+    { key: 'chdman',   bin: 'chdman',                   pkg: 'mame-tools',         repo: 'extra',    required: false, extra: true,
+      label: 'chdman (MAME tools)',
+      why: 'converts CUE/BIN and ISO discs to CHD, which is lossless, roughly half the size, and read directly by the PS1, PS2, Saturn, Dreamcast, 3DO and PC Engine CD cores. The single biggest space win available to a disc-heavy library. This app does not call it itself.' },
+    { key: 'unrar',    bin: 'unrar',                    pkg: 'unrar',              repo: 'extra',    required: false, extra: true,
+      label: 'unrar',
+      why: 'RetroArch reads ZIP and 7z archives directly but cannot read RAR at all, and a great many ROM sets are distributed as .rar. Without it those have to be unpacked elsewhere first.' },
+    { key: 'sevenzip', bin: '7z',                       pkg: '7zip',               repo: 'extra',    required: false, extra: true,
+      label: '7-Zip',
+      alt: ['7za', '7zr'],
+      why: 'cores load .7z directly, and 7z compresses a ROM set considerably harder than zip. Needed only to make or unpack them yourself.' },
+
+    // ── Playing from the couch ───────────────────────────────────────────────
+    { key: 'joystickwake', bin: 'joystickwake',         pkg: 'joystickwake',       repo: 'aur',      required: false, extra: true,
+      label: 'joystickwake',
+      why: 'a gamepad is not a keyboard or a mouse, so the desktop counts pad-only play as idle and blanks or locks the screen mid-game. This watches the pads and keeps the session awake. Worth having for Couch Mode specifically; this idle behaviour is Omarchy\'s default, not a fault.' },
+    { key: 'antimicrox',bin: 'antimicrox',              pkg: 'antimicrox',         repo: 'extra',    required: false, extra: true,
+      label: 'AntiMicroX',
+      why: 'maps a gamepad onto keyboard and mouse input, which is how you drive the handful of systems and front-ends here that never learned about pads. This app does not call it itself.' },
+];
+
+// ── Standalone emulators ─────────────────────────────────────────────────────
+// Kept apart from TOOLS on purpose. A tool is something the host is missing; an emulator is
+// a CHOICE about one system, and nobody needs all of these. They are never counted into the
+// "missing" summary and never installed as a batch, so the first-run check cannot turn into
+// a demand for eight emulators nobody asked for.
+//
+// ⚠️ RESEARCHED against this app's own 56 shipped presets rather than picked from a list of
+// popular emulators. Exactly three presets ship with an empty `default_core` and a
+// `{emulator} {rom}` template, meaning they cannot run at all until the user supplies a
+// binary: PlayStation 3, PS Vita and Switch. Those three are `required` here, and they are
+// the only ones that are. Everything after them has a working libretro core already and is
+// offered as an alternative, with the reason it might be worth the swap.
+//
+// ⚠️ Binary names were verified against the packages' own file lists, not guessed: ppsspp
+// ships `PPSSPPSDL` and no `ppsspp`, dolphin-emu ships `dolphin-emu`. Getting this wrong
+// tells someone to install what they already have. Where a package is known under more than
+// one binary name, `alt` carries the rest.
+const EMULATORS = [
+    { key: 'rpcs3',       system: 'ps3',        label: 'RPCS3',      bin: 'rpcs3',
+      pkg: 'rpcs3-bin',   repo: 'aur', required: true,
+      why: 'the PlayStation 3 preset ships with no core, because there is no libretro core for PS3. RPCS3 is the emulator, and until one is installed that preset cannot launch anything.' },
+    { key: 'vita3k',      system: 'vita',       label: 'Vita3K',     bin: 'Vita3K', alt: ['vita3k'],
+      pkg: 'vita3k-bin',  repo: 'aur', required: true,
+      why: 'the PS Vita preset ships with no core for the same reason. Vita3K is experimental and its compatibility is uneven, which is worth knowing before you build a Vita shelf around it.' },
+    { key: 'ryujinx',     system: 'switch',     label: 'Ryujinx',    bin: 'Ryujinx', alt: ['ryujinx'],
+      pkg: 'ryujinx',     repo: 'aur', required: true,
+      // ⚠️ Upstream Ryujinx was discontinued in 2024. The AUR package now tracks the Ryubing
+      // continuation, which is why its version is ahead of anything the original ever shipped.
+      why: 'the Switch preset ships with no core. The original Ryujinx was discontinued in 2024; this package follows the Ryubing continuation of it, which is where the work carried on.' },
+
+    // Alternatives. Each of these systems already runs through a libretro core, so nothing
+    // here is missing, only better for that one system.
+    { key: 'dolphin',     system: 'gc, wii',    label: 'Dolphin',    bin: 'dolphin-emu',
+      pkg: 'dolphin-emu', repo: 'extra',
+      why: 'the GameCube and Wii presets use the Dolphin libretro core, which lags the standalone build. Standalone Dolphin gets the fixes first and keeps its own per-game settings.' },
+    { key: 'pcsx2',       system: 'ps2',        label: 'PCSX2',      bin: 'pcsx2-qt', alt: ['pcsx2'],
+      pkg: 'pcsx2',       repo: 'aur',
+      why: 'the PS2 preset uses the PCSX2 core. Standalone PCSX2 is where the widescreen patches, texture replacement and per-game fixes live.' },
+    { key: 'duckstation', system: 'ps1',        label: 'DuckStation', bin: 'duckstation-qt', alt: ['duckstation'],
+      pkg: 'duckstation', repo: 'aur',
+      why: 'the PS1 preset uses pcsx_rearmed, which is fast and forgiving. DuckStation is the accurate one, with PGXP geometry correction for the wobbling polygons the hardware was famous for.' },
+    { key: 'ppsspp',      system: 'psp',        label: 'PPSSPP',     bin: 'PPSSPPSDL', alt: ['PPSSPPQt', 'ppsspp'],
+      pkg: 'ppsspp',      repo: 'extra',
+      why: 'the PSP preset uses the PPSSPP core, which is the same emulator. The standalone build adds its own upscaling and texture replacement, and updates independently of the core set.' },
+    { key: 'melonds',     system: 'nds',        label: 'melonDS',    bin: 'melonDS', alt: ['melonds'],
+      pkg: 'melonds',     repo: 'aur',
+      why: 'the DS preset uses DeSmuME. melonDS is markedly more accurate and the one to reach for when a game misbehaves under the default core.' },
 ];
 
 // ── Omarchy's own gaming installers ──────────────────────────────────────────
@@ -688,6 +760,19 @@ function resolveTool(t) {
 }
 
 function toolStatus() { return TOOLS.map(resolveTool); }
+
+// Same shape as toolStatus(), plus the system each one answers for, so the UI can say WHICH
+// preset is waiting on it rather than just naming a binary.
+function emulatorStatus() {
+    return EMULATORS.map(e => Object.assign(resolveTool(e), { system: e.system }));
+}
+
+// ⚠️ Only the three that have no core at all. An "alternative" is never missing: the system
+// runs today, and telling someone they are short of something they do not need is how a
+// first-run check trains people to dismiss it.
+function missingEmulators({ requiredOnly = true } = {}) {
+    return emulatorStatus().filter(e => !e.present && (!requiredOnly || e.required));
+}
 function missingTools({ includeExtras = true } = {}) {
     return toolStatus().filter(t => !t.present && (includeExtras || !t.extra));
 }
@@ -710,7 +795,10 @@ function gapSummary() {
 // to become two commands rather than one. `omarchy pkg add` is a no-op for anything already
 // installed, which makes re-running it after a partial failure safe.
 function installCommand(keys) {
-    const want = toolStatus().filter(t => keys.includes(t.key) && !t.present);
+    // ⚠️ Both catalogues. The UI offers tools and emulators in one place, so a selection can
+    // legitimately span the two, and looking in only one silently drops half of it.
+    const catalogue = toolStatus().concat(emulatorStatus());
+    const want = catalogue.filter(t => keys.includes(t.key) && !t.present);
     const repo = want.filter(t => t.repo !== 'aur').map(t => t.pkg);
     const aur  = want.filter(t => t.repo === 'aur').map(t => t.pkg);
     const parts = [];
@@ -786,6 +874,7 @@ module.exports = {
     osRelease, isOmarchy, isArchLike, version, isHyprland,
     hyprctl, hyprctlJson, monitors,
     TOOLS, toolStatus, missingTools, gapSummary,
+    EMULATORS, emulatorStatus, missingEmulators,
     INSTALLERS, installerStatus, missingInstallers, runInstaller,
     WINDOW_RULES, GAME_WINDOW_MODES, GAME_WINDOW_MODE_DEFAULT, APP_CLASSES, SEED_GAME_CLASSES,
     applyWindowRules, applyGameWindowRule, learnGameClass, reloadConfig,

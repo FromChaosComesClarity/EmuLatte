@@ -255,7 +255,7 @@
                 <tr><td><span class="key">Favourite</span></td><td>Flags the game as a favourite</td></tr>
                 <tr><td><span class="key">Want to Play</span></td><td>Flags the game for your backlog</td></tr>
                 <tr><td><span class="key">Playlist</span></td><td>Adds the game to one or more playlists</td></tr>
-                <tr><td><span class="key">Clarity</span></td><td>Exports the game to CN's library (section 21)</td></tr>
+                <tr><td><span class="key">Clarity</span></td><td>Exports the game to Clarity's library (section 21)</td></tr>
                 <tr><td><span class="key">Scrape</span></td><td>Fetches metadata and artwork (sections 9&ndash;10)</td></tr>
                 <tr><td><span class="key">Trailer</span></td><td>Watches, or downloads, the game's trailer (section 17)</td></tr>
                 <tr><td><span class="key">Manual</span></td><td>Opens the scanned game manual PDF (section 18)</td></tr>
@@ -308,7 +308,7 @@
 
             <h2 id="man-10">11. Clarity Credential Import</h2>
             <p>If Clarity is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from Clarity</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
-            <p>This reads CN's settings out of the shared <code>GameManagerConfig/</code> folder. If the button reports nothing found, the two apps are not sharing a parent folder &mdash; see section 2.</p>
+            <p>This reads Clarity's settings out of the shared <code>GameManagerConfig/</code> folder. If the button reports nothing found, the two apps are not sharing a parent folder &mdash; see section 2.</p>
 
             <h2 id="man-11">12. The Emulator Scanner</h2>
             <p><strong>Settings &rarr; Systems &rarr; Add Emulators</strong> scans your machine for installed emulators and offers to assign them to existing systems or create new systems around them.</p>
@@ -443,8 +443,8 @@
                 <p class="manual-box-title">How games actually get to Clarity</p>
                 <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Clarity does not read EmuLatte's database and has no "show emulation" toggle.</p>
             </div>
-            <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into CN's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
-            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; CN sees a game, not your library.</p>
+            <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into Clarity's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
+            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; Clarity sees a game, not your library.</p>
             <p>This requires both apps to share a <code>GameManagerConfig/</code> parent folder (section 2).</p>
 
             <h2 id="man-22">22. Your Data &amp; Backups</h2>

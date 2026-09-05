@@ -9,7 +9,7 @@
     "pack": "electron-builder --dir",
     "predist": "node scripts/scramble-ssdev.js",
     "dist": "electron-builder --linux AppImage",
-    "postdist": "D=/home/jose/Games/Clarity; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\""
+    "postdist": "D=/home/jose/Clarity; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\""
   },
   "keywords": [
     "emulation",

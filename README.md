@@ -198,6 +198,31 @@ Each Systems theme carries **its own era typeface** — the interface actually c
 
 <br>
 
+## ◈ &nbsp; On Omarchy
+
+Detected automatically. On any other desktop none of this appears.
+
+- **A first-run check** reports what this machine actually has before you do anything else:
+  the desktop, RetroArch, and whether the three systems that ship without a core have an
+  emulator. Only the things whose absence stops something working are offered there
+- **RetroArch in one step** through Omarchy's own installer, which brings the full libretro
+  core set with it. 53 of the 56 shipped presets launch through it
+- **Standalone emulators** for the three systems that have no libretro core at all:
+  PlayStation 3, PS Vita and Switch. Alternatives to the bundled cores for PS1, PS2, DS, PSP,
+  GameCube and Wii are offered separately, and clearly marked as a preference rather than a gap
+- **Optional tools** worth having around a ROM collection: `chdman` for turning CUE/BIN and ISO
+  discs into CHD, `unrar` for the sets RetroArch cannot read, and `joystickwake` so a pad-only
+  session stops counting as idle
+- **Window rules** so emulators open fullscreen instead of being tiled and smeared, learned per
+  emulator on first launch. Applied at runtime; nothing is written to your Hyprland config
+- **While you play**, the idle lock is held off and the power profile raised, both optional
+- **System tuning** for the sysctl values emulators care about
+
+Nothing here ever runs `sudo` for you. Every install opens a terminal showing the command, and
+you type your own password.
+
+Settings, then **Omarchy**.
+
 ## ◈ &nbsp; Ecosystem Integration
 
 ```
@@ -209,7 +234,7 @@ Each Systems theme carries **its own era typeface** — the interface actually c
     │
     ├──▸  EmuLatte ◈  ROM library manager — exports games into Clarity's library
     │
-    └──▸  CN Clock    Floating desktop clock — shows art from Clarity + EmuLatte
+    └──▸  Clarity Clock    Floating desktop clock — shows art from Clarity + EmuLatte
 ```
 
 Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on the game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in Clarity's `games.db` with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
