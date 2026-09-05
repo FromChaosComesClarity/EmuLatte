@@ -87,8 +87,36 @@ compositor, and the three window buttons duplicate what the compositor already o
 | 6 | The desktop's corner radius, while the desktop's palette is worn |
 | 7 | `~/.config/emulatte/desktop.json`, so a bar widget can find this installation without guessing |
 
-## Phase 2, not in this pass
+## Phase 2, done
 
-- An `omarchy-emulatte` bar widget and launcher overlay, the shape of `omarchy-clarity`.
-- Couch Mode following the Omarchy palette the way it follows the Manager's.
-- Compact chrome and the responsive shell.
+| # | Item |
+|---|---|
+| 1 | `--play=<id>`, so a desktop launcher never rebuilds the launch command, plus the emulator classes published in the descriptor |
+| 2 | Couch Mode registering and following the Omarchy palette, fixing a silent fall back to HALF-LIFE |
+| 3 | The title bar hidden on Hyprland, the fullscreen button moved into the rail, the rail no longer clipping, Ctrl +/-/0 |
+
+The bar widget and launcher overlay live in their own repo, `omarchy-emulatte`,
+the shape of `omarchy-clarity`. What is different there is written up in that repo's
+README and its first commit: a ROM library needs the system as a badge rather than an
+action, needs typing a system's name to return that shelf, and needs cover paths
+re-homed before they are shown.
+
+### What the responsive pass actually found
+
+Smaller than the sibling app's, and that is a measurement rather than a shortcut.
+EmuLatte's layout is already fluid: the gallery is `repeat(auto-fill, minmax(140px, 1fr))`
+and the game page is a centred overlay at `min(1100px, 94%)`, so neither needed a
+breakpoint. Two things genuinely did:
+
+- **The rail clipped.** `#icon-rail` was `overflow: hidden`, so a window shorter than the
+  rail put its bottom buttons out of reach, the Control Panel among them. The same bug the
+  sibling app found, and compact chrome adds a button to that rail, so it got worse before
+  it got fixed.
+- **The side panel took 220px** out of what can be a 480px tile. It is now overlaid rather
+  than collapsed: collapsing it would leave the rail buttons that open it doing nothing.
+
+## Phase 3, not started
+
+- The launcher's Enter needs a released build: `--play=<id>` is on this branch and no
+  published release carries it yet.
+- Nothing else outstanding.
