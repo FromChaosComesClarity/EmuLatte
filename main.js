@@ -670,6 +670,9 @@ function omarchyStartup() {
             libraryDb: dbPath,
             imagesDir,
             selfExecutable: process.execPath,
+            // ⚠️ The authoritative answer when we are an AppImage: the exact file we were
+            // launched from, rather than whichever one a directory scan happens to see first.
+            appImagePath: process.env.APPIMAGE || null,
             // ⚠️ Published rather than duplicated. A desktop widget asking "is a game running"
             // has to know what an emulator's window looks like, and that list is learned here
             // at runtime. A copy in the plugin would be right the day it was written and wrong

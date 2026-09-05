@@ -37,17 +37,47 @@ function descriptorPath() {
     return path.join(descriptorDir(), 'desktop.json');
 }
 
+function isRunnable(file) {
+    try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile(); }
+    catch { return false; }
+}
+
 /*
  * The command a desktop integration should run to get this app back.
  *
- * Prefers an EmuLatte AppImage sitting beside the data directory over our own process:
- * `process.execPath` during development is the electron binary, which is correct for us and
- * useless to anyone else.
+ * ⚠️ When we ARE an AppImage this is not a search at all. The runtime sets $APPIMAGE to the
+ * exact file we were launched from, which is the only answer that cannot be wrong, and it is
+ * already what baseDir is derived from in main.js. Everything below it is the development
+ * case and is a guess by comparison.
+ *
+ * ⚠️ The scan used to be `readdirSync(...).find(/^EmuLatte.*\.AppImage$/i)` and that was a
+ * real bug, not a theoretical one: the deploy step renames the previous build to
+ * `EmuLatte_old.AppImage` before copying the new one, so the two sit side by side, and that
+ * pattern matches BOTH. readdirSync order is arbitrary, so roughly half the time the app
+ * published the path of the build it had just replaced, and the bar widget opened a version
+ * that could be months old. The same trap exists in the sibling app's copy of this file,
+ * where a Clarity_old.AppImage is sitting next to Clarity.AppImage right now.
+ *
+ * So: never a superseded build, the canonical name wins outright, and where several remain
+ * the newest does. A file that is not executable is not an answer either, since handing a
+ * launcher a path it cannot run is the same failure wearing a different hat.
  */
-function appExecutable(baseDir, selfExecutable) {
+function appExecutable(baseDir, selfExecutable, appImagePath) {
+    if (appImagePath && isRunnable(appImagePath)) return appImagePath;
     try {
-        const hit = fs.readdirSync(baseDir).find(f => /^EmuLatte.*\.AppImage$/i.test(f));
-        if (hit) return path.join(baseDir, hit);
+        const candidates = fs.readdirSync(baseDir)
+            .filter(f => /^EmuLatte.*\.AppImage$/i.test(f))
+            .filter(f => !/_old\.AppImage$/i.test(f));
+        const exact = candidates.filter(f => f.toLowerCase() === 'emulatte.appimage');
+        const rest = candidates
+            .filter(f => f.toLowerCase() !== 'emulatte.appimage')
+            .map(f => ({ f, at: (() => { try { return fs.statSync(path.join(baseDir, f)).mtimeMs; } catch { return 0; } })() }))
+            .sort((a, b) => b.at - a.at)
+            .map(x => x.f);
+        for (const f of [...exact, ...rest]) {
+            const full = path.join(baseDir, f);
+            if (isRunnable(full)) return full;
+        }
     } catch {}
     return selfExecutable || null;
 }
@@ -77,10 +107,10 @@ function writeDescriptor(patch) {
 /*
  * Called once per start with everything main.js has already resolved.
  */
-function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecutable, gameClasses }) {
+function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecutable, appImagePath, gameClasses }) {
     return writeDescriptor({
         version: version || null,
-        exec: appExecutable(baseDir, selfExecutable),
+        exec: appExecutable(baseDir, selfExecutable, appImagePath),
         // The argv each face answers to, so a consumer never has to know our CLI by heart.
         // `game` and `play` are templates rather than flag lists because an id is interpolated
         // into them: `--game=` opens the page, `--play=` starts the game.
