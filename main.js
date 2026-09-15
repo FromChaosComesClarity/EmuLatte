@@ -495,6 +495,12 @@ ipcMain.handle('get-setting', (_, key) => {
     return row ? row.value : null;
 });
 
+// ── LIBRARY REPORT ────────────────────────────────────────────────────────────
+// Settings, Library Report: a picked set of stats saved as a web page, a PDF or images.
+require('./report-main.js').registerReportIpc({
+    ipcMain, getDb: () => db, baseDir, BrowserWindow, dialog, nativeImage: require('electron').nativeImage,
+});
+
 ipcMain.handle('set-setting', (_, key, value) => {
     if (!db) return;
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? ''));
