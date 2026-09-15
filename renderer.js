@@ -4639,3 +4639,200 @@ function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── LIBRARY REPORT ───────────────────────────────────────────────────────────
+// Settings, Library Report. The main process gathers the stats and renders the report
+// (report-main.js); this side only picks what goes in, shows the preview and asks for a
+// file. The preview is the real report document in an iframe, scaled to fit, so what is shown
+// is exactly what gets saved.
+(() => {
+    const $ = id => document.getElementById(id);
+    const modal = $('modal-report');
+    if (!modal) return;
+    const frame = $('rp-frame'), stage = $('rp-stage'), status = $('rp-status');
+const REPORT_UI = {
+        title_default: 'My ROM library', no_data: 'Nothing to show yet', rendering: 'Rendering…',
+        style_clarity: 'EmuLatte', style_afterglow: 'Afterglow', style_daylight: 'Daylight', style_theme: 'My theme',
+        format_document_hint: 'One long page. Save it as a web page or a PDF.',
+        format_poster_hint: 'Everything you picked on a single image. Shows up to six items.',
+        format_cards_hint: 'One image per item, made for a carousel post.',
+        save_html: 'Save as Web Page', save_pdf: 'Save as PDF', save_image: 'Save Image', save_images: 'Save Images',
+        saved: 'Saved to {path}', saved_many: 'Saved {n} images to {path}', failed: 'Could not save the report: {error}',
+        nothing_selected: 'Pick at least one item to build a report.', days: '{n} days',
+    };
+    const SECTION_NAMES = { overview: 'The library', systems: 'Systems', recent: 'Lately', genres: 'Genres', achievements: 'RetroAchievements', couch: 'Couch co-op', ratings: 'Ratings', decades: 'Across the decades', studios: 'Studios', playlists: 'Playlists', favourites: 'Favourites', clarity: 'Clarity' };
+    const fill = (text, vars = {}) => String(text).replace(/\{(\w+)\}/g, (_, k) => vars[k] !== undefined ? vars[k] : `{${k}}`);
+    const STYLE_SWATCH = {
+        emulatte:  ['#1b120d', 'linear-gradient(90deg,#d4a373,#ff8f5e)'],
+        afterglow: ['#1c1020', 'linear-gradient(90deg,#ff7a59,#ffc56b)'],
+        daylight:  ['#eef1f5', 'linear-gradient(90deg,#2344ff,#ff4d2e)'],
+    };
+    let prefs = null, sectionInfo = [], previewTimer = null, previewSeq = 0, busy = false;
+    const R = (key, vars) => fill(REPORT_UI[key] || key, vars);
+    const sectionName = id => SECTION_NAMES[id] || id;
+
+    const defaults = () => ({
+        title: R('title_default'), subtitle: '', sections: null, style: 'emulatte',
+        layout: 'cards', size: 'portrait', recentDays: 30,
+    });
+
+    // "My theme" is read off the live stylesheet, so it follows whatever theme is on screen
+    // without a second copy of the theme table.
+    function themeTokens() {
+        const cs = getComputedStyle(document.documentElement);
+        const v = k => cs.getPropertyValue(`--${k}`).trim();
+        return { bg: v('bg'), bg_menu: v('bg_menu'), bg_panel: v('bg_panel'), accent: v('accent'), accent_menu: v('accent_menu'),
+                 text_main: v('text_main'), text_sec: v('text_sec'), text_dim: v('text_dim'), border: v('border'),
+                 font: (EL_THEMES[_activeTheme] && EL_THEMES[_activeTheme].font) || '' };
+    }
+    const payload = () => ({ ...prefs, theme: themeTokens() });
+    const save = () => { try { window.api.setSetting('report_prefs', JSON.stringify(prefs)); } catch {} };
+    const chosen = () => sectionInfo.filter(s => s.available && (prefs.sections ? prefs.sections.includes(s.id) : true)).map(s => s.id);
+
+    function setStatus(text, isError) { status.textContent = text || ''; status.classList.toggle('err', !!isError); }
+
+    function renderSections() {
+        const box = $('rp-sections');
+        const picked = new Set(chosen());
+        box.innerHTML = '';
+        for (const s of sectionInfo) {
+            const label = document.createElement('label');
+            label.className = `rp-sec${s.available ? (picked.has(s.id) ? ' on' : '') : ' off'}`;
+            if (!s.available) label.title = R('no_data');
+            const box2 = document.createElement('input');
+            box2.type = 'checkbox'; box2.id = `rp-sec-${s.id}`; box2.checked = s.available && picked.has(s.id); box2.disabled = !s.available;
+            box2.addEventListener('change', () => {
+                const next = new Set(chosen());
+                box2.checked ? next.add(s.id) : next.delete(s.id);
+                prefs.sections = sectionInfo.map(x => x.id).filter(id => next.has(id));
+                label.classList.toggle('on', box2.checked);
+                changed();
+            });
+            const span = document.createElement('span'); span.textContent = sectionName(s.id);
+            label.append(box2, span);
+            box.appendChild(label);
+        }
+    }
+
+    function renderStyles() {
+        const box = $('rp-styles');
+        box.innerHTML = '';
+        const tok = themeTokens();
+        for (const id of ['emulatte', 'afterglow', 'daylight', 'theme']) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = `rp-style${prefs.style === id ? ' active' : ''}`; b.dataset.val = id;
+            const [bg, bar] = STYLE_SWATCH[id] || [tok.bg || '#111', tok.accent || '#2fe0d6'];
+            b.innerHTML = `<span class="rp-swatch" style="background:${bg}"><i style="background:${bar}"></i></span><span></span>`;
+            b.lastChild.textContent = R(id === 'emulatte' ? 'style_clarity' : `style_${id}`);
+            b.addEventListener('click', () => { prefs.style = id; renderStyles(); changed(); });
+            box.appendChild(b);
+        }
+    }
+
+    function syncSegments() {
+        for (const [id, key] of [['rp-format', 'layout'], ['rp-size', 'size'], ['rp-recent', 'recentDays']]) {
+            $(id).querySelectorAll('.segmented-btn').forEach(b => b.classList.toggle('active', String(prefs[key]) === b.dataset.val));
+        }
+        $('rp-size-wrap').hidden = prefs.layout === 'document';
+        $('rp-format-hint').textContent = R(`format_${prefs.layout}_hint`);
+        $('rp-recent').querySelectorAll('.segmented-btn').forEach(b => { b.textContent = R('days', { n: b.dataset.val }); });
+        renderActions();
+    }
+
+    function renderActions() {
+        const box = $('rp-actions');
+        const list = prefs.layout === 'document' ? [['html', 'save_html', true], ['pdf', 'save_pdf', false]]
+            : [['png', prefs.layout === 'poster' ? 'save_image' : 'save_images', true]];
+        box.innerHTML = '';
+        for (const [format, key, primary] of list) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = `rp-save-${format}`; if (primary) b.className = 'primary';
+            b.textContent = R(key); b.disabled = busy || !chosen().length;
+            b.addEventListener('click', () => exportAs(format));
+            box.appendChild(b);
+        }
+    }
+
+    function fitPreview(size) {
+        const W = stage.clientWidth, Hh = stage.clientHeight;
+        if (prefs.layout === 'poster') {
+            const k = Math.min((W - 48) / size.w, (Hh - 48) / size.h);
+            frame.style.width = `${size.w}px`; frame.style.height = `${size.h}px`;
+            frame.style.transform = `scale(${k})`;
+            frame.style.left = `${(W - size.w * k) / 2}px`; frame.style.top = `${(Hh - size.h * k) / 2}px`;
+        } else {
+            // The document and the card strip scroll inside the frame; the document is shown at
+            // two-thirds size so a whole section fits, the strip scales itself.
+            const k = prefs.layout === 'document' ? 0.66 : 1;
+            frame.style.width = `${W / k}px`; frame.style.height = `${Hh / k}px`;
+            frame.style.transform = `scale(${k})`; frame.style.left = '0px'; frame.style.top = '0px';
+        }
+    }
+
+    async function refreshPreview() {
+        const seq = ++previewSeq;
+        const empty = $('rp-empty');
+        if (!chosen().length) { empty.hidden = false; empty.textContent = R('nothing_selected'); frame.hidden = true; return; }
+        empty.hidden = true; frame.hidden = false;
+        $('rp-busy').hidden = false; $('rp-busy').textContent = R('rendering');
+        const r = await window.api.reportPreview({ ...payload(), sections: chosen() });
+        if (seq !== previewSeq) return;                         // a newer toggle already asked again
+        $('rp-busy').hidden = true;
+        if (!r || !r.ok) { setStatus(R('failed', { error: r ? r.error : '?' }), true); return; }
+        fitPreview(r.size);
+        frame.srcdoc = r.html;
+    }
+
+    function changed() {
+        save(); syncSegments();
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(refreshPreview, 220);
+    }
+
+    async function exportAs(format) {
+        if (busy) return;
+        busy = true; renderActions(); setStatus(R('rendering'));
+        let r;
+        try { r = await window.api.reportExport({ ...payload(), sections: chosen() }, format); }
+        catch (e) { r = { ok: false, error: e.message }; }
+        busy = false; renderActions();
+        if (!r || r.canceled) { setStatus(''); return; }
+        if (!r.ok) { setStatus(R('failed', { error: r.error === 'nothing_selected' ? R('nothing_selected') : r.error }), true); return; }
+        setStatus(r.count ? R('saved_many', { n: r.count, path: r.path }) : R('saved', { path: r.path }));
+    }
+
+    async function open() {
+        try { prefs = { ...defaults(), ...JSON.parse((await window.api.getSetting('report_prefs')) || '{}') }; }
+        catch { prefs = defaults(); }
+        $('rp-title').value = prefs.title; $('rp-subtitle').value = prefs.subtitle;
+        setStatus('');
+        modal.classList.add('active');
+        const r = await window.api.reportSections(payload());
+        sectionInfo = r && r.ok ? r.sections : [];
+        renderSections(); renderStyles(); syncSegments();
+        refreshPreview();
+    }
+
+    // Opens above Settings rather than closing it, so nothing typed there is lost.
+    $('btn-open-report')?.addEventListener('click', () => open());
+    const close = () => { modal.classList.remove('active'); frame.srcdoc = ''; };
+    $('rp-close').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('active')) close(); });
+
+    for (const [id, key, cast] of [['rp-format', 'layout', String], ['rp-size', 'size', String], ['rp-recent', 'recentDays', Number]]) {
+        $(id).addEventListener('click', e => {
+            const b = e.target.closest('.segmented-btn'); if (!b) return;
+            prefs[key] = cast(b.dataset.val);
+            if (key === 'recentDays') { window.api.reportSections(payload()).then(r => { if (r && r.ok) { sectionInfo = r.sections; renderSections(); } }); }
+            changed();
+        });
+    }
+    let typing = null;
+    for (const [id, key] of [['rp-title', 'title'], ['rp-subtitle', 'subtitle']]) {
+        $(id).addEventListener('input', e => { prefs[key] = e.target.value; clearTimeout(typing); typing = setTimeout(changed, 350); });
+    }
+    $('rp-all').addEventListener('click', () => { prefs.sections = null; renderSections(); changed(); });
+    $('rp-none').addEventListener('click', () => { prefs.sections = []; renderSections(); changed(); });
+    window.addEventListener('resize', () => { if (modal.classList.contains('active')) { clearTimeout(previewTimer); previewTimer = setTimeout(refreshPreview, 200); } });
+})();

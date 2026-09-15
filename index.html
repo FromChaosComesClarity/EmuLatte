@@ -447,6 +447,47 @@
 
     .modal-wrapper { position: relative; width: fit-content; }
     .modal-float-btns { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; z-index: 200; filter: drop-shadow(0 4px 18px rgba(0,0,0,0.85)); pointer-events: auto; }
+    /* ── Library report ─────────────────────────────────────────────────── */
+    #modal-report .rp-box { width: min(1480px, 95vw); height: 90vh; padding: 0; gap: 0; display: grid; grid-template-columns: 380px 1fr; overflow: hidden; }
+    #modal-report .rp-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border_solid); }
+    #modal-report .rp-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 22px 14px; }
+    #modal-report .rp-head h3 { margin: 0; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; font-size: 15px; }
+    #modal-report .rp-x { background: transparent; border: 1px solid var(--border_solid); color: var(--text_sec); width: 30px; height: 30px; padding: 0; border-radius: 6px; font-size: 16px; line-height: 1; }
+    #modal-report .rp-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 16px; display: flex; flex-direction: column; gap: 8px; }
+    /* A flex column shrinks its children when the panel is shorter than its content, and the
+       segmented controls clip their overflow, so without this they collapse to a 2px line. */
+    #modal-report .rp-scroll > * { flex-shrink: 0; }
+    #modal-report .rp-lbl { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text_dim); margin-top: 10px; display: block; }
+    #modal-report .rp-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    #modal-report .rp-link { background: none; border: 0; padding: 0 0 0 12px; color: var(--accent); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #modal-report .rp-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    #modal-report .rp-sec { display: flex; align-items: center; gap: 8px; padding: 6px 9px; line-height: 1.25; border: 1px solid var(--border_solid); border-radius: 6px; font-size: 12px; color: var(--text_main); cursor: pointer; user-select: none; background: rgba(0,0,0,0.15); }
+    #modal-report .rp-sec input { accent-color: var(--accent); margin: 0; }
+    #modal-report .rp-sec.on { border-color: var(--accent); }
+    #modal-report .rp-sec.off { opacity: 0.42; cursor: not-allowed; }
+    #modal-report .rp-styles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    #modal-report .rp-style { display: flex; flex-direction: column; gap: 6px; align-items: stretch; padding: 6px; border: 1px solid var(--border_solid); border-radius: 8px; background: transparent; color: var(--text_sec); font-size: 10px; letter-spacing: .5px; cursor: pointer; }
+    #modal-report .rp-style.active { border-color: var(--accent); color: var(--text_main); box-shadow: 0 0 0 1px var(--accent) inset; }
+    #modal-report .rp-swatch { height: 34px; border-radius: 5px; position: relative; overflow: hidden; }
+    #modal-report .rp-swatch i { position: absolute; left: 7px; bottom: 7px; width: 55%; height: 5px; border-radius: 3px; }
+    #modal-report .rp-hint { font-size: 11px; color: var(--text_dim); line-height: 1.5; margin: 4px 0 0; }
+    #modal-report .rp-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text_main); margin-top: 12px; cursor: pointer; }
+    #modal-report .rp-check input { accent-color: var(--accent); margin: 0; }
+    #modal-report .rp-actions { display: grid; gap: 8px; padding: 14px 22px 6px; border-top: 1px solid var(--border_solid); }
+    #modal-report .rp-actions button { width: 100%; font-size: 12px; padding: 11px; letter-spacing: 1px; }
+    #modal-report .rp-status { font-size: 11px; color: var(--text_sec); min-height: 30px; margin: 0; padding: 4px 22px 16px; line-height: 1.45; word-break: break-all; }
+    #modal-report .rp-status.err { color: #ef5350; }
+    #modal-report .rp-preview { position: relative; min-width: 0; min-height: 0; background: repeating-conic-gradient(rgba(255,255,255,0.025) 0 25%, transparent 0 50%) 0 0 / 22px 22px, rgba(0,0,0,0.35); }
+    #modal-report .rp-stage { position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center; }
+    #modal-report .rp-stage iframe { border: 0; background: transparent; transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+    #modal-report .rp-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text_dim); font-size: 13px; padding: 40px; text-align: center; }
+    #modal-report .rp-busy { position: absolute; right: 16px; top: 14px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text_dim); }
+    #modal-report { z-index: 200; }
+    #modal-report .segmented-control { display: flex; width: 100%; border: 1px solid var(--border_solid); border-radius: 6px; overflow: hidden; margin-top: 5px; }
+    #modal-report .segmented-btn { flex: 1; background: transparent; border: 0; border-right: 1px solid var(--border_solid); color: var(--text_sec); padding: 8px 4px; font-size: 11px; letter-spacing: .5px; cursor: pointer; border-radius: 0; }
+    #modal-report .segmented-btn:last-child { border-right: 0; }
+    #modal-report .segmented-btn.active { background: var(--accent); color: var(--bg); font-weight: 700; }
+    #modal-report input[type="text"] { width: 100%; box-sizing: border-box; }
   </style>
   <script>
     try {
@@ -1076,6 +1117,9 @@
           <button class="cp-rail-item" data-pane="scrapers">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Scrapers</span>
           </button>
+          <button class="cp-rail-item" data-pane="report">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg><span>Library Report</span>
+          </button>
           <span class="cp-rail-spacer"></span>
           <button class="cp-rail-item" data-pane="data">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg><span>Data</span>
@@ -1269,6 +1313,15 @@
             </div>
           </section>
 
+          <section class="cp-pane" data-pane="report">
+            <div class="cp-pane-title">Library Report</div>
+            <div class="tool-card" data-search="report stats statistics share social post export pdf image images poster cards carousel wrapped summary systems couch co-op achievements">
+              <div class="tool-card-title">Library Report</div>
+              <div class="hint">Turn your library into a report: games per system, recently played, genres, couch co-op, ratings and more. Save it as a web page, a PDF or images ready to post.</div>
+              <button id="btn-open-report" style="width:100%; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Create a Report</button>
+            </div>
+          </section>
+
           <section class="cp-pane" data-pane="data">
             <div class="cp-pane-title">Data</div>
             <div class="tool-card" data-search="data folder database config directory open">
@@ -1305,6 +1358,53 @@
   </div>
 
   <!-- ── MODAL: RETROARCH SETTINGS (full menu over EmuLatte's owned config) ──── -->
+  <div id="modal-report" class="modal-overlay">
+    <div class="modal-box rp-box" role="dialog" aria-labelledby="rp-heading">
+      <div class="rp-side">
+        <div class="rp-head"><h3 id="rp-heading">Library Report</h3><button id="rp-close" class="rp-x" aria-label="Close">&#10005;</button></div>
+        <div class="rp-scroll">
+          <label class="rp-lbl" for="rp-title">Title</label>
+          <input id="rp-title" type="text" maxlength="60">
+          <label class="rp-lbl" for="rp-subtitle">Subtitle</label>
+          <input id="rp-subtitle" type="text" maxlength="60" placeholder="Your name or @handle">
+          <span class="rp-lbl">Format</span>
+          <div class="segmented-control" id="rp-format">
+            <button class="segmented-btn" data-val="document">Document</button>
+            <button class="segmented-btn" data-val="poster">Poster</button>
+            <button class="segmented-btn" data-val="cards">Cards</button>
+          </div>
+          <p id="rp-format-hint" class="rp-hint"></p>
+          <div id="rp-size-wrap">
+            <span class="rp-lbl">Size</span>
+            <div class="segmented-control" id="rp-size">
+              <button class="segmented-btn" data-val="portrait">Portrait 4:5</button>
+              <button class="segmented-btn" data-val="square">Square</button>
+              <button class="segmented-btn" data-val="story">Story 9:16</button>
+              <button class="segmented-btn" data-val="landscape">Landscape 16:9</button>
+            </div>
+          </div>
+          <span class="rp-lbl">Style</span>
+          <div id="rp-styles" class="rp-styles"></div>
+          <div class="rp-row"><span class="rp-lbl">What to include</span><span><button id="rp-all" class="rp-link">All</button><button id="rp-none" class="rp-link">None</button></span></div>
+          <div id="rp-sections" class="rp-sections"></div>
+          <span class="rp-lbl">Lately looks back</span>
+          <div class="segmented-control" id="rp-recent">
+            <button class="segmented-btn" data-val="30">30</button>
+            <button class="segmented-btn" data-val="90">90</button>
+            <button class="segmented-btn" data-val="365">365</button>
+          </div>
+        </div>
+        <div class="rp-actions" id="rp-actions"></div>
+        <p id="rp-status" class="rp-status" aria-live="polite"></p>
+      </div>
+      <div class="rp-preview">
+        <div id="rp-stage" class="rp-stage"><iframe id="rp-frame" title="Preview"></iframe></div>
+        <div id="rp-empty" class="rp-empty" hidden></div>
+        <span id="rp-busy" class="rp-busy" hidden></span>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-ra-settings" class="modal-overlay" style="z-index:120;">
     <div class="cp-panel">
       <div class="cp-header">

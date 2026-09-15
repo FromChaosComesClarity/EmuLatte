@@ -42,6 +42,9 @@
     "files": [
       "main.js",
       "ss-dev.js",
+      "library-report.js",
+      "report-render.js",
+      "report-main.js",
       "preload.js",
       "renderer.js",
       "index.html",
