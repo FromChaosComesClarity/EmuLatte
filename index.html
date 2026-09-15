@@ -1117,6 +1117,9 @@
           <button class="cp-rail-item" data-pane="scrapers">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Scrapers</span>
           </button>
+          <button class="cp-rail-item" data-pane="report">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg><span>Library Report</span>
+          </button>
           <span class="cp-rail-spacer"></span>
           <button class="cp-rail-item" data-pane="data">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg><span>Data</span>
@@ -1310,6 +1313,15 @@
             </div>
           </section>
 
+          <section class="cp-pane" data-pane="report">
+            <div class="cp-pane-title">Library Report</div>
+            <div class="tool-card" data-search="report stats statistics share social post export pdf image images poster cards carousel wrapped summary systems couch co-op achievements">
+              <div class="tool-card-title">Library Report</div>
+              <div class="hint">Turn your library into a report: games per system, recently played, genres, couch co-op, ratings and more. Save it as a web page, a PDF or images ready to post.</div>
+              <button id="btn-open-report" style="width:100%; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Create a Report</button>
+            </div>
+          </section>
+
           <section class="cp-pane" data-pane="data">
             <div class="cp-pane-title">Data</div>
             <div class="tool-card" data-search="data folder database config directory open">
@@ -1330,11 +1342,6 @@
               <div class="tool-card-title">ROM Locations</div>
               <div id="rom-locations-list" style="display:flex; flex-direction:column; gap:8px;"></div>
               <div class="hint">If your ROM folder or drive moved, re-point the library here — your art, favourites and play history are kept. Don’t re-scan for that: it re-imports the same ROMs as blank duplicates.</div>
-            </div>
-            <div class="tool-card" data-search="report stats statistics share social post export pdf image images poster cards carousel wrapped summary systems couch co-op achievements">
-              <div class="tool-card-title">Library Report</div>
-              <div class="hint">Turn your library into a report: games per system, recently played, genres, couch co-op, ratings and more. Save it as a web page, a PDF or images ready to post.</div>
-              <button id="btn-open-report" style="width:100%; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Create a Report</button>
             </div>
             <div class="tool-card" data-search="library maintenance duplicate duplicates orphan unused images videos clean disk space remove">
               <div class="tool-card-title">Library Maintenance</div>
