@@ -3446,7 +3446,8 @@ function wireUI() {
         btn.textContent = 'Test Credentials';
         btn.disabled = false;
         if (result.ok) {
-            statusEl.textContent = `✓ Connected as ${result.username} — ${result.systemCount} systems available`;
+            const quota = result.maxRequestsPerDay ? `, ${result.requestsToday || 0} of ${result.maxRequestsPerDay} requests used today` : '';
+            statusEl.textContent = `✓ Connected as ${result.username}${quota}`;
             statusEl.style.color = 'var(--accent)';
         } else {
             statusEl.textContent = `✗ ${result.error}`;

@@ -1379,26 +1379,22 @@ const PLATFORM_MAP = {
     switch: { igdb: 130, tgdb: 4971, moby: 203 },
 };
 
-// Dev credentials identify EmuLatte itself; users supply their own account (ssid/sspassword).
-// In a shipped build they live XOR-scrambled in assets/ss_dev.dat (no plaintext in the AppImage,
-// the same approach ES-DE uses). assets/ss_dev.json is the plaintext source kept for local dev;
-// both files are gitignored, and predist regenerates the .dat from the .json before packaging.
-// The key below is obfuscation, not encryption — it only defeats `strings`/secret-scanners.
-const SS_DEV_KEY = 'EmuLatte::clarity::ss-dev::xor::v1';
-function ssDevXor(buf) {
-    const out = Buffer.allocUnsafe(buf.length);
-    for (let i = 0; i < buf.length; i++) out[i] = buf[i] ^ SS_DEV_KEY.charCodeAt(i % SS_DEV_KEY.length);
-    return out;
-}
+// ScreenScraper developer credentials, see ss-dev.js for where they come from and why the key
+// lives there alone.
 let ssDev = { devid: '', devpassword: '', softname: 'EmuLatte' };
-try {
-    const dat  = fs.readFileSync(path.join(__dirname, 'assets', 'ss_dev.dat'), 'utf8');
-    const json = ssDevXor(Buffer.from(dat, 'base64')).toString('utf8');
-    ssDev = { ...ssDev, ...JSON.parse(json) };
-} catch {
-    try {
-        ssDev = { ...ssDev, ...JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ss_dev.json'), 'utf8')) };
-    } catch {}
+{
+    const datPath  = path.join(__dirname, 'assets', 'ss_dev.dat');
+    const jsonPath = path.join(__dirname, 'assets', 'ss_dev.json');
+    if (fs.existsSync(datPath)) {
+        // ⚠️ Present but undecodable is a broken build, not a missing file, so say so. This was a
+        // bare catch once, and a renamed key turned into "Dev credentials missing" on every call.
+        try { ssDev = { ...ssDev, ...require('./ss-dev').unscramble(fs.readFileSync(datPath, 'utf8')) }; }
+        catch (e) { console.error(`[screenscraper] assets/ss_dev.dat does not decode with this build's key (${e.message}); ScreenScraper is off.`); }
+    } else if (fs.existsSync(jsonPath)) {
+        // `npm start` in a dev tree, before predist has ever run.
+        try { ssDev = { ...ssDev, ...JSON.parse(fs.readFileSync(jsonPath, 'utf8')) }; }
+        catch (e) { console.error(`[screenscraper] assets/ss_dev.json is not valid JSON (${e.message}); ScreenScraper is off.`); }
+    }
 }
 
 function ssBaseParams(ssUser, ssPass) {
@@ -1436,8 +1432,10 @@ function ssApiUrl(endpoint, params) {
 async function ssApiCall(endpoint, params) {
     if (!ssDev.devid || !ssDev.devpassword) throw new Error('Dev credentials missing from this build (assets/ss_dev.json)');
     const { status, body } = await httpsGet(ssApiUrl(endpoint, params));
-    if (status !== 200) throw new Error(`HTTP ${status}`);
     const text = body.toString('utf8');
+    // ScreenScraper explains a refusal in the body ("Erreur de login", quota messages). A bare
+    // status code hid which of those it was.
+    if (status !== 200) throw new Error(`HTTP ${status}${text.trim() ? ': ' + text.trim().slice(0, 160) : ''}`);
     try { return JSON.parse(text); }
     catch { throw new Error(text.slice(0, 120) || 'Invalid JSON from ScreenScraper'); }
 }
@@ -1601,17 +1599,33 @@ ipcMain.handle('compute-crc32', async (_, filePath) => {
     try { return await computeFileCrc32(filePath); } catch { return null; }
 });
 
+// ⚠️ Two calls, because one cannot tell the two ways this fails apart. Measured against the live
+// API rather than assumed:
+//   systemesListe  needs only EmuLatte's developer credentials. It answered a made-up account
+//                  with 250 systems, which is how this test used to report "Connected" for a
+//                  mistyped password. With a wrong developer password it says "Verifier vos
+//                  identifiants developpeur".
+//   ssuserInfos    checks the user's login FIRST, and says "identifiants utilisateurs" even when
+//                  the developer credentials are the thing that is wrong.
+// So the build is proved first and the account second, and a broken build is never reported as
+// the user's password.
+const SS_DEV_REFUSED = /Dev credentials missing|d[ée]veloppeur/i;
 ipcMain.handle('test-ss-credentials', async (_, ssUser, ssPass) => {
     if (!ssUser || !ssPass) return { ok: false, error: 'Enter username and password first.' };
     try {
-        const result = await ssApiCall('systemesListe.php', ssBaseParams(ssUser, ssPass));
-        const systems = result.response?.systemes;
-        if (!systems) return { ok: false, error: result.response?.msg || 'Invalid credentials.' };
-        return { ok: true, username: ssUser, systemCount: systems.length };
-    } catch(e) {
-        const msg = e.message.match(/43[01]|401/) ? 'Invalid credentials.' :
-                    e.message.includes('timeout')  ? 'Connection timed out.' : e.message;
-        return { ok: false, error: msg };
+        await ssApiCall('systemesListe.php', ssBaseParams(ssUser, ssPass));
+    } catch (e) {
+        return { ok: false, error: SS_DEV_REFUSED.test(e.message) ? 'ScreenScraper is not available in this build of EmuLatte. Your account is not the problem.'
+                                 : e.message.includes('timeout') ? 'Connection timed out.' : e.message };
+    }
+    try {
+        const result = await ssApiCall('ssuserInfos.php', ssBaseParams(ssUser, ssPass));
+        const u = result.response?.ssuser;
+        if (!u?.id) return { ok: false, error: 'ScreenScraper did not accept this username and password.' };
+        return { ok: true, username: u.id, requestsToday: u.requeststoday, maxRequestsPerDay: u.maxrequestsperday };
+    } catch (e) {
+        return { ok: false, error: /utilisateur|identifiants|login|40[13]/i.test(e.message) ? 'ScreenScraper did not accept this username and password.'
+                                 : e.message.includes('timeout') ? 'Connection timed out.' : e.message };
     }
 });
 
