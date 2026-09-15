@@ -41,6 +41,7 @@
     },
     "files": [
       "main.js",
+      "ss-dev.js",
       "preload.js",
       "renderer.js",
       "index.html",
