@@ -127,7 +127,9 @@ html, body {
    is mostly stroke, and stroke is what interlace eats. */
 .hint b {
     display: inline-block;
+    /* Was sized for a single letter, when these were A and B. */
     min-width: 26px;
+    letter-spacing: 0.06em;
     padding: 2px 7px;
     margin-right: 7px;
     background: var(--accent);
