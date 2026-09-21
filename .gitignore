@@ -1,5 +1,9 @@
 node_modules/
 dist/
+# The data directory a dev run creates beside the checkout: library, artwork,
+# save states. Never the user's install, and never ours to commit.
+GameManagerConfig/
+GameManagerConfig
 *.AppImage
 *.AppImage.old
 .DS_Store

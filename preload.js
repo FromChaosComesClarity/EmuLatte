@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('api', {
     close:    () => ipcRenderer.send('window-close'),
     enterCouch: (opts) => ipcRenderer.invoke('enter-couch-mode', opts),
     exitCouch:  ()     => ipcRenderer.invoke('exit-couch-mode'),
+    enterCrt:   ()     => ipcRenderer.invoke('enter-crt-mode'),
+    exitCrt:    ()     => ipcRenderer.invoke('exit-crt-mode'),
+    // CRT Mode reads the zoom it is starting from rather than assuming 1: every
+    // face sets its own density at load, so the window arrives carrying whatever
+    // the last one chose.
+    getZoom:    ()     => webFrame.getZoomFactor(),
+    // The Omarchy palette, plus the live feed, so `omarchy theme set` restyles an
+    // open face instead of the next one.
+    omarchyTheme:          ()   => ipcRenderer.invoke('omarchy-theme'),
+    onOmarchyThemeChanged: (cb) => ipcRenderer.on('omarchy-theme-changed', (_, d) => cb(d)),
     forceFocus: ()     => ipcRenderer.send('force-focus'),
 
     // Systems

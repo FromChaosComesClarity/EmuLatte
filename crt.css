@@ -1,0 +1,281 @@
+/*
+ * EmuLatte, CRT Mode — the look.
+ *
+ * Written for 720x480 interlaced over composite, which is a set of hard
+ * constraints rather than a style:
+ *
+ *   4px minimum on every stroke   a 1px rule is drawn by one field and not the
+ *                                 other, so it strobes at 30Hz
+ *   no fine repeating patterns    same reason, worse
+ *   square corners                a radius at this resolution is four aliased
+ *                                 pixels pretending to be a curve
+ *   no transitions                interlace smears motion; instant selection is
+ *                                 both crisper and more correct for a TV menu
+ *   dark ground, one bright thing the selected row is the only saturated area
+ *                                 on screen, which keeps average beam intensity
+ *                                 (and so phosphor wear) low
+ *   never red on thin text        composite chroma bleeds worst on red
+ *
+ * Every measurement below is a scanline count, which is only true because
+ * crt.js zooms the page until one CSS pixel is one screen pixel. Read that
+ * comment before changing a number here.
+ *
+ * Colours are all theme tokens fed from the user's Omarchy palette; the
+ * fallbacks are EmuLatte's own, for a machine with no Omarchy theme installed.
+ */
+
+:root {
+    --bg:        #2c1e16;
+    --panel:     #38271d;
+    --accent:    #d9a066;
+    --text:      #f2e7dd;
+    --text-dim:  #a8907d;
+    --edge:      #54402f;
+
+    /* The safe box. 5% a side is the broadcast title-safe convention and it is
+       the difference between a menu you can read and one whose first character
+       is behind the bezel. */
+    --safe-x: 5%;
+    --safe-y: 5%;
+
+    --stroke: 4px;
+
+    /* Sized against the real budget rather than by eye: 480 lines, minus the
+       safe margin top and bottom (48), minus header and footer with their rules
+       (~84), leaves ~348 for the list. At a 52px pitch that is six rows, which
+       is the least a real ROM set can be browsed with. */
+    --row-h: 48px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Raleway', 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    cursor: none;              /* a TV menu has no pointer */
+    user-select: none;
+}
+
+/* Raleway ships with the app, so the face looks the same on a machine with no
+   fonts installed as it does here. */
+@font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Regular.ttf') format('truetype'); font-weight: 400; }
+@font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf')    format('truetype'); font-weight: 700; }
+@font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf')   format('truetype'); font-weight: 900; }
+
+.safe {
+    height: 100%;
+    padding: var(--safe-y) var(--safe-x);
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Chrome ──────────────────────────────────────────────────────────────── */
+
+.head, .foot {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    gap: 22px;
+}
+
+.crumb {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.tally {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+.rule {
+    flex: 0 0 auto;
+    height: var(--stroke);
+    background: var(--edge);
+    margin: 10px 0;
+}
+
+.hint {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+
+/* The button badge. Filled rather than outlined: an outlined glyph at this size
+   is mostly stroke, and stroke is what interlace eats. */
+.hint b {
+    display: inline-block;
+    min-width: 26px;
+    padding: 2px 7px;
+    margin-right: 7px;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 15px;
+    font-weight: 900;
+    text-align: center;
+}
+
+.hint.spacer { margin-left: auto; color: var(--accent); }
+
+/* ── The menu ────────────────────────────────────────────────────────────── */
+
+.body {
+    flex: 1 1 auto;
+    min-height: 0;             /* so the list scrolls instead of pushing the footer off */
+    display: flex;
+}
+
+.menu {
+    list-style: none;
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;     /* the selection keeps itself in view; a bar is noise */
+}
+.menu::-webkit-scrollbar { display: none; }
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: var(--row-h);
+    padding: 0 12px;
+    margin-bottom: 4px;
+    background: var(--panel);
+    border: var(--stroke) solid var(--edge);
+    color: var(--text);
+}
+
+/* A row that states something rather than offering it: no panel, no border, no
+   cursor. It has to be visibly a different class of thing, because a row that
+   looks selectable and does nothing is the worst outcome available to a menu
+   with three buttons. */
+.row[data-kind="info"] {
+    background: none;
+    border-color: transparent;
+    color: var(--text-dim);
+    height: 38px;
+    padding-left: 0;
+}
+.row[data-kind="info"] .label {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+/* The one bright thing on screen. Filling the row and flipping the text to the
+   background colour is what makes the cursor findable from the sofa, where a
+   tinted border would not be. */
+.row[data-on="1"] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+}
+
+.row .label {
+    flex: 1 1 auto;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Headings, toggles and commands take the OSD idiom; game titles do not,
+   because a long title in caps is markedly harder to read and they are proper
+   nouns. */
+.row[data-kind="nav"] .label,
+.row[data-kind="toggle"] .label,
+.row[data-kind="action"] .label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 22px;
+}
+
+.row .meta {
+    flex: 0 0 auto;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    max-width: 38%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.row[data-on="1"] .meta { color: var(--bg); opacity: 0.75; }
+
+/* State pill: the system's short name, ON/OFF, a save slot. Text on a filled
+   block, never a thin outline, for the same reason the button badges are
+   filled. */
+.row .pill {
+    flex: 0 0 auto;
+    padding: 3px 9px;
+    background: var(--edge);
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.row[data-on="1"] .pill { background: var(--bg); color: var(--accent); }
+
+/* A favourite is marked with a filled block, not a star outline: at 480 lines
+   the points of a star are single pixels and the first thing interlace loses. */
+.row .fav {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+}
+.row[data-on="1"] .fav { background: var(--bg); }
+
+/* Cover art earns its place only as a thumbnail: at 480 lines a 2:3 box shot is
+   about 90px wide and box art does not survive chroma subsampling, so it is
+   here to tell two similar rows apart, not to be looked at. */
+.row .thumb {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    background: var(--edge);
+}
+
+/* The chevron on a row that goes somewhere. A character rather than a border
+   trick, so it scales with the row and never lands on a half pixel. */
+.row .chev {
+    flex: 0 0 auto;
+    font-size: 26px;
+    font-weight: 900;
+    opacity: 0.55;
+}
+.row[data-on="1"] .chev { opacity: 1; }
+
+.empty {
+    margin: auto;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.5;
+}

@@ -69,7 +69,9 @@ function createWindow() {
     win.setMenu(null);
     mainWin = win;
     win.on('closed', () => { if (mainWin === win) mainWin = null; });
-    if (shouldStartCouch()) enterCouch(win); else win.loadFile('index.html');
+    if (shouldStartCrt()) enterCrt(win);
+    else if (shouldStartCouch()) enterCouch(win);
+    else win.loadFile('index.html');
 
     win.on('close', () => {
         if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {   // don't persist couch-mode fullscreen bounds
@@ -319,6 +321,41 @@ function enterCouch(win) {
 }
 function exitCouch(win) { if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
 const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
+
+// ── CRT Mode ─────────────────────────────────────────────────────────────────
+// A third face, for a tube TV over composite: 720x480 interlaced, driven from a
+// D-pad, through whatever overscan the set crops. It is a menu, not a gallery —
+// see crt.css for why art cannot carry an interface at 480 lines.
+//
+// Like Couch it is a page swap in the same window rather than a second process,
+// so every handler above is already its backend and nothing here is a second
+// implementation of launching, scraping or save states.
+function enterCrt(win) {
+    if (!win) return;
+    win.setFullScreen(true);
+    win.loadFile('crt.html');
+    win.show();
+    // ⚠️ Hyprland can drop a window out of fullscreen on its own, and a face
+    // that is drawing a title-safe box for a specific raster has to insist.
+    if (!win.__crtFullscreenGuard) {
+        win.__crtFullscreenGuard = true;
+        win.on('leave-full-screen', () => {
+            if (!win.isDestroyed() && win.webContents.getURL().endsWith('crt.html')) win.setFullScreen(true);
+        });
+    }
+}
+// ⚠️ Zoom is reset on the way out. CRT Mode zooms the page so one CSS pixel is
+// one screen pixel (crt.js explains why that matters on an interlaced display),
+// and zoom is a property of the window, not of the page in it — left alone, the
+// desktop UI would come back at 61%. index.html applies its own density at load,
+// so handing it back a neutral window is all this has to do.
+function exitCrt(win) {
+    if (!win) return;
+    try { win.webContents.setZoomFactor(1); } catch {}
+    win.setFullScreen(false);
+    win.loadFile('index.html');
+}
+const shouldStartCrt = () => process.argv.includes('--crt') || couchSetting('crt_start_on_launch', '') === '1';
 // Shipped version, straight from package.json, so the About dialog can never drift from the build.
 ipcMain.handle('get-app-version', () => { try { return app.getVersion(); } catch { return ''; } });
 
@@ -347,6 +384,25 @@ ipcMain.handle('open-user-manual', event => {
 
 ipcMain.handle('enter-couch-mode', e => { enterCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 ipcMain.handle('exit-couch-mode', e => { exitCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
+ipcMain.handle('enter-crt-mode', e => { enterCrt(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
+ipcMain.handle('exit-crt-mode',  e => { exitCrt(BrowserWindow.fromWebContents(e.sender));  return { ok: true }; });
+
+// ── Omarchy theme ────────────────────────────────────────────────────────────
+// CRT Mode is meant to look like it belongs to the machine it is running on, so
+// it takes its palette from the user's Omarchy theme rather than defining one.
+// The watcher means `omarchy theme set` restyles the face while it is open.
+// (The same bridge, byte for byte, as the one in Clarity.)
+const omarchyTheme = require('./omarchy-theme.js');
+ipcMain.handle('omarchy-theme', () => {
+    try { return omarchyTheme.describe(); } catch { return { available: false, name: '', theme: null, mode: '' }; }
+});
+try {
+    omarchyTheme.watch(d => {
+        for (const w of BrowserWindow.getAllWindows()) {
+            try { w.webContents.send('omarchy-theme-changed', d); } catch {}
+        }
+    });
+} catch {}
 // Pull Couch Mode back to the foreground after a launched game exits / the return combo fires.
 ipcMain.on('force-focus', e => {
     const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getAllWindows()[0];
