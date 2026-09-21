@@ -36,7 +36,12 @@
        the difference between a menu you can read and one whose first character
        is behind the bezel. */
     --safe-x: 5%;
-    --safe-y: 5%;
+    /* ⚠️ Asymmetric, and deeper at the top than the 5% broadcast standard,
+       because this set is: at 5% the header row was still behind the bezel on
+       the real tube while everything below it was fine. Broadcast-safe is a
+       floor for an unknown set, not a measurement of yours. */
+    --safe-top: 10%;
+    --safe-bottom: 6%;
 
     --stroke: 4px;
 
@@ -68,7 +73,7 @@ html, body {
 
 .safe {
     height: 100%;
-    padding: var(--safe-y) var(--safe-x);
+    padding: var(--safe-top) var(--safe-x) var(--safe-bottom);
     display: flex;
     flex-direction: column;
 }
