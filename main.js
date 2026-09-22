@@ -281,6 +281,29 @@ app.whenReady().then(() => {
 
         const raVariant = detectRetroArch();
         db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', raVariant);
+
+        // ⚠️ Touch the owned config at startup, not only when a game launches.
+        // It is what corrects a config seeded against a RetroArch that has
+        // since been replaced — and waiting until launch means the first thing
+        // the user does after switching is the thing that fails.
+        try { ensureOwnedRaCfg(); } catch (e) { console.error('owned RA config:', e.message); }
+
+        /*
+         * ⚠️ Scan for cores when there are none on record.
+         *
+         * The scan was only ever triggered by a button in Settings, so a fresh
+         * install — or one whose core list was emptied by a RetroArch change —
+         * showed no cores, offered none to assign to a system, and left every
+         * ROM unplayable, with nothing on screen explaining why. Finding them
+         * is cheap and the answer is needed before anything else works.
+         */
+        try {
+            const haveCores = db.prepare('SELECT COUNT(*) AS n FROM cores').get()?.n || 0;
+            if (!haveCores) {
+                const r = scanCoresNow();
+                console.log(`[cores] first-run scan: ${r.count || 0} found`);
+            }
+        } catch (e) { console.error('core scan:', e.message); }
     } catch (err) {
         console.error('DB error:', err);
     }
@@ -608,6 +631,19 @@ function readHostPathKeys() {
         const m = txt.match(new RegExp(`^\\s*${k}\\s*=\\s*"([^"]*)"`, 'm'));
         if (m) out[k] = m[1];
     }
+    /*
+     * ⚠️ Except the core directories, which are EmuLatte's own and never the
+     * host's.
+     *
+     * Importing them was how the owned config came to point at
+     * /usr/lib/libretro — a directory belonging to a distro package that the
+     * user was in the middle of replacing with the Flatpak. Content paths are
+     * still imported, because BIOS files, ROM folders and shaders are the
+     * user's data and shared by every frontend on the machine; cores are the
+     * part EmuLatte manages, so they live where EmuLatte can manage them.
+     */
+    out.libretro_directory = ownedCoresDir();
+    out.libretro_info_path = ownedInfoDir();
     return out;
 }
 // Merge keys into a .cfg, updating existing lines in place and appending new ones.
@@ -626,7 +662,27 @@ function writeRaCfgKeys(file, updates) {
 // Create the owned config if missing (or re-seed when force=true): clean + imported paths.
 function ensureOwnedRaCfg(force = false) {
     const file = ownedRaCfgPath();
-    if (!force && fs.existsSync(file)) return file;
+    if (!force && fs.existsSync(file)) {
+        /*
+         * ⚠️ Correct a config written before cores became EmuLatte's own.
+         *
+         * Existing installs have libretro_directory pointing at whatever the
+         * host used when the config was seeded — on this machine
+         * /usr/lib/libretro, a directory owned by a distro package the user is
+         * replacing. Left alone, RetroArch would keep being handed a core
+         * directory that is about to disappear.
+         */
+        try {
+            const txt = fs.readFileSync(file, 'utf8');
+            const points = (key, dir) => new RegExp(`^\\s*${key}\\s*=\\s*"${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'm').test(txt);
+            if (!points('libretro_directory', ownedCoresDir()) || !points('libretro_info_path', ownedInfoDir())) {
+                fs.mkdirSync(ownedCoresDir(), { recursive: true });
+                fs.mkdirSync(ownedInfoDir(), { recursive: true });
+                writeRaCfgKeys(file, { libretro_directory: ownedCoresDir(), libretro_info_path: ownedInfoDir() });
+            }
+        } catch (e) { /* a config we cannot read is rewritten below anyway */ }
+        return file;
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const lines = [
         '# EmuLatte-owned RetroArch configuration.',
@@ -1837,7 +1893,14 @@ function scanCoresNow() {
     // ⚠️ Deduplicated by *real* path: /usr/lib64 is a symlink to /usr/lib on
     // most distributions, so listing both found every core twice and would
     // have filled the core list with pairs that differ only by spelling.
+    // ⚠️ EmuLatte's own directory first, because those cores are the ones it
+    // installed and the ones it guarantees. The rest are read-only
+    // conveniences: a distro package's 42 cores are perfectly usable while
+    // they exist, and a machine that has them should not be made to download
+    // them again — but nothing here depends on them, and none of these
+    // directories is ever written to.
     const coreDirs = [...new Map([
+        ownedCoresDir(),
         readRaCfgKey('libretro_directory'),
         path.join(os.homedir(), '.config', 'retroarch', 'cores'),
         path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores'),
@@ -1870,6 +1933,7 @@ function scanCoresNow() {
         // /usr/share/libretro/info. Both are tried, plus whatever the config
         // says, or every core shows up with no system name and no extensions.
         const infoDirs = [
+            ownedInfoDir(),
             readRaCfgKey('libretro_info_path'),
             path.join(path.dirname(dir), 'info'),
             '/usr/share/libretro/info',
@@ -1953,19 +2017,28 @@ function writableDir(preferred, fallback) {
  * only one that is certain to match, and it is user-writable, which the
  * distro's is not.
  */
-const raCoresDir = () => path.join(getRetroArchCfgDir(), 'cores');
-const raInfoDir  = () => path.join(getRetroArchCfgDir(), 'info');
+/*
+ * ⚠️ EmuLatte's own cores, in EmuLatte's own directory.
+ *
+ * RetroArch is the vessel: it runs on the config EmuLatte hands it and takes
+ * the core EmuLatte names. Everything EmuLatte manages lives under its own
+ * config directory, so that
+ *
+ *   - installing a core never writes into someone else's install. The distro
+ *     package's directory is root-owned and every download failed with EACCES;
+ *     the Flatpak's is writable and writing there would quietly modify an
+ *     application EmuLatte does not own.
+ *   - the host's RetroArch keeps working exactly as its user configured it,
+ *     and EmuLatte keeps working when that RetroArch is replaced — which is
+ *     precisely what happened here, distro package swapped for the Flatpak.
+ *   - moving the library to another machine brings the cores with it, because
+ *     they sit beside the database rather than in /usr.
+ */
+const ownedCoresDir = () => path.join(configDir, 'retroarch', 'cores');
+const ownedInfoDir  = () => path.join(configDir, 'retroarch', 'info');
 
-const coresInstallDir = () => {
-    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
-    if (variant === 'flatpak') return writableDir(raCoresDir(), raCoresDir());
-    return writableDir(readRaCfgKey('libretro_directory'), raCoresDir());
-};
-const coreInfoInstallDir = () => {
-    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
-    if (variant === 'flatpak') return writableDir(raInfoDir(), raInfoDir());
-    return writableDir(readRaCfgKey('libretro_info_path'), raInfoDir());
-};
+const coresInstallDir    = () => writableDir(ownedCoresDir(), ownedCoresDir());
+const coreInfoInstallDir = () => writableDir(ownedInfoDir(), ownedInfoDir());
 const prettyCoreName = base => base.replace(/_libretro$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 let _coreIndexCache = null;
