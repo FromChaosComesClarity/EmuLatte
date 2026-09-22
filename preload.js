@@ -152,6 +152,9 @@ contextBridge.exposeInMainWorld('api', {
 
     // RetroArch detection
     detectRetroArch: () => ipcRenderer.invoke('detect-retroarch'),
+    retroarchInstalls: () => ipcRenderer.invoke('retroarch-installs'),
+    setRetroarchVariant: (v) => ipcRenderer.invoke('set-retroarch-variant', v),
+    listDir: (p) => ipcRenderer.invoke('list-dir', p),
 
     // System presets
     getSystemPresets: () => ipcRenderer.invoke('get-system-presets'),

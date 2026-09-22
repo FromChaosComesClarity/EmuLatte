@@ -1858,6 +1858,35 @@ ipcMain.handle('set-retroarch-variant', (_, variant) => {
     return { ok: true, variant, runner: retroarchRunner() };
 });
 
+/*
+ * A directory listing, for choosing a ROM folder without a desktop dialog.
+ *
+ * ⚠️ Electron's own folder picker is a desktop window: it appears at a size a
+ * 720x480 screen cannot show properly and it is driven with a mouse. A face
+ * that is meant to replace the desktop entirely needs to browse directories as
+ * rows, like everything else it does.
+ */
+ipcMain.handle('list-dir', (_, dirPath) => {
+    const start = dirPath && String(dirPath).trim() ? String(dirPath) : os.homedir();
+    try {
+        const entries = fs.readdirSync(start, { withFileTypes: true });
+        const dirs = entries
+            .filter(e => {
+                if (e.name.startsWith('.')) return false;         // dotfiles are noise on a TV
+                try { return e.isDirectory() || fs.statSync(path.join(start, e.name)).isDirectory(); }
+                catch { return false; }                            // a broken symlink is not a folder
+            })
+            .map(e => ({ name: e.name, path: path.join(start, e.name) }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        // How many files are here, so "is this the right folder" is answerable
+        // without opening it.
+        const fileCount = entries.filter(e => e.isFile()).length;
+        return { ok: true, path: start, parent: path.dirname(start) === start ? null : path.dirname(start), dirs, fileCount };
+    } catch (e) {
+        return { ok: false, error: 'Cannot read that folder.', path: start };
+    }
+});
+
 // ── SYSTEM PRESETS ────────────────────────────────────────────────────────────
 ipcMain.handle('get-system-presets', () => {
     try {

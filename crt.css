@@ -286,3 +286,20 @@ html, body {
     text-align: center;
     line-height: 1.5;
 }
+
+/* ── The search query ────────────────────────────────────────────────────────
+   Not an input element: there is no caret to place and nothing to focus, the
+   whole screen is the field. Drawn as the accent row so it reads as the thing
+   being typed into, with a block cursor after it. */
+.row[data-kind="query"] {
+    background: var(--panel);
+    border-color: var(--accent);
+}
+.row[data-kind="query"] .label {
+    text-transform: none;
+    color: var(--accent);
+}
+.row[data-kind="query"] .label::after {
+    content: "\2588";
+    margin-left: 2px;
+}

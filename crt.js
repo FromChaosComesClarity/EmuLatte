@@ -70,7 +70,16 @@ function applyTheme(description) {
 
 let games = [];
 let systems = [];
-let prefs = { sort: 'recent' };
+let prefs = { sort: 'recent', system: 0 };
+let query = '';                         // what has been typed on a search screen
+
+/*
+ * ⚠️ Matched on letters and digits alone, punctuation stripped from both sides.
+ * A ROM set is full of titles a plain substring match cannot find — "Mega Man
+ * X4 (USA)", "Sonic & Knuckles", "R-Type III" — and typing the punctuation of
+ * something you are searching *for* is not a thing anyone does.
+ */
+const searchKey = (text) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const stack = [];                       // [{ title, rows, index, okLabel, emptyText }]
 
 const screen = () => stack[stack.length - 1];
@@ -80,19 +89,30 @@ const screen = () => stack[stack.length - 1];
 const selectable = (row) => !!row && row.kind !== 'info' && typeof row.run === 'function';
 const firstSelectable = (rows) => Math.max(0, rows.findIndex(selectable));
 
-function put(built) {
+function put(built, builder, arg) {
     stack.push({ title: built.title, rows: built.rows, index: firstSelectable(built.rows),
-                 okLabel: built.okLabel, emptyText: built.emptyText });
+                 okLabel: built.okLabel, emptyText: built.emptyText,
+                 // ⚠️ Kept so a screen can rebuild itself without the caller
+                 // naming it again — needed by typing, and by coming back to a
+                 // screen whose data has changed underneath.
+                 builder, arg });
 }
 
 function push(builder, arg) {
-    put(builder(arg));
+    put(builder(arg), builder, arg);
     render();
 }
 
+/*
+ * ⚠️ Rebuilt on the way back, not replayed. A screen's rows are a snapshot, and
+ * returning to one is exactly when that snapshot is most likely stale: you went
+ * away to add a system, install a core or scan a folder.
+ */
 function pop() {
-    if (stack.length <= 1) return;      // the root is the floor; B there does nothing
+    if (stack.length <= 1) return;      // the root is the floor; Esc there does nothing
     stack.pop();
+    const here = screen();
+    if (here && typeof here.builder === 'function') { refresh(here.builder, here.arg); return; }
     render();
 }
 
@@ -106,6 +126,8 @@ function refresh(builder, arg) {
     here.rows = built.rows;
     here.okLabel = built.okLabel;
     here.emptyText = built.emptyText;
+    here.builder = builder;
+    here.arg = arg;
     here.index = Math.max(0, Math.min(at, built.rows.length - 1));
     if (!selectable(here.rows[here.index])) here.index = firstSelectable(here.rows);
     render();
@@ -237,7 +259,6 @@ function ago(ms) {
 function rootScreen() {
     const rows = [];
     const last = games.filter(g => Number(g.last_played || 0) > 0).sort(byRecent)[0];
-    const favs = games.filter(g => g.fav);
 
     // Continue leads, when there is something to continue. A launcher's most
     // likely answer is the thing you were just playing.
@@ -245,11 +266,12 @@ function rootScreen() {
         rows.push({ kind: 'action', label: 'Continue', meta: last.title, run: () => play(last) });
     }
 
+    rows.push({ kind: 'nav', label: 'Search', run: () => { query = ''; push(searchScreen); } });
     rows.push({ kind: 'nav', label: 'Systems', meta: String(systems.length), run: () => push(systemsScreen) });
-    rows.push({ kind: 'nav', label: 'All Games', meta: String(games.length), run: () => push(gamesScreen, { list: games, title: 'ALL GAMES' }) });
-    if (favs.length) {
-        rows.push({ kind: 'nav', label: 'Favourites', meta: String(favs.length), run: () => push(gamesScreen, { list: favs, title: 'FAVOURITES' }) });
-    }
+    rows.push({ kind: 'nav', label: 'All Games', meta: String(filtered().length),
+                run: () => push(gamesScreen, { list: filtered(), title: 'ALL GAMES' }) });
+    rows.push({ kind: 'nav', label: 'Collections', run: () => openCollections() });
+    rows.push({ kind: 'nav', label: 'Filters', meta: filterSummary(), run: () => push(filtersScreen) });
     rows.push({ kind: 'action', label: 'Couch Mode',   run: () => window.api.enterCouch() });
     rows.push({ kind: 'action', label: 'Desktop Mode', run: () => window.api.exitCrt() });
     rows.push({ kind: 'nav',    label: 'Settings',     run: () => push(settingsScreen) });
@@ -258,7 +280,167 @@ function rootScreen() {
     return {
         title: 'EMULATTE',
         rows,
-        emptyText: 'NO LIBRARY YET\nADD A SYSTEM IN DESKTOP MODE',
+        emptyText: 'NO LIBRARY YET\nADD A SYSTEM IN SETTINGS',
+    };
+}
+
+/*
+ * ── Search, filters and collections ──────────────────────────────────────────
+ *
+ * A ROM set is long — thousands of files across a dozen systems — and scrolling
+ * one from a sofa is hopeless. Typing a name is the only fast path, and
+ * narrowing by system is the next best.
+ */
+function filtered() {
+    let list = games;
+    if (prefs.system) list = list.filter(g => g.system_id === prefs.system);
+    return list;
+}
+
+function filterSummary() {
+    if (!prefs.system) return 'NONE';
+    const sys = systems.find(s => s.id === prefs.system);
+    return sys ? (sys.short_name || sys.name).toUpperCase() : 'NONE';
+}
+
+function filtersScreen() {
+    const rows = [{
+        kind: 'action', label: 'All systems',
+        pill: prefs.system ? '' : 'ON',
+        run: async () => { prefs.system = 0; await saveSetting('crt_system', ''); refresh(filtersScreen); },
+    }];
+
+    for (const sys of systems) {
+        rows.push({
+            kind: 'action',
+            label: sys.name,
+            meta: String(games.filter(g => g.system_id === sys.id).length),
+            pill: prefs.system === sys.id ? 'ON' : '',
+            run: async () => {
+                prefs.system = prefs.system === sys.id ? 0 : sys.id;
+                await saveSetting('crt_system', String(prefs.system || ''));
+                refresh(filtersScreen);
+            },
+        });
+    }
+
+    return { title: 'FILTERS', rows, okLabel: 'CHOOSE', emptyText: 'NO SYSTEMS YET' };
+}
+
+async function saveSetting(key, value) {
+    try { await window.api.setSetting(key, value); } catch (e) { /* a lost preference is not worth failing over */ }
+}
+
+function searchScreen() {
+    const q = searchKey(query);
+    const matches = q ? filtered().filter(g => searchKey(g.title).includes(q)).slice(0, 200) : [];
+
+    const rows = [{
+        kind: 'query',
+        label: query || 'Type to search',
+        meta: q ? String(matches.length) : '',
+        typing: true,
+    }];
+
+    for (const g of matches) rows.push(gameRow(g));
+
+    return { title: 'SEARCH', rows, okLabel: 'OPEN', emptyText: 'NOTHING MATCHES' };
+}
+
+// Favourites, want-to-play and playlists together: they are the same shape — a
+// named set of games — and separate root rows would have said otherwise.
+let playlists = [];
+
+async function openCollections() {
+    $status.textContent = 'READING…';
+    try { playlists = await window.api.getPlaylists() || []; } catch (e) { playlists = []; }
+    $status.textContent = '';
+    push(collectionsScreen);
+}
+
+function collectionsScreen() {
+    const favs = games.filter(g => g.fav);
+    const wants = games.filter(g => g.want);
+    const rows = [
+        { kind: 'nav', label: 'Favourites', meta: String(favs.length),
+          run: () => push(gamesScreen, { list: favs, title: 'FAVOURITES' }) },
+        { kind: 'nav', label: 'Want to play', meta: String(wants.length),
+          run: () => push(gamesScreen, { list: wants, title: 'WANT TO PLAY' }) },
+    ];
+
+    for (const list of playlists) {
+        rows.push({ kind: 'nav', label: list.name, run: () => openPlaylist(list) });
+    }
+
+    rows.push({ kind: 'action', label: 'New playlist', run: () => { query = ''; push(newPlaylistScreen); } });
+    if (playlists.length) rows.push({ kind: 'nav', label: 'Delete a playlist', run: () => push(deletePlaylistScreen) });
+
+    return { title: 'COLLECTIONS', rows, okLabel: 'OPEN' };
+}
+
+async function openPlaylist(list) {
+    $status.textContent = 'READING…';
+    let members = [];
+    try { members = await window.api.getPlaylistGames(list.id) || []; } catch (e) {}
+    $status.textContent = '';
+    const ids = new Set(members.map(m => (typeof m === 'object' ? m.id : m)));
+    push(gamesScreen, { list: games.filter(g => ids.has(g.id)), title: String(list.name).toUpperCase() });
+}
+
+function newPlaylistScreen() {
+    const name = query.trim();
+    return {
+        title: 'NEW PLAYLIST',
+        rows: [
+            { kind: 'query', label: query || 'Type a name', typing: true, run: () => createPlaylist() },
+            name ? { kind: 'action', label: `Create "${name}"`, run: () => createPlaylist() }
+                 : { kind: 'info', label: 'Type a name, then press Enter' },
+        ],
+        okLabel: 'CREATE',
+    };
+}
+
+async function createPlaylist() {
+    const name = query.trim();
+    if (!name) return;
+    const id = await window.api.addPlaylist(name);
+    if (!id) { fail('Could not create that playlist.'); return; }
+    query = '';
+    try { playlists = await window.api.getPlaylists() || []; } catch (e) {}
+    $status.textContent = 'CREATED';
+    setTimeout(() => { $status.textContent = ''; }, 4000);
+    pop();
+}
+
+// ⚠️ Deleting asks first, on its own screen: one key does everything in this
+// face, and a list you curated is not something to lose to a mis-press.
+function deletePlaylistScreen() {
+    return {
+        title: 'DELETE A PLAYLIST',
+        rows: playlists.map(list => ({
+            kind: 'nav', label: list.name, run: () => push(confirmDeletePlaylistScreen, list),
+        })),
+        okLabel: 'CHOOSE',
+        emptyText: 'NO PLAYLISTS',
+    };
+}
+
+function confirmDeletePlaylistScreen(list) {
+    return {
+        title: String(list.name).toUpperCase(),
+        rows: [
+            { kind: 'info', label: 'The games themselves are not touched' },
+            { kind: 'action', label: 'Delete it', run: async () => {
+                const ok = await window.api.deletePlaylist(list.id);
+                if (!ok) { fail('Could not delete that playlist.'); return; }
+                try { playlists = await window.api.getPlaylists() || []; } catch (e) {}
+                $status.textContent = 'DELETED';
+                setTimeout(() => { $status.textContent = ''; }, 4000);
+                pop(); pop();
+            } },
+            { kind: 'action', label: 'Keep it', run: () => pop() },
+        ],
+        okLabel: 'CONFIRM',
     };
 }
 
@@ -342,32 +524,482 @@ function savesScreen(g) {
     return { title: 'RESUME', rows, okLabel: 'RESUME', emptyText: 'NO SAVE STATES' };
 }
 
+/*
+ * ── Settings ─────────────────────────────────────────────────────────────────
+ *
+ * The same sections the desktop face has, because on this machine the desktop
+ * is not a fallback: the screen is 720x480 and the input is a keyboard across a
+ * room, so a settings window designed for a mouse cannot be used at all.
+ * Everything needed to run EmuLatte — choosing a RetroArch, installing cores,
+ * adding systems, finding ROMs — exists here as rows.
+ *
+ * ⚠️ RetroArch is the vessel. EmuLatte keeps its own config and its own cores
+ * and never edits the host's, so these screens choose *which* RetroArch to run
+ * and manage EmuLatte's own things, rather than configuring someone else's
+ * install.
+ */
 function settingsScreen() {
-    const rows = [
-        {
-            kind: 'toggle',
-            label: 'Sort games by',
-            pill: prefs.sort === 'name' ? 'NAME' : 'RECENT',
-            run: async () => {
-                prefs.sort = prefs.sort === 'name' ? 'recent' : 'name';
-                try { await window.api.setSetting('crt_sort', prefs.sort); } catch (e) {}
-                refresh(settingsScreen);
+    return {
+        title: 'SETTINGS',
+        rows: [
+            { kind: 'nav', label: 'Systems',   meta: String(systems.length), run: () => push(setSystemsScreen) },
+            { kind: 'nav', label: 'RetroArch', meta: (raInfo.active || '').toUpperCase(), run: () => openRetroArch() },
+            { kind: 'nav', label: 'Cores',     meta: String(cores.length), run: () => openCores() },
+            { kind: 'nav', label: 'Library',   run: () => push(setLibraryScreen) },
+            { kind: 'nav', label: 'Display',   run: () => push(setDisplayScreen) },
+        ],
+        okLabel: 'OPEN',
+    };
+}
+
+// ── Settings › Display ───────────────────────────────────────────────────────
+
+function setDisplayScreen() {
+    return {
+        title: 'DISPLAY',
+        rows: [
+            {
+                kind: 'toggle', label: 'Sort games by',
+                pill: prefs.sort === 'name' ? 'NAME' : 'RECENT',
+                run: async () => {
+                    prefs.sort = prefs.sort === 'name' ? 'recent' : 'name';
+                    try { await window.api.setSetting('crt_sort', prefs.sort); } catch (e) {}
+                    refresh(setDisplayScreen);
+                },
             },
+            {
+                // On a machine wired to a TV, CRT Mode is not a mode — it is
+                // how the app is used.
+                kind: 'toggle', label: 'Start in CRT Mode',
+                pill: prefs.startInCrt ? 'ON' : 'OFF',
+                run: async () => {
+                    prefs.startInCrt = !prefs.startInCrt;
+                    try { await window.api.setSetting('crt_start_on_launch', prefs.startInCrt ? '1' : '0'); } catch (e) {}
+                    refresh(setDisplayScreen);
+                },
+            },
+            { kind: 'action', label: 'Couch Mode',   run: () => window.api.enterCouch() },
+            { kind: 'action', label: 'Desktop Mode', run: () => window.api.exitCrt() },
+        ],
+        okLabel: 'CHANGE',
+    };
+}
+
+// ── Settings › RetroArch ─────────────────────────────────────────────────────
+
+let raInfo = { native: false, flatpak: false, active: 'none', runner: '', configDir: '', coresDir: '' };
+
+async function openRetroArch() {
+    $status.textContent = 'READING…';
+    try { raInfo = await window.api.retroarchInstalls() || raInfo; } catch (e) {}
+    $status.textContent = '';
+    push(setRetroArchScreen);
+}
+
+function setRetroArchScreen() {
+    const rows = [];
+
+    if (!raInfo.native && !raInfo.flatpak) {
+        rows.push({ kind: 'info', label: 'RetroArch is not installed' });
+        rows.push({ kind: 'info', label: 'Install it, then come back here' });
+        return { title: 'RETROARCH', rows, okLabel: '' };
+    }
+
+    // ⚠️ Both can be installed at once, and they keep separate cores — so this
+    // is a choice, not a status line.
+    if (raInfo.native) {
+        rows.push({
+            kind: 'action', label: 'System package',
+            pill: raInfo.active === 'native' ? 'IN USE' : '',
+            run: () => chooseRetroArch('native'),
+        });
+    }
+    if (raInfo.flatpak) {
+        rows.push({
+            kind: 'action', label: 'Flatpak',
+            pill: raInfo.active === 'flatpak' ? 'IN USE' : '',
+            run: () => chooseRetroArch('flatpak'),
+        });
+    }
+
+    rows.push({ kind: 'action', label: 'Open RetroArch settings', run: () => window.api.launchRetroarchConfig() });
+    rows.push({
+        kind: 'action', label: 'Re-import folder paths',
+        run: async () => {
+            await window.api.raConfigReimportPaths();
+            $status.textContent = 'PATHS RE-IMPORTED';
+            setTimeout(() => { $status.textContent = ''; }, 5000);
         },
+    });
+
+    rows.push({ kind: 'info', label: `Runs: ${raInfo.runner || '—'}` });
+    rows.push({ kind: 'info', label: `Cores: ${shortPath(raInfo.coresDir)}` });
+
+    return { title: 'RETROARCH', rows, okLabel: 'CHOOSE' };
+}
+
+async function chooseRetroArch(variant) {
+    $status.textContent = 'SWITCHING…';
+    const r = await window.api.setRetroarchVariant(variant);
+    if (!r || !r.ok) { fail((r && r.error) || 'Could not switch RetroArch.'); return; }
+    try { raInfo = await window.api.retroarchInstalls() || raInfo; } catch (e) {}
+    try { cores = await window.api.getCores() || []; } catch (e) {}
+    $status.textContent = 'SWITCHED';
+    setTimeout(() => { $status.textContent = ''; }, 5000);
+    refresh(setRetroArchScreen);
+}
+
+// A path on a 720-pixel screen has to give up its middle.
+function shortPath(p) {
+    const text = String(p || '');
+    return text.length > 46 ? '…' + text.slice(-44) : text;
+}
+
+// ── Settings › Cores ─────────────────────────────────────────────────────────
+
+let cores = [];
+let availableCores = [];
+let coreRun = null;
+
+async function openCores() {
+    $status.textContent = 'READING…';
+    try { cores = await window.api.getCores() || []; } catch (e) { cores = []; }
+    $status.textContent = '';
+    push(setCoresScreen);
+}
+
+function setCoresScreen() {
+    if (coreRun) {
+        const pct = coreRun.total ? Math.round((coreRun.got / coreRun.total) * 100) : 0;
+        return {
+            title: 'CORES',
+            rows: [
+                { kind: 'info', label: coreRun.name },
+                { kind: 'info', label: coreRun.extracting ? 'INSTALLING…' : `DOWNLOADING · ${pct}%` },
+            ],
+            okLabel: '',
+        };
+    }
+
+    const rows = [
+        { kind: 'nav', label: 'Install a core', run: () => { query = ''; openCoreCatalogue(); } },
         {
-            // The reason this setting exists: on a machine wired to a TV, CRT
-            // Mode is not a mode, it is how the app is used.
-            kind: 'toggle',
-            label: 'Start in CRT Mode',
-            pill: prefs.startInCrt ? 'ON' : 'OFF',
+            kind: 'action', label: 'Rescan installed cores',
             run: async () => {
-                prefs.startInCrt = !prefs.startInCrt;
-                try { await window.api.setSetting('crt_start_on_launch', prefs.startInCrt ? '1' : '0'); } catch (e) {}
-                refresh(settingsScreen);
+                $status.textContent = 'SCANNING…';
+                const r = await window.api.scanCores();
+                cores = await window.api.getCores() || [];
+                $status.textContent = `${(r && r.count) || 0} FOUND`;
+                setTimeout(() => { $status.textContent = ''; }, 5000);
+                refresh(setCoresScreen);
             },
         },
     ];
-    return { title: 'SETTINGS', rows, okLabel: 'CHANGE' };
+
+    for (const core of cores) {
+        rows.push({ kind: 'info', label: core.display_name || core.name, meta: core.system_names || '' });
+    }
+
+    return { title: 'CORES', rows, okLabel: 'SELECT', emptyText: 'NO CORES FOUND' };
+}
+
+async function openCoreCatalogue() {
+    $status.textContent = 'FETCHING LIST…';
+    try {
+        const r = await window.api.listAvailableCores();
+        availableCores = (r && r.ok && r.cores) || [];
+        $status.textContent = availableCores.length ? '' : 'COULD NOT FETCH THE CORE LIST';
+    } catch (e) {
+        availableCores = [];
+        $status.textContent = 'COULD NOT FETCH THE CORE LIST';
+    }
+    push(coreCatalogueScreen);
+}
+
+/*
+ * ⚠️ Typed, not scrolled. The buildbot lists several hundred cores, and paging
+ * through that from across a room is unusable — so the catalogue is a search
+ * box, like every other long list in this face.
+ */
+function coreCatalogueScreen() {
+    const q = searchKey(query);
+    const matches = q
+        ? availableCores.filter(c => searchKey(c.name).includes(q) || searchKey(c.base).includes(q)).slice(0, 60)
+        : [];
+
+    const rows = [{
+        kind: 'query',
+        label: query || 'Type a core or system name',
+        meta: q ? String(matches.length) : String(availableCores.length),
+        typing: true,
+    }];
+
+    for (const core of matches) {
+        const installed = cores.some(c => String(c.path || '').endsWith('/' + core.so));
+        rows.push({
+            kind: 'action',
+            label: core.name,
+            pill: installed ? 'INSTALLED' : '',
+            run: () => installCore(core),
+        });
+    }
+
+    if (q && !matches.length) rows.push({ kind: 'info', label: 'Nothing matches' });
+
+    return { title: 'INSTALL A CORE', rows, okLabel: 'INSTALL' };
+}
+
+async function installCore(core) {
+    coreRun = { name: core.name, got: 0, total: 0 };
+    pop();                               // back to the core list, which shows the progress
+    refresh(setCoresScreen);
+
+    const r = await window.api.installCore(core.base);
+    coreRun = null;
+    try { cores = await window.api.getCores() || []; } catch (e) {}
+
+    $status.textContent = r && r.ok ? `INSTALLED ${String(core.name).toUpperCase()}`
+                                    : ((r && r.error) || 'INSTALL FAILED').toUpperCase();
+    setTimeout(() => { $status.textContent = ''; }, 8000);
+    refresh(setCoresScreen);
+}
+
+window.api.onCoreInstallProgress((d) => {
+    if (!coreRun || !d) return;
+    coreRun = { ...coreRun, got: d.got || coreRun.got, total: d.total || coreRun.total, extracting: !!d.extracting };
+    const here = screen();
+    if (here && here.builder === setCoresScreen) refresh(setCoresScreen);
+});
+
+// ── Settings › Systems ───────────────────────────────────────────────────────
+
+let presets = [];
+
+function setSystemsScreen() {
+    const rows = systems.map(sys => ({
+        kind: 'nav',
+        label: sys.name,
+        pill: sys.short_name || '',
+        meta: coreLabelFor(sys),
+        run: () => push(systemSetupScreen, sys),
+    }));
+    rows.push({ kind: 'nav', label: 'Add a system', run: () => { query = ''; openPresets(); } });
+    return { title: 'SYSTEMS', rows, okLabel: 'OPEN', emptyText: 'NO SYSTEMS YET' };
+}
+
+function coreLabelFor(sys) {
+    const file = String(sys.default_core || '').split('/').pop();
+    if (!file) return 'NO CORE';
+    const core = cores.find(c => String(c.path || '').endsWith('/' + file));
+    return (core && (core.display_name || core.name)) || file.replace('_libretro.so', '');
+}
+
+function systemSetupScreen(sys) {
+    const list = games.filter(g => g.system_id === sys.id);
+    return {
+        title: (sys.short_name || sys.name).toUpperCase(),
+        rows: [
+            { kind: 'nav', label: 'Core', meta: coreLabelFor(sys), run: () => push(pickCoreScreen, sys) },
+            { kind: 'nav', label: 'Add ROMs from a folder', run: () => browseFor(sys) },
+            { kind: 'info', label: `${list.length} games` },
+            { kind: 'info', label: sys.extensions ? `Reads: ${sys.extensions}` : 'No file extensions set' },
+        ],
+        okLabel: 'OPEN',
+    };
+}
+
+/*
+ * Which core runs this system.
+ *
+ * ⚠️ Cores whose own metadata claims this system come first. A list of 42 cores
+ * in alphabetical order is a puzzle; "these three say they run SNES" is an
+ * answer.
+ */
+function pickCoreScreen(sys) {
+    const wanted = searchKey(sys.name + ' ' + (sys.short_name || ''));
+    const scored = cores.map(c => {
+        const claims = searchKey(c.system_names || '');
+        const match = !!claims && (claims.includes(wanted) || wanted.includes(claims));
+        return { core: c, match };
+    }).sort((a, b) => (b.match ? 1 : 0) - (a.match ? 1 : 0)
+                   || String(a.core.display_name || a.core.name).localeCompare(String(b.core.display_name || b.core.name)));
+
+    const current = String(sys.default_core || '').split('/').pop();
+    const rows = scored.map(({ core, match }) => ({
+        kind: 'action',
+        label: core.display_name || core.name,
+        meta: match ? String(core.system_names || '') : '',
+        pill: String(core.path || '').endsWith('/' + current) ? 'IN USE' : '',
+        run: async () => {
+            const r = await window.api.updateSystem(sys.id, { ...sys, default_core: core.path });
+            if (r === false) { fail('Could not set that core.'); return; }
+            systems = await window.api.getSystems() || systems;
+            const fresh = systems.find(s => s.id === sys.id) || sys;
+            $status.textContent = 'CORE SET';
+            setTimeout(() => { $status.textContent = ''; }, 4000);
+            pop();
+            refresh(systemSetupScreen, fresh);
+        },
+    }));
+
+    return { title: 'CORE', rows, okLabel: 'USE', emptyText: 'NO CORES INSTALLED' };
+}
+
+async function openPresets() {
+    if (!presets.length) {
+        $status.textContent = 'READING…';
+        try { presets = await window.api.getSystemPresets() || []; } catch (e) { presets = []; }
+        $status.textContent = '';
+    }
+    push(presetScreen);
+}
+
+function presetScreen() {
+    const q = searchKey(query);
+    const matches = q
+        ? presets.filter(p => searchKey(p.name).includes(q) || searchKey(p.short_name || '').includes(q)).slice(0, 60)
+        : presets.slice(0, 60);
+
+    const rows = [{
+        kind: 'query',
+        label: query || 'Type a system name',
+        meta: String(matches.length),
+        typing: true,
+    }];
+
+    for (const preset of matches) {
+        const already = systems.some(s => searchKey(s.name) === searchKey(preset.name));
+        rows.push({
+            kind: 'action',
+            label: preset.name,
+            pill: already ? 'ADDED' : String(preset.short_name || ''),
+            run: () => addPreset(preset),
+        });
+    }
+
+    return { title: 'ADD A SYSTEM', rows, okLabel: 'ADD' };
+}
+
+async function addPreset(preset) {
+    // ⚠️ A preset's default core is a *file name*; a system needs the path of a
+    // core that is actually installed, or every launch fails on a core that is
+    // not there. When it is missing, the system is still added and the screen
+    // says what is left to do.
+    const wanted = String(preset.default_core || '');
+    const installed = cores.find(c => String(c.path || '').endsWith('/' + wanted));
+
+    const r = await window.api.addSystem({
+        name: preset.name,
+        short_name: preset.short_name || '',
+        extensions: preset.extensions || '',
+        default_core: installed ? installed.path : '',
+        launch_template: preset.launch_template || 'retroarch -L {core} {rom}',
+        screenscraper_id: preset.screenscraper_id || null,
+    });
+    if (r === false || r === null) { fail('Could not add that system.'); return; }
+
+    systems = await window.api.getSystems() || systems;
+    query = '';
+    $status.textContent = installed ? 'SYSTEM ADDED' : 'ADDED — NOW CHOOSE A CORE';
+    setTimeout(() => { $status.textContent = ''; }, 6000);
+    pop();
+    refresh(setSystemsScreen);
+}
+
+/*
+ * ── Folder browsing ──────────────────────────────────────────────────────────
+ *
+ * ⚠️ Rows, not a file dialog. Electron's picker is a desktop window sized for a
+ * mouse; at 720x480 it cannot be read or driven, and this face exists so the
+ * desktop is never needed.
+ */
+let browser = { path: '', parent: null, dirs: [], fileCount: 0, target: null };
+
+async function browseFor(sys) {
+    browser.target = sys;
+    await browseTo('');
+    push(browseScreen);
+}
+
+async function browseTo(dirPath) {
+    $status.textContent = 'READING…';
+    try {
+        const r = await window.api.listDir(dirPath);
+        if (r && r.ok) browser = { ...browser, path: r.path, parent: r.parent, dirs: r.dirs, fileCount: r.fileCount };
+        else fail((r && r.error) || 'Cannot read that folder.');
+    } catch (e) { fail('Cannot read that folder.'); }
+    $status.textContent = '';
+}
+
+function browseScreen() {
+    const rows = [
+        { kind: 'info', label: shortPath(browser.path) },
+        {
+            kind: 'action',
+            label: 'Scan this folder',
+            meta: browser.fileCount ? `${browser.fileCount} files` : '',
+            run: () => scanFolder(browser.path, browser.target),
+        },
+    ];
+
+    if (browser.parent) {
+        rows.push({ kind: 'nav', label: '..', run: async () => { await browseTo(browser.parent); refresh(browseScreen); } });
+    }
+    for (const dir of browser.dirs) {
+        rows.push({ kind: 'nav', label: dir.name, run: async () => { await browseTo(dir.path); refresh(browseScreen); } });
+    }
+
+    return { title: 'CHOOSE A FOLDER', rows, okLabel: 'OPEN' };
+}
+
+async function scanFolder(dirPath, sys) {
+    $status.textContent = 'SCANNING…';
+    const exts = String(sys.extensions || '').split(/[,|\s]+/).map(e => e.trim().replace(/^\./, '')).filter(Boolean);
+    try {
+        const found = await window.api.scanRomFolder(dirPath, exts);
+        const list = Array.isArray(found) ? found : (found && found.files) || [];
+        if (!list.length) { fail('No matching ROMs in that folder.'); return; }
+
+        let added = 0;
+        for (const file of list) {
+            const romPath = typeof file === 'string' ? file : file.path;
+            if (!romPath) continue;
+            const title = String(romPath.split('/').pop() || '').replace(/\.[^.]+$/, '');
+            const r = await window.api.addGame({ system_id: sys.id, title, rom_path: romPath });
+            if (r !== false && r !== null) added++;
+        }
+        games = await window.api.getGames() || games;
+        $status.textContent = `${added} ROMS ADDED`;
+        setTimeout(() => { $status.textContent = ''; }, 8000);
+        pop();
+        refresh(systemSetupScreen, sys);
+    } catch (e) {
+        fail('Could not scan that folder.');
+    }
+}
+
+// ── Settings › Library ───────────────────────────────────────────────────────
+
+function setLibraryScreen() {
+    return {
+        title: 'LIBRARY',
+        rows: [
+            {
+                kind: 'action', label: 'Look for new ROMs',
+                run: async () => {
+                    $status.textContent = 'SCANNING…';
+                    const r = await window.api.rescanNewGames();
+                    games = await window.api.getGames() || games;
+                    const n = (r && (r.added ?? r.count)) || 0;
+                    $status.textContent = `${n} ADDED`;
+                    setTimeout(() => { $status.textContent = ''; }, 6000);
+                    refresh(setLibraryScreen);
+                },
+            },
+            { kind: 'info', label: `${games.length} games · ${systems.length} systems` },
+        ],
+        okLabel: 'RUN',
+    };
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -393,6 +1025,13 @@ async function play(g, opts) {
     } catch (e) {
         $status.textContent = 'CANNOT LAUNCH';
     }
+}
+
+// ⚠️ A failure has to be visible here. On a television there is no console to
+// check and no notification area to glance at.
+function fail(message) {
+    $status.textContent = String(message || 'SOMETHING WENT WRONG').toUpperCase();
+    setTimeout(() => { $status.textContent = ''; }, 8000);
 }
 
 // ── Input ────────────────────────────────────────────────────────────────────
@@ -436,6 +1075,30 @@ function activate() {
 }
 
 window.addEventListener('keydown', (e) => {
+    const here = screen();
+
+    /*
+     * Typing, on any screen whose first row is a query row.
+     *
+     * ⚠️ Narrow on purpose: one printable character, no modifier. Without the
+     * modifier test Ctrl+W types a "w"; without the length test every named key
+     * ("Shift", "Enter") arrives as a word and lands in the query.
+     */
+    if (here && here.rows[0] && here.rows[0].typing) {
+        if (e.key === 'Backspace') {
+            query = query.slice(0, -1);
+            refresh(here.builder, here.arg);
+            e.preventDefault();
+            return;
+        }
+        if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            query += e.key;
+            refresh(here.builder, here.arg);
+            e.preventDefault();
+            return;
+        }
+    }
+
     switch (e.key) {
         case 'ArrowUp':    move(-1); break;
         case 'ArrowDown':  move(1); break;
@@ -481,12 +1144,14 @@ async function prefetchStates() {
     try { window.api.onOmarchyThemeChanged(applyTheme); } catch (e) {}
 
     try {
-        const [sort, startInCrt] = await Promise.all([
+        const [sort, startInCrt, system] = await Promise.all([
             window.api.getSetting('crt_sort'),
             window.api.getSetting('crt_start_on_launch'),
+            window.api.getSetting('crt_system'),
         ]);
         prefs.sort = sort === 'name' ? 'name' : 'recent';
         prefs.startInCrt = startInCrt === '1';
+        prefs.system = Number(system || 0) || 0;
     } catch (e) { /* defaults are fine */ }
 
     try { [systems, games] = await Promise.all([window.api.getSystems(), window.api.getGames()]); }
