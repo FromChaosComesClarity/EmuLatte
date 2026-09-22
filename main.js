@@ -755,6 +755,45 @@ function ensureScummvmTarget(romPath) {
     } catch {}
 }
 
+/*
+ * ⚠️ How RetroArch is actually started on this machine.
+ *
+ * Every system preset — and every launch template a user has ever saved —
+ * begins with the bare word `retroarch`, which is correct for a distro package
+ * and wrong for a Flatpak, where the binary does not exist on PATH at all.
+ * Remove the distro package in favour of the Flatpak, as one does when the
+ * distro cores turn out to be unmanageable, and every ROM in the library
+ * becomes unplayable with "command not found" as the only clue.
+ *
+ * So the runner is resolved at launch time from the detected variant, and the
+ * leading token of the template is rewritten to match. Templates stay portable:
+ * the same library works on either installation, and switching between them
+ * needs no edit to 56 presets.
+ */
+function retroarchRunner() {
+    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
+    if (variant === 'flatpak') return 'flatpak run org.libretro.RetroArch';
+    return 'retroarch';
+}
+
+// Only the leading `retroarch` token, and only when it is the command being
+// run — never a path that happens to contain the word.
+function withRetroarchRunner(cmd) {
+    const runner = retroarchRunner();
+    if (runner === 'retroarch') return cmd;
+    // ⚠️ Matches a bare `retroarch`, a quoted path, and an unquoted absolute
+    // path (/usr/bin/retroarch) — the last of which a saved launch override is
+    // very likely to contain, and which an earlier version of this missed.
+    // ⚠️ Three shapes, all of which occur in real launch overrides: a bare
+    // `retroarch`, an unquoted absolute path (/usr/bin/retroarch), and a quoted
+    // path that may contain spaces ("/opt/my apps/retroarch"). And none of the
+    // near-misses: retroarch32 is a different binary, and a rom path that
+    // merely contains the word is not the command.
+    return String(cmd)
+        .replace(/^\s*"([^"]*\/)?retroarch"(?=\s|$)/, runner)
+        .replace(/^\s*([^"\s]*\/)?retroarch(?=\s|$)/, runner);
+}
+
 function baseLaunchCommand(game) {   // the command WITHOUT EmuLatte's --appendconfig overrides
     let cmd = game.launch_override;
     if (!cmd && game.launch_template && game.rom_path) {
@@ -764,7 +803,8 @@ function baseLaunchCommand(game) {   // the command WITHOUT EmuLatte's --appendc
             .replace('{core}',     core                  ? `"${core}"`                  : '')
             .replace('{emulator}', game.default_emulator ? `"${game.default_emulator}"` : '');
     }
-    return (cmd && cmd.trim()) ? cmd.trim() : '';
+    cmd = (cmd && cmd.trim()) ? cmd.trim() : '';
+    return cmd ? withRetroarchRunner(cmd) : '';
 }
 function buildLaunchCommand(game) {
     let cmd = baseLaunchCommand(game);
@@ -1700,16 +1740,32 @@ ipcMain.handle('fetch-ss-systems', async () => {
 });
 
 // ── RETROARCH DETECTION ───────────────────────────────────────────────────────
-function detectRetroArch() {
+function retroarchInstalls() {
     const which = spawnSync('which', ['retroarch'], { encoding: 'utf8' });
-    if (which.status === 0 && which.stdout.trim()) return 'native';
-
-    const flatpakPaths = [
+    const native = which.status === 0 && !!which.stdout.trim();
+    const flatpak = [
         '/var/lib/flatpak/app/org.libretro.RetroArch',
         path.join(os.homedir(), '.local', 'share', 'flatpak', 'app', 'org.libretro.RetroArch'),
-    ];
-    if (flatpakPaths.some(p => fs.existsSync(p))) return 'flatpak';
+    ].some(p => fs.existsSync(p));
+    return { native, flatpak };
+}
 
+/*
+ * ⚠️ A stored choice wins over detection.
+ *
+ * Both can be installed at once — a distro package left behind after a Flatpak
+ * is added, which is exactly the state this machine was in — and detection
+ * alone would silently pick the native one and keep using its cores. Whatever
+ * the user chose in Settings is the answer; detection only decides when there
+ * is no choice on record.
+ */
+function detectRetroArch() {
+    const chosen = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value;
+    const { native, flatpak } = retroarchInstalls();
+    if (chosen === 'flatpak' && flatpak) return 'flatpak';
+    if (chosen === 'native' && native) return 'native';
+    if (native) return 'native';
+    if (flatpak) return 'flatpak';
     return 'none';
 }
 
@@ -1718,6 +1774,32 @@ ipcMain.handle('detect-retroarch', () => {
     const variant = detectRetroArch();
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', variant);
     return variant;
+});
+
+// What is actually on the machine, and which one is in use — so a face can
+// offer the choice instead of making the user guess why nothing launches.
+ipcMain.handle('retroarch-installs', () => {
+    const installs = retroarchInstalls();
+    return {
+        ...installs,
+        active: detectRetroArch(),
+        runner: retroarchRunner(),
+        configDir: getRetroArchCfgDir(),
+        coresDir: coresInstallDir(),
+    };
+});
+
+ipcMain.handle('set-retroarch-variant', (_, variant) => {
+    if (!db) return { ok: false };
+    if (!['native', 'flatpak'].includes(variant)) return { ok: false, error: 'Unknown RetroArch type.' };
+    const installs = retroarchInstalls();
+    if (!installs[variant]) return { ok: false, error: `That RetroArch is not installed.` };
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', variant);
+    // ⚠️ The core list belongs to the variant: the two installs have separate
+    // core directories, and leaving the old rows would offer cores that the
+    // newly-chosen RetroArch cannot load.
+    try { scanCoresNow(); } catch (e) {}
+    return { ok: true, variant, runner: retroarchRunner() };
 });
 
 // ── SYSTEM PRESETS ────────────────────────────────────────────────────────────
@@ -1738,10 +1820,35 @@ function infoField(txt, key) {
 
 function scanCoresNow() {
     if (!db) return { ok: false, error: 'DB not ready' };
-    const coreDirs = [
+    /*
+     * ⚠️ Where cores actually live depends entirely on how RetroArch was
+     * installed, and guessing only the Flatpak and self-managed layouts meant
+     * this machine reported zero cores while RetroArch had 42 of them.
+     *
+     *   distro package (pacman, apt)  /usr/lib/libretro — root-owned, and the
+     *                                 one this scan used to miss completely
+     *   flatpak                       ~/.var/app/org.libretro.RetroArch/…
+     *   self-managed / downloaded     ~/.config/retroarch/cores
+     *
+     * The configured libretro_directory comes first, because it is the answer
+     * RetroArch itself is using, and the rest are added so a mixed setup — a
+     * distro RetroArch plus cores downloaded here — sees both halves.
+     */
+    // ⚠️ Deduplicated by *real* path: /usr/lib64 is a symlink to /usr/lib on
+    // most distributions, so listing both found every core twice and would
+    // have filled the core list with pairs that differ only by spelling.
+    const coreDirs = [...new Map([
+        readRaCfgKey('libretro_directory'),
         path.join(os.homedir(), '.config', 'retroarch', 'cores'),
         path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores'),
-    ];
+        '/usr/lib/libretro',
+        '/usr/lib64/libretro',
+        '/usr/local/lib/libretro',
+    ].filter(Boolean).map(dir => {
+        let real = dir;
+        try { real = fs.realpathSync(dir); } catch { /* missing dirs keep their own name */ }
+        return [real, dir];
+    })).values()];
     // RetroArch keeps the .info files in a sibling `info/` dir, NOT next to the .so. Look there first
     // (then next to the .so as a fallback) — otherwise no core metadata is found at all.
     const insert = db.prepare(`INSERT OR REPLACE INTO cores
@@ -1758,13 +1865,22 @@ function scanCoresNow() {
     const found = [];
     for (const dir of coreDirs) {
         if (!fs.existsSync(dir)) continue;
-        const infoDir = path.join(path.dirname(dir), 'info');
+        // RetroArch keeps .info files in a sibling `info/` dir for a
+        // self-managed install, but a distro package puts them under
+        // /usr/share/libretro/info. Both are tried, plus whatever the config
+        // says, or every core shows up with no system name and no extensions.
+        const infoDirs = [
+            readRaCfgKey('libretro_info_path'),
+            path.join(path.dirname(dir), 'info'),
+            '/usr/share/libretro/info',
+        ].filter(Boolean);
         let files;
         try { files = fs.readdirSync(dir); } catch { continue; }
         for (const file of files.filter(f => f.endsWith('_libretro.so'))) {
             const corePath = path.join(dir, file);
             const base     = file.replace(/\.so$/, '.info');
-            const infoPath = [path.join(infoDir, base), path.join(dir, base)].find(p => fs.existsSync(p));
+            const infoPath = [...infoDirs.map(d => path.join(d, base)), path.join(dir, base)]
+                .find(p => fs.existsSync(p));
             const rec = {
                 path: corePath,
                 name: file.replace('_libretro.so', '').replace(/_/g, ' '),
@@ -1803,8 +1919,53 @@ function buildbotCoreBase() {
     const arch = { x64: 'x86_64', ia32: 'i686', arm64: 'arm64', arm: 'armhf' }[process.arch] || 'x86_64';
     return `https://buildbot.libretro.com/nightly/linux/${arch}/latest`;
 }
-const coresInstallDir    = () => readRaCfgKey('libretro_directory')  || path.join(getRetroArchCfgDir(), 'cores');
-const coreInfoInstallDir = () => readRaCfgKey('libretro_info_path')  || path.join(getRetroArchCfgDir(), 'info');
+/*
+ * ⚠️ Where a downloaded core can actually be written.
+ *
+ * These used to be RetroArch's configured directories, full stop — which is
+ * correct for a self-managed install and impossible for a distro package,
+ * where libretro_directory is /usr/lib/libretro and owned by root. Every
+ * install failed with EACCES, and the failure was reported as an error the
+ * user never saw. On this machine that is exactly what happened.
+ *
+ * So: use the configured directory when it is writable, and otherwise fall
+ * back to RetroArch's per-user directory, which we may create. Nothing is
+ * lost by doing so — EmuLatte launches cores by absolute path, so a core here
+ * works whether or not RetroArch's own menu lists it.
+ */
+function writableDir(preferred, fallback) {
+    for (const dir of [preferred, fallback].filter(Boolean)) {
+        try {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.accessSync(dir, fs.constants.W_OK);
+            return dir;
+        } catch { /* try the next one */ }
+    }
+    return fallback;
+}
+/*
+ * ⚠️ A Flatpak must get its cores in its own directory.
+ *
+ * Not for want of access — the Flatpak has host filesystem permission and can
+ * read /usr/lib/libretro perfectly well — but because a distro core is built
+ * against the distro's libraries and the Flatpak runs on its own runtime. It
+ * loads, or it does not, depending on glibc. Its own cores directory is the
+ * only one that is certain to match, and it is user-writable, which the
+ * distro's is not.
+ */
+const raCoresDir = () => path.join(getRetroArchCfgDir(), 'cores');
+const raInfoDir  = () => path.join(getRetroArchCfgDir(), 'info');
+
+const coresInstallDir = () => {
+    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
+    if (variant === 'flatpak') return writableDir(raCoresDir(), raCoresDir());
+    return writableDir(readRaCfgKey('libretro_directory'), raCoresDir());
+};
+const coreInfoInstallDir = () => {
+    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
+    if (variant === 'flatpak') return writableDir(raInfoDir(), raInfoDir());
+    return writableDir(readRaCfgKey('libretro_info_path'), raInfoDir());
+};
 const prettyCoreName = base => base.replace(/_libretro$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 let _coreIndexCache = null;
