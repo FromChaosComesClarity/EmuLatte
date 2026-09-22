@@ -787,6 +787,19 @@ function setSystemsScreen() {
     return { title: 'SYSTEMS', rows, okLabel: 'OPEN', emptyText: 'NO SYSTEMS YET' };
 }
 
+/*
+ * ⚠️ EmuLatte's own cores come first wherever a core is chosen.
+ *
+ * The scan also lists the host's — 42 of them from a distro package — and those
+ * are genuinely useful when RetroArch *is* that package. They are the wrong
+ * answer when it is the Flatpak, which runs on its own runtime and may not load
+ * a core built against the distro's libraries. Ours is the one certain to
+ * match, so it wins ties, and a host core is labelled SYSTEM so the difference
+ * is visible rather than implied.
+ */
+const isOwnCore = (core) => !!raInfo.coresDir && String(core.path || '').startsWith(raInfo.coresDir);
+const ownFirst = (list) => list.slice().sort((a, b) => (isOwnCore(b) ? 1 : 0) - (isOwnCore(a) ? 1 : 0));
+
 function coreLabelFor(sys) {
     const file = String(sys.default_core || '').split('/').pop();
     if (!file) return 'NO CORE';
@@ -816,12 +829,28 @@ function systemSetupScreen(sys) {
  * answer.
  */
 function pickCoreScreen(sys) {
-    const wanted = searchKey(sys.name + ' ' + (sys.short_name || ''));
-    const scored = cores.map(c => {
-        const claims = searchKey(c.system_names || '');
-        const match = !!claims && (claims.includes(wanted) || wanted.includes(claims));
+    /*
+     * ⚠️ The system name and its short name are matched separately, against the
+     * core's declared system *and* its display name.
+     *
+     * Joining them into one key and requiring one string to contain the other
+     * looked reasonable and matched nothing: "supernintendosnes" never appears
+     * inside a core claiming "supernintendoentertainmentsystem", so all 44
+     * cores came back in plain alphabetical order — the exact puzzle this
+     * ranking exists to solve. Verified against this library: 5 cores claim
+     * SNES, and EmuLatte's own is the first of them.
+     */
+    const sysKey = searchKey(sys.name);
+    const shortKey = searchKey(sys.short_name || '');
+    const scored = ownFirst(cores).map(c => {
+        const claims = searchKey((c.system_names || '') + ' ' + (c.display_name || c.name || ''));
+        const match = !!claims && !!sysKey && (
+            claims.includes(sysKey) || sysKey.includes(claims) ||
+            (shortKey.length >= 2 && claims.includes(shortKey))
+        );
         return { core: c, match };
     }).sort((a, b) => (b.match ? 1 : 0) - (a.match ? 1 : 0)
+                   || (isOwnCore(b.core) ? 1 : 0) - (isOwnCore(a.core) ? 1 : 0)
                    || String(a.core.display_name || a.core.name).localeCompare(String(b.core.display_name || b.core.name)));
 
     const current = String(sys.default_core || '').split('/').pop();
@@ -829,7 +858,7 @@ function pickCoreScreen(sys) {
         kind: 'action',
         label: core.display_name || core.name,
         meta: match ? String(core.system_names || '') : '',
-        pill: String(core.path || '').endsWith('/' + current) ? 'IN USE' : '',
+        pill: String(core.path || '').endsWith('/' + current) ? 'IN USE' : (isOwnCore(core) ? '' : 'SYSTEM'),
         run: async () => {
             const r = await window.api.updateSystem(sys.id, { ...sys, default_core: core.path });
             if (r === false) { fail('Could not set that core.'); return; }
@@ -886,7 +915,7 @@ async function addPreset(preset) {
     // not there. When it is missing, the system is still added and the screen
     // says what is left to do.
     const wanted = String(preset.default_core || '');
-    const installed = cores.find(c => String(c.path || '').endsWith('/' + wanted));
+    const installed = ownFirst(cores).find(c => String(c.path || '').endsWith('/' + wanted));
 
     const r = await window.api.addSystem({
         name: preset.name,
@@ -1156,6 +1185,11 @@ async function prefetchStates() {
 
     try { [systems, games] = await Promise.all([window.api.getSystems(), window.api.getGames()]); }
     catch (e) { systems = []; games = []; }
+
+    // Needed before any core is chosen: raInfo carries the directory that
+    // decides which cores are EmuLatte's own.
+    try { raInfo = await window.api.retroarchInstalls() || raInfo; } catch (e) {}
+    try { cores = await window.api.getCores() || []; } catch (e) {}
 
     stack.length = 0;
     put(rootScreen());
