@@ -1100,20 +1100,44 @@ ipcMain.handle('ra-browse-shaders', (_, rel = '') => {
 });
 
 // Download a URL to a file, following GitHub redirects, reporting progress.
+/*
+ * ⚠️ A network error must arrive with something a person can read.
+ *
+ * Node's socket errors often carry an empty `message` and put the useful part
+ * in `code` — ETIMEDOUT, ECONNRESET, ENOTFOUND. Rejecting with the raw error
+ * meant the face showed "INSTALL FAILED" and nothing else, which is precisely
+ * the kind of dead end this project keeps running into. A timeout is also set
+ * explicitly: without one, a stalled connection hangs the install forever with
+ * a progress bar that never moves.
+ */
+function netMessage(err) {
+    if (err && err.message) return err.message;
+    const code = err && err.code;
+    if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') return 'The download timed out. The core server may be busy — try again.';
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'Could not reach the core server. Check the network.';
+    if (code === 'ECONNRESET') return 'The connection dropped part-way through.';
+    return code ? `Network error (${code}).` : 'The download failed.';
+}
+
 function httpsDownload(url, dest, onProgress) {
     return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(dest);
+        const fail = (err) => { try { fs.unlinkSync(dest); } catch {} reject(new Error(netMessage(err))); };
+        file.on('error', fail);
         const get = (u, redirects = 0) => {
-            https.get(u, { headers: { 'User-Agent': 'EmuLatte' } }, res => {
+            const req = https.get(u, { headers: { 'User-Agent': 'EmuLatte' } }, res => {
                 if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 6) {
                     res.resume(); return get(res.headers.location, redirects + 1);
                 }
-                if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+                if (res.statusCode !== 200) { res.resume(); return fail(new Error('The core server answered HTTP ' + res.statusCode + '.')); }
                 const total = parseInt(res.headers['content-length'] || '0', 10); let got = 0;
                 res.on('data', c => { got += c.length; onProgress && onProgress(got, total); });
                 res.pipe(file);
                 file.on('finish', () => file.close(() => resolve()));
-            }).on('error', err => { try { fs.unlinkSync(dest); } catch {} reject(err); });
+            });
+            req.on('error', fail);
+            // A stalled connection is the common failure here, and it has to end.
+            req.setTimeout(60000, () => { req.destroy(new Error('The download timed out. The core server may be busy — try again.')); });
         };
         get(url);
     });
@@ -1928,7 +1952,7 @@ function scanCoresNow() {
     // they exist, and a machine that has them should not be made to download
     // them again — but nothing here depends on them, and none of these
     // directories is ever written to.
-    const coreDirs = [...new Map([
+    const coreDirs = [...([
         ownedCoresDir(),
         readRaCfgKey('libretro_directory'),
         path.join(os.homedir(), '.config', 'retroarch', 'cores'),
@@ -1936,11 +1960,15 @@ function scanCoresNow() {
         '/usr/lib/libretro',
         '/usr/lib64/libretro',
         '/usr/local/lib/libretro',
-    ].filter(Boolean).map(dir => {
+    ].filter(Boolean).reduce((seen, dir) => {
         let real = dir;
         try { real = fs.realpathSync(dir); } catch { /* missing dirs keep their own name */ }
-        return [real, dir];
-    })).values()];
+        // ⚠️ First spelling wins. /usr/lib64 resolves to /usr/lib, and letting
+        // the later one overwrite meant every distro core was recorded under a
+        // symlinked path that only exists on some distributions.
+        if (!seen.has(real)) seen.set(real, dir);
+        return seen;
+    }, new Map())).values()];
     // RetroArch keeps the .info files in a sibling `info/` dir, NOT next to the .so. Look there first
     // (then next to the .so as a fallback) — otherwise no core metadata is found at all.
     const insert = db.prepare(`INSERT OR REPLACE INTO cores
@@ -2121,7 +2149,7 @@ ipcMain.handle('install-core', async (e, coreArg) => {
         return { ok: true, so, path: path.join(dir, so) };
     } catch (err) {
         try { fs.unlinkSync(tmp); } catch {}
-        return { ok: false, error: err.message };
+        return { ok: false, error: err.message || 'The core could not be installed.' };
     }
 });
 
