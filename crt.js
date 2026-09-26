@@ -1142,27 +1142,90 @@ let credsReady = { ss: false, ra: false, igdb: false, sgdb: false };
 
 async function loadCreds() {
     const get = async (key) => { try { return !!(await window.api.getSetting(key)); } catch (e) { return false; } };
+    const value = async (key) => { try { return (await window.api.getSetting(key)) || ''; } catch (e) { return ''; } };
+    const ssUser = await value('ss_user');
+    const ssPass = await value('ss_pass');
     credsReady = {
-        ss:   (await get('ss_user')) && (await get('ss_pass')),
+        ss:   !!ssUser && !!ssPass,
+        ssUser,
+        ssPass: !!ssPass,
         ra:   (await get('ra_user')) && (await get('ra_api_key')),
         igdb: (await get('igdb_client_id')) && (await get('igdb_client_secret')),
         sgdb: await get('sgdb_api_key'),
     };
 }
 
+/*
+ * ⚠️ Credentials are typed here after all.
+ *
+ * The first version of this screen reported status and sent the user to the
+ * desktop, on the reasoning that a password echoed across a room is a bad idea.
+ * That reasoning is sound and the conclusion was wrong for this machine:
+ * EmuLatte cannot scrape at all without a ScreenScraper account, so "go to the
+ * desktop" meant 48 games stayed nameless — exactly the dependency this face
+ * exists to remove. The password is masked as it is typed, and entered once.
+ */
 function setAccountsScreen() {
     return {
         title: 'ACCOUNTS',
         rows: [
-            { kind: 'info', label: 'ScreenScraper', meta: credsReady.ss ? 'SIGNED IN' : 'NOT SET' },
-            { kind: 'info', label: 'RetroAchievements', meta: credsReady.ra ? 'SIGNED IN' : 'NOT SET' },
-            { kind: 'info', label: 'IGDB', meta: credsReady.igdb ? 'SET' : 'NOT SET' },
-            { kind: 'info', label: 'SteamGridDB', meta: credsReady.sgdb ? 'SET' : 'NOT SET' },
-            { kind: 'info', label: 'Set these once in Desktop Mode' },
-            { kind: 'action', label: 'Open Desktop Mode', run: () => window.api.exitCrt() },
+            { kind: 'nav', label: 'ScreenScraper user', meta: credsReady.ssUser || 'NOT SET',
+              run: () => { query = ''; push(credScreen, { key: 'ss_user', label: 'ScreenScraper user' }); } },
+            { kind: 'nav', label: 'ScreenScraper password', meta: credsReady.ssPass ? '••••••' : 'NOT SET',
+              run: () => { query = ''; push(credScreen, { key: 'ss_pass', label: 'ScreenScraper password', secret: true }); } },
+            { kind: 'action', label: 'Test sign-in', run: () => testScreenScraper() },
+            { kind: 'info', label: 'A free account at screenscraper.fr' },
+            { kind: 'info', label: `RetroAchievements: ${credsReady.ra ? 'signed in' : 'not set'}` },
+            { kind: 'info', label: `IGDB: ${credsReady.igdb ? 'set' : 'not set'}  ·  SteamGridDB: ${credsReady.sgdb ? 'set' : 'not set'}` },
         ],
         okLabel: 'OPEN',
     };
+}
+
+// One value, typed. The same query row every other search uses, with the
+// characters hidden when what is being typed is a password.
+function credScreen({ key, label, secret }) {
+    const shown = secret ? '•'.repeat(query.length) : query;
+    return {
+        title: label.toUpperCase(),
+        rows: [
+            { kind: 'query', label: shown || `Type your ${label.toLowerCase()}`, typing: true,
+              run: () => saveCred(key, label) },
+            query ? { kind: 'action', label: 'Save', run: () => saveCred(key, label) }
+                  : { kind: 'info', label: 'Type it, then press Enter' },
+        ],
+        okLabel: 'SAVE',
+    };
+}
+
+async function saveCred(key, label) {
+    const value = query.trim();
+    if (!value) return;
+    try { await window.api.setSetting(key, value); } catch (e) { fail('Could not save that.'); return; }
+    query = '';
+    await loadCreds();
+    $status.textContent = `${label.toUpperCase()} SAVED`;
+    setTimeout(() => { $status.textContent = ''; }, 5000);
+    pop();
+}
+
+async function testScreenScraper() {
+    if (!credsReady.ss) { fail('Enter a user and password first.'); return; }
+    $status.textContent = 'CHECKING…';
+    try {
+        const user = await window.api.getSetting('ss_user');
+        const pass = await window.api.getSetting('ss_pass');
+        const r = await window.api.testSsCredentials(user, pass);
+        // ⚠️ The handler answers in more than one shape depending on how it
+        // failed, so success is checked rather than assumed from the absence of
+        // an error.
+        const ok = r === true || (r && (r.ok === true || r.success === true));
+        $status.textContent = ok ? 'SIGN-IN OK' : String((r && (r.error || r.message)) || 'SIGN-IN FAILED').toUpperCase();
+    } catch (e) {
+        $status.textContent = 'SIGN-IN FAILED';
+    }
+    setTimeout(() => { $status.textContent = ''; }, 8000);
+    refresh(setAccountsScreen);
 }
 
 // ── Settings › Data ──────────────────────────────────────────────────────────
