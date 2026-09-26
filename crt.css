@@ -303,3 +303,20 @@ html, body {
     content: "\2588";
     margin-left: 2px;
 }
+
+/* ── Prose ───────────────────────────────────────────────────────────────────
+   The one place in this face that is not rows. Set heavier and looser than a
+   monitor would want: at 480 interlaced lines, tight leading closes up and thin
+   stems strobe. */
+.prose {
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    padding-right: 6px;
+}
+.prose::-webkit-scrollbar { display: none; }

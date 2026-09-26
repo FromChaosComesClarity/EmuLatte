@@ -24,6 +24,7 @@ const $tally = document.getElementById('tally');
 const $empty = document.getElementById('empty');
 const $status = document.getElementById('status');
 const $hintOkLabel = document.getElementById('hintOkLabel');
+const $prose = document.getElementById('prose');
 
 /*
  * ⚠️ One CSS pixel must be one screen pixel here, and nothing else in the app
@@ -92,6 +93,7 @@ const firstSelectable = (rows) => Math.max(0, rows.findIndex(selectable));
 function put(built, builder, arg) {
     stack.push({ title: built.title, rows: built.rows, index: firstSelectable(built.rows),
                  okLabel: built.okLabel, emptyText: built.emptyText,
+                 prose: built.prose, scroll: 0,
                  // ⚠️ Kept so a screen can rebuild itself without the caller
                  // naming it again — needed by typing, and by coming back to a
                  // screen whose data has changed underneath.
@@ -126,6 +128,7 @@ function refresh(builder, arg) {
     here.rows = built.rows;
     here.okLabel = built.okLabel;
     here.emptyText = built.emptyText;
+    here.prose = built.prose;
     here.builder = builder;
     here.arg = arg;
     here.index = Math.max(0, Math.min(at, built.rows.length - 1));
@@ -146,6 +149,17 @@ function render() {
     const at = here.rows.slice(0, here.index + 1).filter(selectable).length;
     $tally.textContent = choices > 1 ? `${at} / ${choices}` : '';
     $hintOkLabel.textContent = here.okLabel || 'SELECT';
+
+    // Prose screens have no rows, and row screens have no prose; switching
+    // between them is switching which of the two is in the body.
+    $prose.hidden = !here.prose;
+    $menu.hidden = !!here.prose;
+    if (here.prose) {
+        $prose.textContent = here.prose;
+        $prose.scrollTop = here.scroll || 0;
+        $empty.hidden = true;
+        return;
+    }
 
     $menu.replaceChildren();
     $empty.hidden = here.rows.length > 0;
@@ -488,6 +502,22 @@ function gameScreen(g) {
         });
     }
 
+    if (g.description) {
+        rows.push({ kind: 'nav', label: 'About this game', run: () => push(aboutScreen, g) });
+    }
+
+    // Scraping one game, for the case a batch got wrong or skipped. A row that
+    // already has art offers a refresh rather than hiding.
+    rows.push({
+        kind: 'action', label: g.cover ? 'Refresh details' : 'Find art and details',
+        run: () => scrapeOne(g),
+    });
+    // ⚠️ The escape hatch a rescrape cannot provide: ROM filenames are not
+    // titles — "alex kidd 3 - curse in miracle world (usa)" is what a scraper
+    // is handed, and when it matches the wrong game, or nothing at all, typing
+    // the real name is the only way through.
+    rows.push({ kind: 'nav', label: 'Wrong game? Search by name', run: () => { query = g.title; push(matchScreen, g); } });
+
     rows.push({
         kind: 'toggle', label: 'Favourite', pill: g.fav ? 'ON' : 'OFF',
         run: async () => {
@@ -543,9 +573,12 @@ function settingsScreen() {
         title: 'SETTINGS',
         rows: [
             { kind: 'nav', label: 'Systems',   meta: String(systems.length), run: () => push(setSystemsScreen) },
+            { kind: 'nav', label: 'Artwork and details', meta: scrapeSummary(), run: () => push(setScrapeScreen) },
             { kind: 'nav', label: 'RetroArch', meta: (raInfo.active || '').toUpperCase(), run: () => openRetroArch() },
             { kind: 'nav', label: 'Cores',     meta: String(cores.length), run: () => openCores() },
+            { kind: 'nav', label: 'Accounts',  meta: credsReady.ss ? '' : 'NOT SET', run: () => push(setAccountsScreen) },
             { kind: 'nav', label: 'Library',   run: () => push(setLibraryScreen) },
+            { kind: 'nav', label: 'Data',      run: () => push(setDataScreen) },
             { kind: 'nav', label: 'Display',   run: () => push(setDisplayScreen) },
         ],
         okLabel: 'OPEN',
@@ -644,6 +677,7 @@ async function chooseRetroArch(variant) {
     if (!r || !r.ok) { fail((r && r.error) || 'Could not switch RetroArch.'); return; }
     try { raInfo = await window.api.retroarchInstalls() || raInfo; } catch (e) {}
     try { cores = await window.api.getCores() || []; } catch (e) {}
+    try { await loadCreds(); } catch (e) {}
     $status.textContent = 'SWITCHED';
     setTimeout(() => { $status.textContent = ''; }, 5000);
     refresh(setRetroArchScreen);
@@ -1007,6 +1041,160 @@ async function scanFolder(dirPath, sys) {
     }
 }
 
+// ── Settings › Artwork and details ───────────────────────────────────────────
+/*
+ * Scraping, from the sofa.
+ *
+ * A freshly imported ROM set is 48 rows of lowercase filenames — "alex kidd -
+ * high-tech world (usa, europe)" — with no art and no description. That is the
+ * difference between a library and a directory listing, and until now the only
+ * way to fix it was the desktop face.
+ *
+ * ⚠️ ScreenScraper is the source, and it is rate-limited per account: the batch
+ * below is sequential with a pause between games, which is the handler's own
+ * behaviour, not something added here. A set of fifty takes minutes, and saying
+ * so before it starts is the difference between patience and a force-quit.
+ */
+let scrapeRun = null;        // { done, total, title } while a batch is going
+
+function scrapeSummary() {
+    const missing = games.filter(g => !g.cover).length;
+    if (!games.length) return '';
+    return missing ? `${missing} MISSING` : 'ALL DONE';
+}
+
+function setScrapeScreen() {
+    if (scrapeRun) {
+        const pct = scrapeRun.total ? Math.round((scrapeRun.done / scrapeRun.total) * 100) : 0;
+        return {
+            title: 'ARTWORK AND DETAILS',
+            rows: [
+                { kind: 'info', label: `${scrapeRun.done} of ${scrapeRun.total}  ·  ${pct}%` },
+                { kind: 'info', label: scrapeRun.title || 'Working…' },
+                { kind: 'action', label: 'Stop', run: () => { window.api.cancelScrape(); $status.textContent = 'STOPPING…'; } },
+            ],
+            okLabel: 'STOP',
+        };
+    }
+
+    const missing = games.filter(g => !g.cover);
+    const rows = [
+        { kind: 'action', label: 'Missing art only', meta: String(missing.length),
+          run: () => startScrape(missing) },
+        { kind: 'action', label: 'Every game', meta: String(games.length),
+          run: () => startScrape(games) },
+    ];
+
+    // Per system, because a ROM set is usually imported one system at a time
+    // and rescraping the whole library to fix one of them is a poor trade.
+    for (const sys of systems) {
+        const list = games.filter(g => g.system_id === sys.id && !g.cover);
+        if (!list.length) continue;
+        rows.push({ kind: 'action', label: sys.name, pill: sys.short_name || '', meta: String(list.length),
+                    run: () => startScrape(list) });
+    }
+
+    rows.push({ kind: 'info', label: `${games.length - missing.length} of ${games.length} have art` });
+    if (!credsReady.ss) rows.push({ kind: 'info', label: 'ScreenScraper sign-in needed — see Accounts' });
+
+    return { title: 'ARTWORK AND DETAILS', rows, okLabel: 'START' };
+}
+
+async function startScrape(list) {
+    if (!list.length) { $status.textContent = 'NOTHING TO DO'; setTimeout(() => { $status.textContent = ''; }, 4000); return; }
+
+    scrapeRun = { done: 0, total: list.length, title: '' };
+    refresh(setScrapeScreen);
+
+    const result = await window.api.scrapeBatch(list.map(g => g.id));
+    scrapeRun = null;
+
+    // Everything on screen is derived from the library, and the library just
+    // changed for up to fifty rows.
+    try { games = await window.api.getGames() || games; } catch (e) {}
+
+    $status.textContent = result && result.ok === false
+        ? String(result.error || 'SCRAPE FAILED').toUpperCase()
+        : `SCRAPED ${(result && result.done) || list.length}`;
+    setTimeout(() => { $status.textContent = ''; }, 8000);
+    refresh(setScrapeScreen);
+}
+
+window.api.onScrapeProgress((p) => {
+    if (!scrapeRun || !p) return;
+    scrapeRun = { done: Math.max(0, (p.current || 1) - 1), total: p.total || scrapeRun.total, title: p.title || '' };
+    const here = screen();
+    if (here && here.builder === setScrapeScreen) refresh(setScrapeScreen);
+});
+
+// ── Settings › Accounts ──────────────────────────────────────────────────────
+/*
+ * ⚠️ Status, not a login form.
+ *
+ * Typing a password on a television, one character at a time, with the text
+ * echoed across the room, is a bad idea for reasons that have nothing to do
+ * with how hard it is to implement. These accounts are set once, from the
+ * desktop, and what this face needs is to say whether they are set — because
+ * "scraping does nothing" and "you were never signed in" look identical
+ * otherwise.
+ */
+let credsReady = { ss: false, ra: false, igdb: false, sgdb: false };
+
+async function loadCreds() {
+    const get = async (key) => { try { return !!(await window.api.getSetting(key)); } catch (e) { return false; } };
+    credsReady = {
+        ss:   (await get('ss_user')) && (await get('ss_pass')),
+        ra:   (await get('ra_user')) && (await get('ra_api_key')),
+        igdb: (await get('igdb_client_id')) && (await get('igdb_client_secret')),
+        sgdb: await get('sgdb_api_key'),
+    };
+}
+
+function setAccountsScreen() {
+    return {
+        title: 'ACCOUNTS',
+        rows: [
+            { kind: 'info', label: 'ScreenScraper', meta: credsReady.ss ? 'SIGNED IN' : 'NOT SET' },
+            { kind: 'info', label: 'RetroAchievements', meta: credsReady.ra ? 'SIGNED IN' : 'NOT SET' },
+            { kind: 'info', label: 'IGDB', meta: credsReady.igdb ? 'SET' : 'NOT SET' },
+            { kind: 'info', label: 'SteamGridDB', meta: credsReady.sgdb ? 'SET' : 'NOT SET' },
+            { kind: 'info', label: 'Set these once in Desktop Mode' },
+            { kind: 'action', label: 'Open Desktop Mode', run: () => window.api.exitCrt() },
+        ],
+        okLabel: 'OPEN',
+    };
+}
+
+// ── Settings › Data ──────────────────────────────────────────────────────────
+
+function setDataScreen() {
+    return {
+        title: 'DATA',
+        rows: [
+            { kind: 'action', label: 'Back up save files', run: () => runData(() => window.api.backupSaves('all'), 'SAVES BACKED UP') },
+            { kind: 'action', label: 'Restore save files', run: () => runData(() => window.api.restoreSaves(), 'SAVES RESTORED') },
+            { kind: 'action', label: 'Back up RetroArch settings', run: () => runData(() => window.api.backupRaSettings(), 'SETTINGS BACKED UP') },
+            { kind: 'action', label: 'Restore RetroArch settings', run: () => runData(() => window.api.restoreRaSettings(), 'SETTINGS RESTORED') },
+            // ⚠️ Both restores open a file chooser, which is a desktop window.
+            // Saying so beats a button that appears to do nothing on a TV.
+            { kind: 'info', label: 'Restoring asks for a file on the desktop' },
+        ],
+        okLabel: 'RUN',
+    };
+}
+
+async function runData(fn, okMessage) {
+    $status.textContent = 'WORKING…';
+    try {
+        const r = await fn();
+        if (r && r.ok === false) { fail(r.error || 'That did not work.'); return; }
+        $status.textContent = okMessage;
+        setTimeout(() => { $status.textContent = ''; }, 6000);
+    } catch (e) {
+        fail('That did not work.');
+    }
+}
+
 // ── Settings › Library ───────────────────────────────────────────────────────
 
 function setLibraryScreen() {
@@ -1063,6 +1251,70 @@ function fail(message) {
     setTimeout(() => { $status.textContent = ''; }, 8000);
 }
 
+/*
+ * One game's art and details.
+ *
+ * ⚠️ The refreshed row has to be pulled back out of the library afterwards.
+ * scrapeGame writes to the database; the object this screen was built from is a
+ * copy taken before that, so without re-reading it the screen would keep
+ * showing the old (empty) values and look as though nothing had happened.
+ */
+async function scrapeOne(g, searchName) {
+    $status.textContent = 'FETCHING…';
+    let result;
+    try { result = await window.api.scrapeGame(g.id, false, searchName || ''); }
+    catch (e) { fail('Scrape failed.'); return; }
+
+    if (result && result.ok === false) { fail(result.error || 'Nothing found for this game.'); return; }
+
+    try { games = await window.api.getGames() || games; } catch (e) {}
+    const fresh = games.find(x => x.id === g.id);
+    if (fresh) Object.assign(g, fresh);
+
+    $status.textContent = 'UPDATED';
+    setTimeout(() => { $status.textContent = ''; }, 6000);
+    refresh(gameScreen, g);
+}
+
+/*
+ * "That is the wrong game."
+ *
+ * ScreenScraper matches on the ROM's checksum first and its filename second,
+ * and a filename like "alex kidd 3 - curse in miracle world (usa)" is exactly
+ * the kind that finds the wrong entry or none. Typing the real name hands the
+ * scraper something it can work with.
+ */
+function matchScreen(g) {
+    const name = query.trim();
+    return {
+        title: 'FIND THE RIGHT GAME',
+        rows: [
+            { kind: 'query', label: query || 'Type a name', typing: true, run: () => rescrapeAs(g) },
+            name ? { kind: 'action', label: `Search for "${name}"`, run: () => rescrapeAs(g) }
+                 : { kind: 'info', label: 'Type a name, then press Enter' },
+            { kind: 'info', label: `File: ${String(g.rom_path || '').split('/').pop()}` },
+        ],
+        okLabel: 'SEARCH',
+    };
+}
+
+async function rescrapeAs(g) {
+    const name = query.trim();
+    if (!name) return;
+    pop();
+    await scrapeOne(g, name);
+}
+
+// The blurb, on a screen of its own: prose, not rows.
+function aboutScreen(g) {
+    return {
+        title: 'ABOUT',
+        rows: [],
+        prose: String(g.description || '').trim() || 'No description yet.',
+        okLabel: 'CLOSE',
+    };
+}
+
 // ── Input ────────────────────────────────────────────────────────────────────
 // Arrow keys, Enter and Escape, which is exactly what the OmaCRT gamepad daemon
 // emits, so the pad needs nothing special here and a keyboard still works.
@@ -1105,6 +1357,22 @@ function activate() {
 
 window.addEventListener('keydown', (e) => {
     const here = screen();
+
+    // Prose scrolls; it has no rows to move between.
+    if (here && here.prose) {
+        const step = (e.key === 'PageDown' || e.key === 'PageUp') ? $prose.clientHeight - 24 : 40;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown') {
+            here.scroll = Math.min($prose.scrollHeight, (here.scroll || 0) + step);
+            $prose.scrollTop = here.scroll;
+        } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+            here.scroll = Math.max(0, (here.scroll || 0) - step);
+            $prose.scrollTop = here.scroll;
+        } else if (['Escape', 'Backspace', 'ArrowLeft', 'Enter'].includes(e.key)) {
+            pop();
+        } else { return; }
+        e.preventDefault();
+        return;
+    }
 
     /*
      * Typing, on any screen whose first row is a query row.
