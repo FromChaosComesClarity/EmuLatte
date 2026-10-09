@@ -218,4 +218,5 @@ contextBridge.exposeInMainWorld('api', {
     getBaseDir:   () => ipcRenderer.invoke('get-basedir'),
     getConfigDir: () => ipcRenderer.invoke('get-config-dir'),
     openPath:     (p) => ipcRenderer.invoke('open-path', p),
+    openExternal: (u) => ipcRenderer.invoke('open-external', u),
 });

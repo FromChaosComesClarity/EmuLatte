@@ -260,6 +260,33 @@ single on-screen notification in a corner. What settled it was printing a **colu
 profile** of the screenshot and reading it. Any future claim about where the picture sits
 should be made the same way, not from a glance at a screenshot.
 
+## Obeying its own shader settings
+
+Two separate reasons a shader chosen in Express did nothing.
+
+**The preset was inert.** EmuLatte's curated presets are one line each:
+
+    #reference "shaders_slang/crt/newpixie-crt.slangp"
+
+They are pointers into libretro's slang pack, so installing them without the pack installs a
+menu of shaders where every entry fails. RetroArch says so only in its log, `Could not read
+root preset` then `Failed to create preset`, and then draws the game with no shader, which from
+the outside looks like the setting being ignored. `install-bundled-presets` now fetches the
+pack first, `shaderResolves()` follows the `#reference` chain to see whether a preset can
+actually load, and the Ready to play card names the shader and says why it cannot.
+
+**RetroArch was choosing its own.** `auto_shaders_enable` defaults to ON, which loads a preset
+per core or per game from the config folder. That is why one system showed a shader nobody
+picked while another showed none. It is seeded OFF: EmuLatte applies what its own pages say and
+nothing else. The Express toggle still turns it back on for anyone who wants it.
+
+## The Settings landing page
+
+Settings opens on a `home` pane rather than dropping straight into General: wordmark, version
+chip, a Check for Updates button that opens the releases page (there is no in-app updater, same
+as the sibling app), and "Pick a section on the left." Cleanup is pinned to the foot of the
+rail and jumps to the card that does the work rather than being a second implementation of it.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

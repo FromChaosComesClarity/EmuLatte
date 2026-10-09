@@ -1007,6 +1007,11 @@ function videoDefaults() {
         aspect_ratio_index: '22',
         video_aspect_ratio_auto: 'false',
         video_scale_integer: 'false',   // fill the screen; integer scaling would leave bars
+        // ⚠️ RetroArch's own default is ON, and it quietly loads a preset of its own choosing
+        // per core or per game from the config folder. The user then sees a shader on one
+        // system and not another, having picked neither. EmuLatte applies what its Express and
+        // RetroArch pages say and nothing else; the Express toggle can turn this back on.
+        auto_shaders_enable: 'false',
     };
 }
 
@@ -1143,6 +1148,32 @@ function effectiveShader(game) {
 }
 // --set-shader force-applies the preset every launch (overrides auto-presets), so the chosen
 // shader actually shows up even though gameplay never saves the config back.
+// ⚠️ A .slangp is often one line: `#reference "shaders_slang/crt/newpixie-crt.slangp"`.
+// EmuLatte's own curated presets are exactly that, so they are inert until libretro's slang
+// pack has been downloaded next to them. RetroArch says so only in its log
+// ("Could not read root preset", "Failed to create preset") and then draws the game with no
+// shader at all, which from the outside looks like EmuLatte ignoring the setting.
+function shaderResolves(preset, depth = 0) {
+    if (!preset || depth > 8) return false;
+    let txt;
+    try { if (!fs.existsSync(preset)) return false; txt = fs.readFileSync(preset, 'utf8'); }
+    catch { return false; }
+    const refs = [...txt.matchAll(/^\s*#reference\s+"?([^"\n]+)"?/gm)].map(m => m[1].trim());
+    for (const r of refs) {
+        const target = path.isAbsolute(r) ? r : path.join(path.dirname(preset), r);
+        if (!shaderResolves(target, depth + 1)) return false;
+    }
+    return true;
+}
+// What EmuLatte will actually hand RetroArch, and whether it can possibly work.
+function shaderStatus(game) {
+    const s = effectiveShader(game || null);
+    const out = { enabled: !!s.enable, path: s.shader || '', name: s.shader ? path.basename(s.shader).replace(/\.(slangp|glslp|cgp)$/i, '') : '' };
+    out.resolves = !!(s.enable && s.shader && shaderResolves(s.shader));
+    out.needsPack = !!(s.enable && s.shader && !out.resolves && !(library && library.hasShaderPack()));
+    return out;
+}
+
 function shaderArg(game) { const s = effectiveShader(game); return (s.enable && s.shader) ? ` --set-shader "${s.shader}"` : ''; }
 
 // Build a per-launch config = owned base + enabled scope overrides (global→system→game, later wins) +
@@ -1508,8 +1539,7 @@ function httpsDownload(url, dest, onProgress) {
 const shaderDir = () => (library && library.shaderRoot()) || readRaCfgKey('video_shader_dir') || path.join(getRetroArchCfgDir(), 'shaders');
 
 // Download libretro's official slang-shaders into <shaders>/shaders_slang (same layout RetroArch's updater uses).
-ipcMain.handle('download-shader-pack', async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
+async function fetchShaderPack(win) {
     const dest = path.join(os.tmpdir(), 'emulatte-slang-shaders.zip');
     try {
         await httpsDownload('https://github.com/libretro/slang-shaders/archive/refs/heads/master.zip', dest,
@@ -1530,15 +1560,26 @@ ipcMain.handle('download-shader-pack', async (e) => {
         try { fs.unlinkSync(dest); } catch {}
         return { ok: true, files: n, dir: target };
     } catch (err) { return { ok: false, error: err.message }; }
-});
+}
+ipcMain.handle('download-shader-pack', async (e) => fetchShaderPack(BrowserWindow.fromWebContents(e.sender)));
 
-// Copy EmuLatte's bundled curated presets into the shader root (their relative refs resolve against the pack).
-ipcMain.handle('install-bundled-presets', () => {
+// Copy EmuLatte's bundled curated presets into the shader root.
+//
+// ⚠️ Each of these is a one-line `#reference` into libretro's slang pack, so copying them
+// on their own installs a menu of shaders that every one of them fails to load. The pack comes
+// first, or the presets are decoration.
+ipcMain.handle('install-bundled-presets', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
     const root = shaderDir(); fs.mkdirSync(root, { recursive: true });
+    let fetched = null;
+    if (!(library && library.hasShaderPack())) {
+        fetched = await fetchShaderPack(win);
+        if (!fetched.ok) return { ok: false, error: `The shader pack these presets build on could not be downloaded: ${fetched.error}` };
+    }
     const src = path.join(__dirname, 'assets', 'shaders');
     let names = [];
     for (const f of safeReaddir(src)) if (/\.(slangp|glslp|cgp)$/i.test(f)) { try { fs.copyFileSync(path.join(src, f), path.join(root, f)); names.push(f.replace(/\.[^.]+$/, '')); } catch {} }
-    return { ok: true, names };
+    return { ok: true, names, packFiles: fetched?.files || 0 };
 });
 
 // ── INPUT REMAPS (.rmp files) ─────────────────────────────────────────────────
@@ -2391,6 +2432,8 @@ ipcMain.handle('play-readiness', () => {
         recommendedDriver: detectVideoDriver(),
         shaderDir: library ? library.shaderRoot() : '',
         hasShaders: library ? library.hasShaderPack() : false,
+        shader: shaderStatus(null),
+        autoShaders: (raCfg.auto_shaders_enable || 'false') === 'true',
         coreDirs: coreSearchDirs(), coresFound: coreSearchDirs().reduce((n, d) => {
             try { return n + fs.readdirSync(d).filter(f => f.endsWith('_libretro.so')).length; } catch { return n; }
         }, 0),
@@ -4029,3 +4072,12 @@ ipcMain.handle('menu-entries-present', () => {
 ipcMain.handle('get-basedir',    () => baseDir);
 ipcMain.handle('get-config-dir', () => configDir);
 ipcMain.handle('open-path',  (_, p) => shell.openPath(p));
+// ⚠️ A separate channel from open-path: shell.openPath is for files and silently does
+// nothing with an https URL. Only http(s) is passed on, so a renderer cannot be talked into
+// handing the desktop an arbitrary scheme.
+ipcMain.handle('open-external', (_, url) => {
+    const u = String(url || '');
+    if (!/^https?:\/\//i.test(u)) return { ok: false };
+    shell.openExternal(u);
+    return { ok: true };
+});

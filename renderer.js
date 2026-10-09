@@ -3298,8 +3298,9 @@ function wireUI() {
         document.getElementById('settings-search').value = '';
         document.querySelectorAll('#modal-settings .tool-card').forEach(c => c.style.display = '');
         document.getElementById('settings-content').classList.remove('searching');
-        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b.dataset.pane === 'general'));
-        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'general'));
+        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b.dataset.pane === 'home'));
+        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'home'));
+        paintSettingsHome();
         document.getElementById('settings-content').scrollTop = 0;
         document.getElementById('settings-ss-status').textContent   = '';
         document.getElementById('settings-ra-status').textContent   = '';
@@ -4574,6 +4575,21 @@ function wireUI() {
             document.getElementById('settings-content').scrollTop = 0;
         });
     });
+    // ── Settings landing page ──
+    document.getElementById('btn-cp-home-updates')?.addEventListener('click', async () => {
+        const st = document.getElementById('cp-home-update-status');
+        if (st) st.textContent = 'Opening the releases page in your browser\u2026';
+        await window.api.openExternal('https://github.com/FromChaosComesClarity/EmuLatte/releases/latest');
+    });
+    // Cleanup sits at the foot of the rail, like the sibling app's, and goes straight to the
+    // card that does it rather than being a second implementation of it.
+    document.getElementById('btn-rail-cleanup')?.addEventListener('click', () => {
+        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'data'));
+        const card = document.getElementById('btn-clean-media')?.closest('.tool-card');
+        if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.style.outline = '1px solid var(--accent)'; setTimeout(() => { card.style.outline = ''; }, 1600); }
+    });
+
     // Manage Systems reachable from the hub (close Settings first so two blurred modals don't stack)
     document.getElementById('btn-settings-manage-systems').addEventListener('click', () => { closeModal('modal-settings'); openSystemsModal(); });
 
@@ -5330,11 +5346,21 @@ async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-inst
     _missingCores = r.needed || [];
     // How the picture gets drawn, which decides whether a game runs at full speed and whether
     // the shaders can load at all.
+    const sh = r.shader || {};
+    // A shader that cannot load is the worst kind of setting: it looks applied and does
+    // nothing. Say so plainly, naming the one that is set.
+    let shLine = '';
+    if (!sh.enabled) shLine = ' No shader set.';
+    else if (sh.resolves) shLine = ` Shader: <b>${escHtml(sh.name)}</b>.`;
+    else shLine = ` <span style="color:#ef5350;">The shader you picked, <b>${escHtml(sh.name)}</b>, cannot load`
+        + (sh.needsPack ? ': it builds on libretro&rsquo;s shader pack, which is not downloaded yet.' : ': its files are missing.')
+        + '</span>';
     const drvLine = `Rendering with <b>${escHtml(r.videoDriver)}</b>.`
         + (r.videoDriver === 'gl'
             ? ` <span style="color:#ef5350;">That is the legacy driver: it runs roughly half speed with a shader at full resolution, and cannot load slang shaders at all. ${escHtml(r.recommendedDriver)} is the one to use.</span>`
             : '')
-        + (r.hasShaders ? '' : ` Shaders are not downloaded yet.`);
+        + shLine
+        + (r.autoShaders ? ' <span style="color:#ef5350;">RetroArch is also auto-loading presets of its own, so a game may show a shader you did not choose.</span>' : '');
     if (!r.missing.length) {
         const n = r.ready.reduce((a, x) => a + x.games, 0);
         body.innerHTML = (r.ready.length
@@ -5360,9 +5386,13 @@ async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-inst
 // The shader pack is EmuLatte's own, downloaded into its folder rather than borrowed from the
 // host, so the button only shows while there is nothing there.
 function _toggleShaderBtn(r) {
+    // Offered whenever the pack is missing, and doubly so when a shader is set that needs it.
+    const want = !!r && (!r.hasShaders || r.shader?.needsPack);
     for (const id of ['btn-download-shaders', 'btn-welcome-shaders']) {
         const b = document.getElementById(id);
-        if (b) b.style.display = r && !r.hasShaders ? '' : 'none';
+        if (!b) continue;
+        b.style.display = want ? '' : 'none';
+        if (want) b.classList.toggle('primary', !!r.shader?.needsPack);
     }
 }
 async function downloadShaders() {
@@ -5396,6 +5426,17 @@ async function installMissingCores(btnId = 'btn-install-missing-cores', statusId
         ? `Installed ${done}. These could not be downloaded: ${failed.join(', ')}.`
         : `Installed ${done} core${done !== 1 ? 's' : ''}. Your library is ready to play.`;
     await renderPlayReadiness(btnId === 'btn-welcome-install-cores' ? 'wlc-play-body' : 'play-ready-body', btnId);
+}
+
+// The version chip on the landing page, straight from package.json.
+async function paintSettingsHome() {
+    const el = document.getElementById('cp-home-version');
+    if (!el) return;
+    let v = '';
+    try { v = await window.api.getAppVersion(); } catch {}
+    el.innerHTML = `<span style="width:8px; height:8px; background:var(--accent); display:inline-block;"></span>Version ${escHtml(v || '?')}`;
+    const st = document.getElementById('cp-home-update-status');
+    if (st) st.textContent = '';
 }
 
 async function renderLibraryPane() {
