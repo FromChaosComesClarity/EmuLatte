@@ -5319,6 +5319,10 @@ function scanSummary(res) {
     if (!res?.ok) return res?.error || 'The library could not be read.';
     const bits = [];
     if (res.added)   bits.push(`Added ${res.added} game${res.added !== 1 ? 's' : ''}`);
+    // Adoption is the headline when it happens: games came back rather than doubling.
+    if (res.revived) bits.push(`${res.revived} game${res.revived !== 1 ? 's' : ''} playable again from the new folder, art and all`);
+    if ((res.adopted || 0) - (res.revived || 0) > 0) bits.push(`${res.adopted - res.revived} re-pointed at the ROMS folder`);
+    if (res.merged)  bits.push(`${res.merged} duplicate${res.merged !== 1 ? 's' : ''} folded back into the scraped entry`);
     if (res.removed) bits.push(`removed ${res.removed} whose file had gone`);
     if (!bits.length) return res.rootExists
         ? `Library up to date. Nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
@@ -5331,9 +5335,10 @@ async function applyScanResult(res, { quiet = false } = {}) {
     if (!res) return;
     if (res.at && res.at === _lastScanSeen) return;    // the same scan reaching us twice
     _lastScanSeen = res.at || Date.now();
-    if (res.added || res.removed) { await loadSystems(); await loadGames(); }
+    const changed = res.added || res.removed || res.adopted || res.merged;
+    if (changed) { await loadSystems(); await loadGames(); }
     const newIds = res.newIds || [];
-    if (!quiet || res.added || res.removed) showLaunchToast(scanSummary(res), null, 'LIBRARY');
+    if (!quiet || changed) showLaunchToast(scanSummary(res), null, 'LIBRARY');
     if (!newIds.length) return;
     // Anything new has a filename for a title and no art, so offer to fill it in right away.
     _scraperPickerMode = 'batchIds';
