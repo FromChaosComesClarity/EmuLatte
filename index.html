@@ -1251,6 +1251,12 @@
 
           <section class="cp-pane" data-pane="library">
             <div class="cp-pane-title">Library</div>
+            <div class="tool-card" data-search="play ready cores missing install emulator retroarch cannot launch plug and play">
+              <div class="tool-card-title">Ready to play</div>
+              <div id="play-ready-body" style="font-size:12px; line-height:1.6; color:var(--text_sec);">Checking...</div>
+              <button id="btn-install-missing-cores" style="width:100%; margin-top:8px; display:none;">Install the missing cores</button>
+              <div id="play-ready-progress" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
+            </div>
             <div class="tool-card" data-search="library rescan scan roms folder rom directory add games refresh">
               <div class="tool-card-title">Your ROMS folder</div>
               <div class="hint" style="margin-top:0;">EmuLatte's library <b>is</b> this folder. There is one sub-folder per system; drop ROMs in and they are in the library the next time EmuLatte opens. Sub-folders inside a system folder are read too, and a multi-disc set is grouped into one entry.</div>
@@ -2259,6 +2265,12 @@
         <div id="wlc-detect-body"></div>
         <div id="wlc-actions" style="margin-top:10px; display:flex; flex-direction:column; gap:6px;"></div>
         <div id="wlc-detect-note" class="hint" style="display:none; margin-top:8px;">Each opens a terminal running Omarchy's own installer. Nothing here ever runs <code>sudo</code> for you: you see the command and type your own password.</div>
+      </div>
+
+      <div class="wlc-card" id="wlc-play-card" style="display:none;">
+        <div class="wlc-title">READY TO PLAY</div>
+        <div id="wlc-play-body" style="font-size:12px; color:var(--text_sec); text-align:justify; line-height:1.7;"></div>
+        <button id="btn-welcome-install-cores" style="width:100%; margin-top:8px; display:none;">Install the missing cores</button>
       </div>
 
       <div class="wlc-card">

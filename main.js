@@ -309,6 +309,11 @@ app.whenReady().then(() => {
         // ── THE LIBRARY IS THE ROMS FOLDER ───────────────────────────────────
         // Every system exists from the first launch with a folder of its own, and the folder is
         // what the library is read from. See rom-library.js for the scanner and the folder names.
+        // ⚠️ FIRST. Every path lookup below resolves through getRetroArchCfgDir(), which reads
+        // this setting; on a fresh database it is absent and the host config is looked for in
+        // the wrong place, so the owned config is seeded with nothing in it.
+        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', detectRetroArch());
+
         const raCfgIO = { ensure: ensureOwnedRaCfg, parse: parseRaCfg, writeKeys: writeRaCfgKeys };
         // Where BIOS files were read from until now, captured before anything repoints it, so
         // a working setup can be brought across rather than quietly lost. A folder somebody
@@ -335,8 +340,10 @@ app.whenReady().then(() => {
             library.importOldBios(library.setting('bios_import_from'), { retry: true });   // the drive was away last time
         }
 
-        const raVariant = detectRetroArch();
-        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', raVariant);
+        // Ready to play without being asked: find the cores this machine has, and make sure the
+        // config EmuLatte hands RetroArch can actually see them.
+        repairOwnedRaCfg();
+        try { scanCoresNow(); } catch (e) { console.error('core scan failed:', e.message); }
     } catch (err) {
         console.error('DB error:', err);
     }
@@ -904,6 +911,56 @@ function ensureOwnedRaCfg(force = false) {
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
     return file;
 }
+// ⚠️ The owned config is written ONCE and then never revisited, so whatever the host config
+// happened to say at that moment is what EmuLatte is stuck with. If RetroArch had not been run
+// yet, or wrote its config a minute later, the owned config ends up with no libretro_directory
+// at all, `retroarch -L nestopia_libretro.so` cannot resolve a thing, and every game fails to
+// launch, silently, for the life of the install.
+//
+// So the essentials are checked on every start and repaired in place: the folders cores and
+// core info really live in, taken from the host config when it has them and from the machine
+// itself when it does not.
+function repairOwnedRaCfg() {
+    const file = ensureOwnedRaCfg();
+    const cur = parseRaCfg(file);
+    const host = readHostPathKeys();
+    const updates = {};
+    const abs = v => String(v || '').replace(/^~(?=[/\\])/, os.homedir());
+    const stale = (k) => {
+        const v = cur[k];
+        if (!v || v === 'default') return true;
+        const p = abs(v);
+        try { if (!fs.existsSync(p)) return true; } catch { return true; }
+        // ⚠️ Existing is not the same as useful. RetroArch writes its own default
+        // ~/.config/retroarch/cores back into the config on exit, and that folder exists and is
+        // empty on a machine whose cores came from a package manager. Pointing at it is exactly
+        // as broken as pointing nowhere, so an empty one counts as stale.
+        if (k === 'libretro_directory') return !hasCores(p);
+        if (k === 'libretro_info_path') return !hasCoreInfo(p);
+        return false;
+    };
+    // Everything the host knows and we do not. A good value we already hold is never overwritten.
+    for (const [k, v] of Object.entries(host)) {
+        if (!v || !stale(k)) continue;
+        if (k === 'libretro_directory' && !hasCores(abs(v))) continue;       // the host is wrong too
+        if (k === 'libretro_info_path' && !hasCoreInfo(abs(v))) continue;
+        updates[k] = v;
+    }
+    // Cores and their .info files: fall back to the machine itself when no config knows.
+    if (!updates.libretro_directory && stale('libretro_directory')) {
+        const d = coreSearchDirs().find(hasCores);     if (d) updates.libretro_directory = d;
+    }
+    if (!updates.libretro_info_path && stale('libretro_info_path')) {
+        const d = coreInfoSearchDirs().find(hasCoreInfo); if (d) updates.libretro_info_path = d;
+    }
+    if (library) updates.system_directory = library.biosRoot();   // always ours
+    if (Object.keys(updates).length) {
+        writeRaCfgKeys(file, updates);
+        console.log('[retroarch] repaired the owned config:', Object.keys(updates).join(', '));
+    }
+    return { file, updates: Object.keys(updates) };
+}
+
 // Re-derive only the path keys from the local host config (portability / a new machine).
 // Re-deriving the path keys from the host must not hand system_directory back to the host's
 // own BIOS folder. EmuLatte's BIOS folder is the one the user drops files into.
@@ -1029,10 +1086,17 @@ function ensureScummvmTarget(romPath) {
     } catch {}
 }
 
+// Which core this game would run on, as a bare filename ('' when the system names none).
+const coreNameFor = (game) => String(game.core_override || game.default_core || '').trim();
+
 function baseLaunchCommand(game) {   // the command WITHOUT EmuLatte's --appendconfig overrides
     let cmd = game.launch_override;
     if (!cmd && game.launch_template && game.rom_path) {
-        const core = game.core_override || game.default_core || '';
+        // ⚠️ Resolved to an absolute path rather than passed through as the bare filename it is
+        // stored as. A bare -L leaves RetroArch to find the core under its own
+        // libretro_directory, so one wrong line in a config file means nothing launches at all.
+        // We know where the core is; say so. The bare name stays as the fallback.
+        const core = resolveCoreFile(coreNameFor(game)) || coreNameFor(game);
         cmd = game.launch_template
             .replace('{rom}',      `"${game.rom_path}"`)
             .replace('{core}',     core                  ? `"${core}"`                  : '')
@@ -1067,8 +1131,23 @@ function playGame(gameId) {
     if (!game) return { ok: false, error: 'Game not found' };
 
     ensureScummvmTarget(game.rom_path);   // safety net for already-imported ScummVM games with an empty .scummvm
+
+    // A missing ROM and a missing core are the two ways a launch fails before it starts, and
+    // both used to end as a RetroArch window that flashed and vanished with nothing said. Name
+    // which it is, and hand the renderer what it needs to offer the fix.
+    if (game.rom_path && !fs.existsSync(game.rom_path)) {
+        return { ok: false, missingRom: true, romPath: game.rom_path,
+                 error: `The file for this game is not there any more:\n${game.rom_path}` };
+    }
+    const wantsCore = coreNameFor(game);
+    if (wantsCore && !game.launch_override && !resolveCoreFile(wantsCore)) {
+        const base = path.basename(wantsCore).replace(/\.so$/, '');
+        return { ok: false, needCore: base, coreName: prettyCoreName(base),
+                 error: `${game.title || 'This game'} needs the ${prettyCoreName(base)} core, which is not installed.` };
+    }
+
     const cmd = buildLaunchCommand(game);
-    if (!cmd) return { ok: false, error: 'No launch command configured — set a Launch Template in System Manager or a Launch Override on this ROM.' };
+    if (!cmd) return { ok: false, error: 'No launch command configured. Set a Launch Template in System Manager, or a Launch Override on this ROM.' };
 
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
     launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
@@ -2047,12 +2126,74 @@ function infoField(txt, key) {
     return u ? u[1].trim() : '';
 }
 
+// ── WHERE THE CORES ARE ───────────────────────────────────────────────────────
+// Not one folder. RetroArch's own `libretro_directory`, the per-user folder, the Flatpak
+// sandbox, and the system-wide folders a package manager uses.
+//
+// ⚠️ That last group is the one that matters on Arch and its derivatives: `pacman -S
+// libretro-nestopia` puts cores in /usr/lib/libretro, which no amount of looking in
+// ~/.config/retroarch/cores will ever find. Searching only the per-user folder meant a machine
+// with 42 working cores installed reported zero and could not launch a single game.
+const SYSTEM_CORE_DIRS = [
+    '/usr/lib/libretro', '/usr/lib64/libretro', '/usr/local/lib/libretro',
+    '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib/aarch64-linux-gnu/libretro',
+];
+const SYSTEM_CORE_INFO_DIRS = ['/usr/share/libretro/info', '/usr/local/share/libretro/info'];
+// ⚠️ Deduped by REAL path, not the written one: /usr/lib64 is a symlink to /usr/lib on Arch,
+// so the naive version found every core twice and the core list came out doubled.
+const uniqExisting = (dirs) => {
+    const out = [], seen = new Set();
+    for (const d of dirs) {
+        if (!d) continue;
+        let r;
+        try { r = fs.realpathSync(path.resolve(d.replace(/^~(?=[/\\])/, os.homedir()))); } catch { continue; }
+        if (seen.has(r)) continue;
+        seen.add(r);
+        try { if (fs.statSync(r).isDirectory()) out.push(r); } catch {}
+    }
+    return out;
+};
+const dirHas = (dir, test) => {
+    try { return fs.readdirSync(dir).some(test); } catch { return false; }
+};
+const hasCores = d => dirHas(d, f => f.endsWith('_libretro.so'));
+const hasCoreInfo = d => dirHas(d, f => f.endsWith('.info'));
+const userCoresDir = () => path.join(os.homedir(), '.config', 'retroarch', 'cores');
+const flatpakCoresDir = () => path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores');
+function coreSearchDirs() {
+    return uniqExisting([
+        readRaCfgKey('libretro_directory'),
+        userCoresDir(), flatpakCoresDir(),
+        path.join(getRetroArchCfgDir(), 'cores'),
+        ...SYSTEM_CORE_DIRS,
+    ]);
+}
+function coreInfoSearchDirs() {
+    return uniqExisting([
+        readRaCfgKey('libretro_info_path'),
+        path.join(os.homedir(), '.config', 'retroarch', 'info'),
+        path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'info'),
+        path.join(getRetroArchCfgDir(), 'info'),
+        ...SYSTEM_CORE_INFO_DIRS,
+    ]);
+}
+// A system's `default_core` is a bare filename like "nestopia_libretro.so". Turn it into the
+// absolute path of a core that is really on this machine, or '' when there is none.
+function resolveCoreFile(nameOrPath) {
+    const raw = String(nameOrPath || '').trim();
+    if (!raw) return '';
+    if (raw.includes('/')) return fs.existsSync(raw) ? raw : (resolveCoreFile(path.basename(raw)) || '');
+    const file = /\.so$/.test(raw) ? raw : `${raw}.so`;
+    for (const d of coreSearchDirs()) {
+        const p = path.join(d, file);
+        try { if (fs.existsSync(p)) return p; } catch {}
+    }
+    return '';
+}
+
 function scanCoresNow() {
     if (!db) return { ok: false, error: 'DB not ready' };
-    const coreDirs = [
-        path.join(os.homedir(), '.config', 'retroarch', 'cores'),
-        path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores'),
-    ];
+    const coreDirs = coreSearchDirs();
     // RetroArch keeps the .info files in a sibling `info/` dir, NOT next to the .so. Look there first
     // (then next to the .so as a fallback) — otherwise no core metadata is found at all.
     const insert = db.prepare(`INSERT OR REPLACE INTO cores
@@ -2067,6 +2208,7 @@ function scanCoresNow() {
         for (const p of dead) prune.run(p);
     });
     const found = [];
+    const infoDirs = coreInfoSearchDirs();
     for (const dir of coreDirs) {
         if (!fs.existsSync(dir)) continue;
         const infoDir = path.join(path.dirname(dir), 'info');
@@ -2075,7 +2217,8 @@ function scanCoresNow() {
         for (const file of files.filter(f => f.endsWith('_libretro.so'))) {
             const corePath = path.join(dir, file);
             const base     = file.replace(/\.so$/, '.info');
-            const infoPath = [path.join(infoDir, base), path.join(dir, base)].find(p => fs.existsSync(p));
+            const infoPath = [path.join(infoDir, base), path.join(dir, base), ...infoDirs.map(d => path.join(d, base))]
+                .find(p => fs.existsSync(p));
             const rec = {
                 path: corePath,
                 name: file.replace('_libretro.so', '').replace(/_/g, ' '),
@@ -2103,6 +2246,39 @@ function scanCoresNow() {
 }
 ipcMain.handle('scan-cores', () => scanCoresNow());
 
+// ── CAN THIS LIBRARY ACTUALLY PLAY? ───────────────────────────────────────────
+// Everything that stands between the user and a game starting, answered in one call: is there
+// a RetroArch at all, can its config see the cores, and does every system holding games have
+// the core it names. The renderer turns this into one button.
+ipcMain.handle('play-readiness', () => {
+    if (!db) return { ok: false, error: 'DB not ready' };
+    const variant = db.prepare("SELECT value FROM settings WHERE key='retroarch_variant'").get()?.value || detectRetroArch();
+    const rows = db.prepare(`
+        SELECT s.id, s.name, s.short_name, s.default_core, s.launch_template, COUNT(g.id) AS games
+        FROM systems s JOIN games g ON g.system_id = s.id
+        GROUP BY s.id HAVING games > 0 ORDER BY games DESC`).all();
+    const missing = [], ready = [];
+    for (const r of rows) {
+        const core = String(r.default_core || '').trim();
+        const usesRa = /retroarch/i.test(r.launch_template || '');
+        if (!usesRa) { ready.push({ ...r, core: '', standalone: true }); continue; }
+        if (!core) { missing.push({ ...r, core: '', reason: 'no core set' }); continue; }
+        const found = resolveCoreFile(core);
+        if (found) ready.push({ ...r, core, path: found });
+        else missing.push({ ...r, core, base: path.basename(core).replace(/\.so$/, ''), reason: 'core not installed' });
+    }
+    return {
+        ok: true, retroarch: variant,
+        coreDirs: coreSearchDirs(), coresFound: coreSearchDirs().reduce((n, d) => {
+            try { return n + fs.readdirSync(d).filter(f => f.endsWith('_libretro.so')).length; } catch { return n; }
+        }, 0),
+        installDir: coresInstallDir(),
+        ready, missing,
+        // One entry per core to fetch, so the UI can offer a single button for the lot.
+        needed: [...new Set(missing.filter(m => m.base).map(m => m.base))],
+    };
+});
+
 ipcMain.handle('get-cores', () => {
     if (!db) return [];
     return db.prepare('SELECT * FROM cores ORDER BY name').all();
@@ -2114,8 +2290,25 @@ function buildbotCoreBase() {
     const arch = { x64: 'x86_64', ia32: 'i686', arm64: 'arm64', arm: 'armhf' }[process.arch] || 'x86_64';
     return `https://buildbot.libretro.com/nightly/linux/${arch}/latest`;
 }
-const coresInstallDir    = () => readRaCfgKey('libretro_directory')  || path.join(getRetroArchCfgDir(), 'cores');
-const coreInfoInstallDir = () => readRaCfgKey('libretro_info_path')  || path.join(getRetroArchCfgDir(), 'info');
+// ⚠️ NOT simply `libretro_directory`: on a packaged install that is /usr/lib/libretro, which
+// is root-owned, so a download there fails with EACCES. Cores we fetch go somewhere this user
+// can actually write, and coreSearchDirs() looks there too, so they are found either way.
+const writableDir = (d) => {
+    try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return true; }
+    catch { return false; }
+};
+function coresInstallDir() {
+    const cfg = readRaCfgKey('libretro_directory');
+    if (cfg && writableDir(cfg)) return cfg;
+    const user = getRetroArchCfgDir() === path.join(os.homedir(), '.config', 'retroarch')
+        ? userCoresDir() : path.join(getRetroArchCfgDir(), 'cores');
+    return writableDir(user) ? user : userCoresDir();
+}
+function coreInfoInstallDir() {
+    const cfg = readRaCfgKey('libretro_info_path');
+    if (cfg && writableDir(cfg)) return cfg;
+    return path.join(path.dirname(coresInstallDir()), 'info');
+}
 const prettyCoreName = base => base.replace(/_libretro$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 let _coreIndexCache = null;

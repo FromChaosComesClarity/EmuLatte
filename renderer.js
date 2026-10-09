@@ -1484,12 +1484,33 @@ function closeGamePage() { switchView(_bgView || 'view-gallery'); renderCurrentV
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
 async function launchGame(id) {
+    _lastLaunchId = id;
     const result = await window.api.launchGame(id);
+    // A game that cannot start because its core is not installed is a question, not an error:
+    // the core is one download away and EmuLatte knows exactly which one.
+    if (!result.ok && result.needCore) { await offerMissingCore(result); return; }
     if (!result.ok) { showLaunchToast(result.error || 'No launch command configured', result.cmd); return; }
     markPlayed(id);
     const game = allGames.find(g => g.id === id);
     if (game) showNowPlaying(game);
 }
+
+// Install the core a game just asked for, then start the game. One prompt, one button, and
+// the thing the user actually wanted happens without a trip through Settings.
+async function offerMissingCore(result) {
+    const go = await showConfirm(
+        `${result.error}\n\nDownload it from the libretro buildbot and play?`,
+        'Download and play', false, 'Missing core');
+    if (!go) return;
+    showLaunchToast(`Downloading the ${result.coreName} core...`, null, 'CORES');
+    const r = await window.api.installCore(result.needCore);
+    if (!r?.ok) { showLaunchToast(r?.error || 'The core could not be downloaded.', null, 'CORES'); return; }
+    await loadCores();
+    const retry = await window.api.launchGame(result.gameId ?? _lastLaunchId);
+    if (retry?.ok) { markPlayed(_lastLaunchId); const g = allGames.find(x => x.id === _lastLaunchId); if (g) showNowPlaying(g); }
+    else showLaunchToast(retry?.error || 'Still could not launch.', retry?.cmd);
+}
+let _lastLaunchId = null;
 
 // The launch handlers stamp last_played in the DB; mirror it into the in-memory copies so
 // RECENTLY PLAYED and the "Last Played" sort are right straight away, with no reload.
@@ -2752,6 +2773,10 @@ async function showWelcome(noshowChecked) {
     openModal('modal-welcome');
     renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
     showWelcomeRomsPath();
+    renderPlayReadiness('wlc-play-body', 'btn-welcome-install-cores').then(r => {
+        const card = document.getElementById('wlc-play-card');
+        if (card) card.style.display = (r && (r.missing?.length || r.retroarch === 'none')) ? '' : 'none';
+    }).catch(() => {});
 }
 
 // The first thing a new user needs is where to put files, so the first run says it outright.
@@ -4532,6 +4557,8 @@ function wireUI() {
         st.textContent = scanSummary(res);
         renderLibraryPane();
     });
+    document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
+    document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
     document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
@@ -5250,7 +5277,67 @@ function enqueueScrapeIds(ids, source) {
 // ── SETTINGS \u203a LIBRARY ────────────────────────────────────────────────────
 // Where the folders are, which system reads from which one, and what the BIOS folder is
 // missing. Re-read every time the pane opens, so a drive plugged in a second ago shows up.
+// ── READY TO PLAY ─────────────────────────────────────────────────────────────
+// One answer to "will my games actually start": is RetroArch here, can its config see the
+// cores, and does every system holding games have the core it names. Anything missing comes
+// with the button that fixes it.
+let _missingCores = [];
+async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-install-missing-cores') {
+    const body = document.getElementById(bodyId);
+    const btn  = document.getElementById(btnId);
+    if (!body) return null;
+    let r = null;
+    try { r = await window.api.playReadiness(); } catch {}
+    if (!r?.ok) { body.textContent = 'Could not check.'; return null; }
+
+    if (r.retroarch === 'none') {
+        body.innerHTML = `<b style="color:#ef5350;">RetroArch is not installed.</b> Almost every system here runs through it. Install it from your package manager (on Omarchy the First Run screen offers to do it for you), then come back.`;
+        if (btn) btn.style.display = 'none';
+        return r;
+    }
+    _missingCores = r.needed || [];
+    if (!r.missing.length) {
+        const n = r.ready.reduce((a, x) => a + x.games, 0);
+        body.innerHTML = r.ready.length
+            ? `<b style="color:var(--accent);">Everything is ready.</b> ${n} game${n !== 1 ? 's' : ''} across ${r.ready.length} system${r.ready.length !== 1 ? 's' : ''}, every core installed. ${r.coresFound} cores found in ${r.coreDirs.length} folder${r.coreDirs.length !== 1 ? 's' : ''}.`
+            : `No games yet. Drop ROMs into the folders below and press Rescan Library.`;
+        if (btn) btn.style.display = 'none';
+        return r;
+    }
+    const rows = r.missing.map(m =>
+        `<div style="display:flex; gap:8px; padding:3px 0;"><span style="flex:1;">${escHtml(m.name)}</span>`
+        + `<span style="color:var(--text_dim);">${m.games} game${m.games !== 1 ? 's' : ''}</span>`
+        + `<code style="color:#ef5350; font-size:10px;">${escHtml(m.base || m.reason)}</code></div>`).join('');
+    body.innerHTML = `<b>${r.missing.length} system${r.missing.length !== 1 ? 's' : ''} cannot play yet</b>, because the core each one needs is not on this machine.`
+        + `<div style="margin-top:6px;">${rows}</div>`;
+    if (btn && _missingCores.length) { btn.style.display = ''; btn.textContent = `Install ${_missingCores.length} missing core${_missingCores.length !== 1 ? 's' : ''}`; }
+    return r;
+}
+
+// Fetch every core the library is short of, reporting as it goes.
+async function installMissingCores(btnId = 'btn-install-missing-cores', statusId = 'play-ready-progress') {
+    const btn = document.getElementById(btnId);
+    const st  = document.getElementById(statusId);
+    const list = [..._missingCores];
+    if (!list.length) return;
+    if (btn) { btn.disabled = true; }
+    let done = 0; const failed = [];
+    for (const base of list) {
+        if (st) st.textContent = `Downloading ${base} (${done + 1} of ${list.length})...`;
+        let r = null;
+        try { r = await window.api.installCore(base); } catch (e) { r = { ok: false, error: String(e) }; }
+        if (r?.ok) done++; else failed.push(base);
+    }
+    await loadCores();
+    if (btn) btn.disabled = false;
+    if (st) st.textContent = failed.length
+        ? `Installed ${done}. These could not be downloaded: ${failed.join(', ')}.`
+        : `Installed ${done} core${done !== 1 ? 's' : ''}. Your library is ready to play.`;
+    await renderPlayReadiness(btnId === 'btn-welcome-install-cores' ? 'wlc-play-body' : 'play-ready-body', btnId);
+}
+
 async function renderLibraryPane() {
+    renderPlayReadiness();
     let rep = null;
     try { rep = await window.api.libraryFolders(); } catch {}
     if (!rep?.ok) return;

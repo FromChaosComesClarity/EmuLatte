@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('api', {
     getSystemPresets: () => ipcRenderer.invoke('get-system-presets'),
     biosStatus:     (short)       => ipcRenderer.invoke('bios-status', short),
     biosOverview:   ()            => ipcRenderer.invoke('bios-overview'),
+    playReadiness:  ()            => ipcRenderer.invoke('play-readiness'),
     biosAddFile:    (short, file) => ipcRenderer.invoke('bios-add-file', short, file),
     biosScanFolder: ()            => ipcRenderer.invoke('bios-scan-folder'),
 

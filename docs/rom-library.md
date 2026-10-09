@@ -144,9 +144,50 @@ and both halves of the move.
 better-sqlite3 is built against Electron's ABI, so the runner is Electron with
 `ELECTRON_RUN_AS_NODE=1`; plain `node` cannot load it.
 
+## Ready to play, without being asked
+
+Three things decide whether pressing Play works, and all three are settled at startup.
+
+**Where the cores are.** Not one folder: `libretro_directory` from the configs, the per-user
+folder, the Flatpak sandbox, and the system-wide folders a package manager uses.
+
+⚠️ That last group is the one that matters on Arch and Omarchy. `pacman -S libretro-nestopia`
+puts cores in `/usr/lib/libretro`, which looking in `~/.config/retroarch/cores` will never find.
+Searching only the per-user folder meant a machine with **42 working cores installed reported
+zero and could not launch a single game**. Dirs are deduped by *real* path, because `/usr/lib64`
+is a symlink to `/usr/lib` here and the naive version found every core twice.
+
+**The owned config, repaired on every start.** It used to be written once and never revisited,
+so whatever the host config said at that moment was what EmuLatte was stuck with forever. If
+RetroArch had not been run yet, the owned config got no `libretro_directory` at all and
+`retroarch -L nestopia_libretro.so` could not resolve a thing: every game failed to launch,
+silently, for the life of the install. `repairOwnedRaCfg()` now checks the essentials each time
+and fills in what is missing from the host config, or from the machine itself.
+
+⚠️ "Exists" is not "useful". RetroArch writes its own default `~/.config/retroarch/cores`
+back into the config on exit (`config_save_on_exit`), and on a packaged install that folder
+exists and is empty. A folder with no cores in it counts as stale, or the repair cheerfully
+leaves a useless path in place.
+
+**Absolute core paths.** `{core}` resolves to the core's full path instead of being passed
+through as the bare filename it is stored as. A bare `-L` leaves RetroArch to find the core
+under its own `libretro_directory`, so one wrong line in a config file means nothing launches.
+The bare name stays as the fallback.
+
+**When a core really is missing**, `playGame` returns `needCore` rather than spawning a window
+that flashes and vanishes, and the desktop face offers to download it and start the game.
+Settings ▸ Library leads with a readiness card: which systems hold games, which cannot play,
+and one button to fetch the lot. The first-run screen shows the same card when there is
+something to fix. Downloaded cores go somewhere writable, never `/usr/lib/libretro`, which is
+root-owned and would fail with EACCES.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply
   absent from the AppImage and the app dies with `Cannot find module`.
 - `ensureOwnedRaCfg()` pins `system_directory` at creation, so the BIOS folder a launch reads
   must be captured *before* `pinBiosDir()` runs. The startup block does this deliberately.
+- `retroarch_variant` must be written to settings **first**, before anything resolves a
+  RetroArch path. Every lookup goes through `getRetroArchCfgDir()`, which reads that setting; on
+  a fresh database it is absent, the host config is looked for in the wrong place, and the owned
+  config gets seeded with nothing in it.
