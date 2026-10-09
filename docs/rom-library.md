@@ -111,7 +111,7 @@ new folder, so an old backup restores into a current install), and the sibling a
 
 ## Tests
 
-`npm test` → `scripts/test-rom-library.js`: 38 checks over seeding, folder creation, the scanner
+`npm test` → `scripts/test-rom-library.js`: 45 checks over seeding, folder creation, the scanner
 (standalone `.bin`, suppressed tracks, multi-disc grouping, alias folders, sub-folders,
 idempotence), pruning and its safety rules, dismissal, BIOS filing and status, the folder report,
 and both halves of the move.
