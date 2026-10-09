@@ -23,6 +23,11 @@ const AdmZip = require('adm-zip');
 const omarchy = require('./omarchy');
 const omarchyTheme = require('./omarchy-theme');
 const desktopDescriptor = require('./desktop-descriptor');
+// The library layer: folder names, the disc-aware scanner, seeding, BIOS. See rom-library.js.
+const romLib = require('./rom-library');
+const {
+    extOf, stripExt, discReferencedFiles, scanFolderEntries, commonAncestor,
+} = romLib;
 
 let baseDir;
 if (process.env.APPIMAGE) {
@@ -33,7 +38,10 @@ if (process.env.APPIMAGE) {
     baseDir = __dirname;
 }
 
-const configDir    = path.join(baseDir, 'GameManagerConfig', 'EmuLatte');
+// EmuLatte's own folder, beside its own binary. Clarity's GameManagerConfig is no part of
+// this any more: the two apps share a parent folder and nothing else. ROMS and BIOS live in
+// here too, so the whole install is one folder you can copy to another machine.
+const configDir    = path.join(baseDir, 'Emulatte_Stuff');
 const imagesDir    = path.join(configDir, 'images');
 const trailersDir  = path.join(configDir, 'videos');
 const manualsDir   = path.join(configDir, 'manuals');
@@ -46,6 +54,8 @@ const ffmpegPath     = path.join(binDir, 'ffmpeg');
 const ytDlpConfigPath = path.join(binDir, 'yt-dlp.conf');
 
 let db;
+let library = null;      // the ROMS/BIOS folder layer, built once the database is open
+let lastScan = null;     // the most recent library scan, for a renderer that loads after it
 let mainWin = null;   // the library/couch window; not the user manual or any other child window
 
 function getSavedBounds() {
@@ -164,6 +174,7 @@ app.whenReady().then(() => {
         }
     });
 
+    romLib.migrateHomeOnDisk(baseDir, configDir, m => console.log('[home]', m));
     if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
     ['covers', 'heroes', 'logos', 'screenshots'].forEach(d =>
         fs.mkdirSync(path.join(imagesDir, d), { recursive: true })
@@ -249,6 +260,7 @@ app.whenReady().then(() => {
             FOREIGN KEY (game_id)     REFERENCES games(id)     ON DELETE CASCADE
         )`).run();
 
+        try { db.prepare(`ALTER TABLE systems ADD COLUMN folder TEXT`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN core_override TEXT`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN ra_game_id INTEGER`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN igdb_trailer TEXT`).run(); } catch {}
@@ -294,6 +306,35 @@ app.whenReady().then(() => {
 
         rehomeArtPaths();
 
+        // ── THE LIBRARY IS THE ROMS FOLDER ───────────────────────────────────
+        // Every system exists from the first launch with a folder of its own, and the folder is
+        // what the library is read from. See rom-library.js for the scanner and the folder names.
+        const raCfgIO = { ensure: ensureOwnedRaCfg, parse: parseRaCfg, writeKeys: writeRaCfgKeys };
+        // Where BIOS files were read from until now — captured before anything repoints it, so
+        // a working setup can be brought across rather than quietly lost. A folder somebody
+        // configured is worth waiting for; RetroArch's own default, on a machine that may never
+        // have had one, is not.
+        const cfgSysDir  = readRaCfgKey('system_directory');
+        const prevSysDir = cfgSysDir || getRetroArchSystemDir();
+        library = romLib.createLibrary({
+            getDb: () => db, configDir, presets: systemPresets(), biosDb,
+            insertGame, deleteGame: deleteGameById, raCfg: raCfgIO,
+            log: m => console.log('[library]', m),
+        });
+        // Paths that pointed inside the old home, now that the folder itself has moved.
+        romLib.migrateHomeInDb(db, configDir, raCfgIO, m => console.log('[home]', m));
+        library.seedSystems();
+        library.ensureFolders();
+        // The BIOS folder becomes EmuLatte's RetroArch system directory, so what the user drops
+        // in is what the cores read.
+        library.pinBiosDir();
+        if (!library.setting('bios_home_set')) {
+            library.importOldBios(prevSysDir, { retry: !!cfgSysDir });
+            library.putSetting('bios_home_set', '1');
+        } else if (library.setting('bios_import_from')) {
+            library.importOldBios(library.setting('bios_import_from'), { retry: true });   // the drive was away last time
+        }
+
         const raVariant = detectRetroArch();
         db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', raVariant);
     } catch (err) {
@@ -302,6 +343,7 @@ app.whenReady().then(() => {
 
     createWindow();
     omarchyStartup();
+    startupLibraryScan();
     // A cold `--play=<id>`: the database is open by now and playGame needs nothing else, so
     // the game starts without waiting for the renderer it does not use.
     if (pendingPlayId) { const id = pendingPlayId; pendingPlayId = null; playGame(id); }
@@ -391,46 +433,59 @@ ipcMain.handle('get-systems', () => {
     return db.prepare('SELECT * FROM systems ORDER BY name ASC').all();
 });
 
+// Systems seed themselves on every launch (see rom-library.js), so this is for one the user
+// invents. It gets a ROMS folder like any other, named after it unless they say otherwise.
 ipcMain.handle('add-system', (_, data) => {
     if (!db) return null;
+    const folder = romLib.slugFolder(data.folder || data.short_name || data.name);
     const r = db.prepare(`INSERT INTO systems
-        (name, short_name, extensions, default_core, default_emulator, launch_template, screenscraper_id)
-        VALUES (@name, @short_name, @extensions, @default_core, @default_emulator, @launch_template, @screenscraper_id)`)
+        (name, short_name, folder, extensions, default_core, default_emulator, launch_template, screenscraper_id)
+        VALUES (@name, @short_name, @folder, @extensions, @default_core, @default_emulator, @launch_template, @screenscraper_id)`)
       .run({
           name: data.name || '',
           short_name: data.short_name || '',
+          folder,
           extensions: data.extensions || '',
           default_core: data.default_core || '',
           default_emulator: data.default_emulator || '',
           launch_template: data.launch_template || '',
           screenscraper_id: data.screenscraper_id || null
       });
+    library?.ensureFolders();
     return r.lastInsertRowid;
 });
 
 ipcMain.handle('update-system', (_, id, data) => {
     if (!db) return false;
+    const cur = db.prepare('SELECT folder, short_name FROM systems WHERE id=?').get(id) || {};
+    const folder = romLib.slugFolder(data.folder || cur.folder || data.short_name || cur.short_name);
     db.prepare(`UPDATE systems SET
-        name=@name, short_name=@short_name, extensions=@extensions,
+        name=@name, short_name=@short_name, folder=@folder, extensions=@extensions,
         default_core=@default_core, default_emulator=@default_emulator,
         launch_template=@launch_template, screenscraper_id=@screenscraper_id
         WHERE id=${id}`)
       .run({
           name: data.name || '',
           short_name: data.short_name || '',
+          folder,
           extensions: data.extensions || '',
           default_core: data.default_core || '',
           default_emulator: data.default_emulator || '',
           launch_template: data.launch_template || '',
           screenscraper_id: data.screenscraper_id || null
       });
+    library?.ensureFolders();
     return true;
 });
 
+// Deleting a system that EmuLatte ships has to stick, or seeding would hand it straight back
+// on the next launch. The short name is remembered; Settings > Library takes them all back.
 ipcMain.handle('delete-system', (_, id) => {
     if (!db) return false;
+    const row = db.prepare('SELECT short_name FROM systems WHERE id=?').get(id);
     db.prepare('DELETE FROM games WHERE system_id=?').run(id);
     db.prepare('DELETE FROM systems WHERE id=?').run(id);
+    if (row?.short_name) library?.dismiss(row.short_name);
     return true;
 });
 
@@ -446,7 +501,7 @@ ipcMain.handle('get-games', () => {
     `).all();
 });
 
-ipcMain.handle('add-game', (_, data) => {
+function insertGame(data) {
     if (!db) return null;
     const r = db.prepare(`INSERT INTO games
         (system_id, title, rom_path, description, year, developer, publisher,
@@ -468,7 +523,8 @@ ipcMain.handle('add-game', (_, data) => {
       });
     ensureScummvmTarget(data.rom_path);   // make ScummVM games launchable automatically (fill empty .scummvm)
     return r.lastInsertRowid;
-});
+}
+ipcMain.handle('add-game', (_, data) => insertGame(data));
 
 ipcMain.handle('update-game', (_, id, data) => {
     if (!db) return false;
@@ -482,7 +538,7 @@ ipcMain.handle('update-game', (_, id, data) => {
     return true;
 });
 
-ipcMain.handle('delete-game', (_, id) => {
+function deleteGameById(id) {
     if (!db) return false;
     // Clean up the art we manage (never the ROM, never user-picked LOCAL files outside imagesDir)
     // and the playlist links, since foreign_keys/cascade isn't enabled on this connection.
@@ -496,7 +552,8 @@ ipcMain.handle('delete-game', (_, id) => {
     db.prepare('DELETE FROM playlist_games WHERE game_id=?').run(id);
     db.prepare('DELETE FROM games WHERE id=?').run(id);
     return true;
-});
+}
+ipcMain.handle('delete-game', (_, id) => deleteGameById(id));
 
 ipcMain.handle('set-game-flag', (_, id, field, value) => {
     if (!db || !['fav', 'want'].includes(field)) return false;
@@ -675,6 +732,8 @@ function omarchyStartup() {
             configDir,
             libraryDb: dbPath,
             imagesDir,
+            romsDir: library?.romsRoot() || null,
+            biosDir: library?.biosRoot() || null,
             selfExecutable: process.execPath,
             // ⚠️ The authoritative answer when we are an AppImage: the exact file we were
             // launched from, rather than whichever one a directory scan happens to see first.
@@ -832,6 +891,7 @@ function writeRaCfgKeys(file, updates) {
 function ensureOwnedRaCfg(force = false) {
     const file = ownedRaCfgPath();
     if (!force && fs.existsSync(file)) return file;
+    const biosPin = library ? { system_directory: library.biosRoot() } : {};
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const lines = [
         '# EmuLatte-owned RetroArch configuration.',
@@ -839,13 +899,22 @@ function ensureOwnedRaCfg(force = false) {
         '# Tailor this from EmuLatte (Settings -> RetroArch). RetroArch is the engine; this is the config.',
         'config_save_on_exit = "true"',
         'input_quit_gamepad_combo = "4"',   // Select + Start quits RetroArch (device-independent RetroPad combo)
-        ...Object.entries(readHostPathKeys()).map(([k, v]) => `${k} = "${v}"`),
+        ...Object.entries({ ...readHostPathKeys(), ...biosPin }).map(([k, v]) => `${k} = "${v}"`),
     ];
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
     return file;
 }
 // Re-derive only the path keys from the local host config (portability / a new machine).
-const reimportRaPaths = () => { const f = ensureOwnedRaCfg(); writeRaCfgKeys(f, readHostPathKeys()); return f; };
+// Re-deriving the path keys from the host must not hand system_directory back to the host's
+// own BIOS folder — EmuLatte's BIOS folder is the one the user drops files into.
+const reimportRaPaths = () => {
+    const f = ensureOwnedRaCfg();
+    const keys = readHostPathKeys();
+    delete keys.system_directory;
+    writeRaCfgKeys(f, keys);
+    if (library) library.pinBiosDir();
+    return f;
+};
 
 function readRaCfgKey(key) {
     const cfgDir = getRetroArchCfgDir();
@@ -1462,9 +1531,11 @@ ipcMain.handle('restore-ra-settings', async () => {
 });
 
 // ── FULL BACKUP / RESTORE (config folder + RetroArch saves) ───────────────────
-// scope 'emulatte' → just GameManagerConfig/EmuLatte; scope 'suite' → all of GameManagerConfig
-// (Clarity Suite, same as Clarity's own backup). Both bundle RetroArch save states +
-// savefiles (which live OUTSIDE GameManagerConfig) under a known prefix so restore can re-home them.
+// scope 'emulatte' → Emulatte_Stuff, everything EmuLatte owns; scope 'suite' → that plus the
+// sibling app's GameManagerConfig folder, for one archive of both. Both bundle RetroArch save
+// states + savefiles (which live outside either folder) under a known prefix so restore can
+// re-home them. ROMS and BIOS are deliberately NOT in the zip: a backup of a library is its
+// metadata, not tens of gigabytes of ROMs. The folder layout is what makes them replaceable.
 const BK_STATES = '__ra_saves__/states/';
 const BK_SAVES  = '__ra_saves__/saves/';
 ipcMain.handle('create-backup', async (_, scope = 'emulatte') => {
@@ -1478,8 +1549,17 @@ ipcMain.handle('create-backup', async (_, scope = 'emulatte') => {
     try {
         try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}            // flush WAL so emulatte.db is consistent in the zip
         const zip = new AdmZip();
-        if (isSuite) zip.addLocalFolder(path.join(baseDir, 'GameManagerConfig'), 'GameManagerConfig');
-        else         zip.addLocalFolder(configDir, 'GameManagerConfig/EmuLatte');
+        // ⚠️ adm-zip hands the filter the path INSIDE the zip, prefix and all, so the prefix has
+        // to come off before the first segment means anything. Getting this wrong is silent and
+        // expensive: it put the whole ROMS folder in the archive.
+        const skipBulk = (entry) => {
+            const rel = String(entry).replace(/\\/g, '/').replace(/^Emulatte_Stuff\/?/, '');
+            const top = rel.split('/')[0];
+            return top === 'ROMS' || top === 'BIOS';
+        };
+        zip.addLocalFolder(configDir, 'Emulatte_Stuff', e => !skipBulk(e));
+        if (isSuite && fs.existsSync(path.join(baseDir, 'GameManagerConfig')))
+            zip.addLocalFolder(path.join(baseDir, 'GameManagerConfig'), 'GameManagerConfig');
         const stateDir = savestateDir(), saveDir = savefileDir();
         let withSaves = false;
         if (stateDir && fs.existsSync(stateDir)) { zip.addLocalFolder(stateDir, BK_STATES.slice(0, -1)); withSaves = true; }
@@ -1497,7 +1577,9 @@ ipcMain.handle('restore-backup', async () => {
     try {
         const zip = new AdmZip(filePaths[0]);
         const entries = zip.getEntries();
-        if (!entries.some(e => e.entryName.startsWith('GameManagerConfig/'))) return { ok: false, error: 'This ZIP is not an EmuLatte or Clarity Suite backup.' };
+        const LEGACY_PREFIX = 'GameManagerConfig/EmuLatte/';
+        if (!entries.some(e => e.entryName.startsWith('Emulatte_Stuff/') || e.entryName.startsWith('GameManagerConfig/')))
+            return { ok: false, error: 'This ZIP is not an EmuLatte or Clarity Suite backup.' };
         const stateDir = savestateDir(), saveDir = savefileDir();
         // Finalize + close the DB before overwriting it, so a later WAL checkpoint can't clobber the restore.
         try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
@@ -1508,7 +1590,11 @@ ipcMain.handle('restore-backup', async () => {
             if (e.isDirectory) continue;
             const name = e.entryName;
             let out = null;
-            if (name.startsWith('GameManagerConfig/'))      { out = path.join(baseDir, name); cfgN++; }
+            // A zip written before EmuLatte moved out of the sibling app's folder carries the old
+            // prefix; it lands in the new home so an old backup restores into a current install.
+            if (name.startsWith('Emulatte_Stuff/'))          { out = path.join(configDir, name.slice('Emulatte_Stuff/'.length)); cfgN++; }
+            else if (name.startsWith(LEGACY_PREFIX))         { out = path.join(configDir, name.slice(LEGACY_PREFIX.length)); cfgN++; }
+            else if (name.startsWith('GameManagerConfig/'))  { out = path.join(baseDir, name); cfgN++; }
             else if (name.startsWith(BK_STATES) && stateDir) { out = path.join(stateDir, name.slice(BK_STATES.length)); saveN++; }
             else if (name.startsWith(BK_SAVES)  && saveDir)  { out = path.join(saveDir,  name.slice(BK_SAVES.length));  saveN++; }
             if (!out) continue;
@@ -1941,11 +2027,16 @@ ipcMain.handle('detect-retroarch', () => {
 });
 
 // ── SYSTEM PRESETS ────────────────────────────────────────────────────────────
-ipcMain.handle('get-system-presets', () => {
-    try {
-        return JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'systems.json'), 'utf8'));
-    } catch { return []; }
-});
+// Every system EmuLatte ships, with the folder its ROMs go in. Read once: seeding, the folder
+// names and the Systems manager all work off the same list.
+let _systemPresets = null;
+function systemPresets() {
+    if (_systemPresets) return _systemPresets;
+    try { _systemPresets = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'systems.json'), 'utf8')); }
+    catch { _systemPresets = []; }
+    return _systemPresets;
+}
+ipcMain.handle('get-system-presets', () => systemPresets());
 
 // ── CORES ─────────────────────────────────────────────────────────────────────
 // Pull a "key = value" / 'key = "value"' field out of a RetroArch .info file.
@@ -2340,9 +2431,8 @@ ipcMain.handle('igdb-search-art', async (_, gameName, assetType, systemShortName
 let biosDb = {};
 try { biosDb = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'bios_db.json'), 'utf8')); } catch {}
 
-function md5File(p) {
-    try { return crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex'); } catch { return null; }
-}
+// One copy of each of these lives in rom-library.js.
+const { md5File, walkFiles } = romLib;
 
 function getRetroArchSystemDir() {
     const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
@@ -2359,30 +2449,12 @@ function getRetroArchSystemDir() {
     return path.join(cfgDir, 'system');
 }
 
-function walkFiles(dir, depth = 0, acc = []) {
-    if (depth > 4 || acc.length > 8000) return acc;
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
-    for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walkFiles(full, depth + 1, acc);
-        else acc.push(full);
-    }
-    return acc;
-}
-
-ipcMain.handle('bios-status', (_, shortName) => {
-    const entry = biosDb[shortName];
-    if (!entry || !entry.files) return { ok: true, files: [], note: '' };
-    const sysDir = getRetroArchSystemDir();
-    const files = entry.files.map(b => {
-        const dest = path.join(sysDir, b.file);
-        let status = 'missing';
-        if (fs.existsSync(dest)) status = (b.md5 && md5File(dest) === b.md5.toLowerCase()) ? 'verified' : 'present';
-        return { file: b.file, required: !!b.required, region: b.region || '', status };
-    });
-    return { ok: true, files, note: entry.note || '', systemDir: sysDir };
-});
+// The BIOS folder in Emulatte_Stuff IS the system directory EmuLatte's RetroArch config points
+// at, so every one of these reads and writes the folder the user drops files into.
+ipcMain.handle('bios-status', (_, shortName) => library
+    ? library.biosStatus(shortName)
+    : { ok: false, error: 'DB not ready', files: [] });
+ipcMain.handle('bios-overview', () => library ? library.biosOverview() : { ok: false, error: 'DB not ready' });
 
 ipcMain.handle('bios-add-file', async (event, shortName, biosFile) => {
     const spec = biosDb[shortName]?.files?.find(b => b.file === biosFile);
@@ -2391,7 +2463,7 @@ ipcMain.handle('bios-add-file', async (event, shortName, biosFile) => {
     const res = await dialog.showOpenDialog(win, { title: `Select ${biosFile}`, properties: ['openFile'] });
     if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
     const verified = spec.md5 ? (md5File(res.filePaths[0]) === spec.md5.toLowerCase()) : null;
-    const sysDir = getRetroArchSystemDir();
+    const sysDir = library.biosRoot();
     try {
         fs.mkdirSync(sysDir, { recursive: true });
         fs.copyFileSync(res.filePaths[0], path.join(sysDir, biosFile));
@@ -2411,7 +2483,7 @@ ipcMain.handle('bios-scan-folder', async (event) => {
             byName[b.file.toLowerCase()] = b.file;
         }
     }
-    const sysDir = getRetroArchSystemDir();
+    const sysDir = library.biosRoot();
     try { fs.mkdirSync(sysDir, { recursive: true }); } catch (e) { return { ok: false, error: e.message }; }
 
     const installed = new Set();
@@ -2952,198 +3024,83 @@ ipcMain.handle('select-directory', async () => {
     return canceled ? null : filePaths[0];
 });
 
-// ── Disc-image aware scanning ─────────────────────────────────────────────────
-// Disc games arrive as an "index" file (.cue/.gdi/.ccd/.mds) that points at data
-// "sidecar" tracks (.bin/.img/.sub/.raw), or as a self-contained image
-// (.chd/.iso/.pbp/.cso/...). A .m3u playlist groups the discs of one game so
-// RetroArch can swap them mid-play. We offer the index/playlist/image to import —
-// never a bare sidecar — and collapse multi-disc sets into one entry.
-const DISC_PLAYLIST_EXTS = new Set(['m3u']);
-const DISC_INDEX_EXTS    = new Set(['cue', 'gdi', 'ccd', 'mds', 'toc']);
-const DISC_SIDECAR_EXTS  = new Set(['bin', 'img', 'sub', 'raw', 'ecm']);
-const DISC_FORMAT_EXTS   = new Set([
-    ...DISC_PLAYLIST_EXTS, ...DISC_INDEX_EXTS, ...DISC_SIDECAR_EXTS,
-    'chd', 'iso', 'cdi', 'pbp', 'cso', 'nrg', 'mdf'
-]);
-const extOf = f => path.extname(f).replace(/^\./, '').toLowerCase();
-const stripExt = f => path.basename(f).replace(/\.[^.]+$/, '');
-// A (Disc 1), [CD2], Disk 3, Side A… token used to recognise & strip multi-disc names.
-const DISC_TOKEN_RE = /[\s._-]*[\(\[]?\s*(?:disc|disk|cd)\s*([0-9]+)\s*(?:of\s*[0-9]+)?\s*[\)\]]?/i;
-const discNumberOf  = base => { const m = base.match(DISC_TOKEN_RE); return m ? parseInt(m[1], 10) : null; };
-const discGameKey   = base => base.replace(DISC_TOKEN_RE, ' ').replace(/\s{2,}/g, ' ').trim().toLowerCase();
-const discCleanTitle = base => base.replace(DISC_TOKEN_RE, ' ').replace(/\s{2,}/g, ' ').replace(/[\s._-]+$/, '').trim();
-
-// Absolute paths of the files an index/playlist file points at.
-function discReferencedFiles(indexFile) {
-    const dir = path.dirname(indexFile);
-    const ext = extOf(indexFile);
-    const abs = r => path.resolve(path.isAbsolute(r) ? r : path.join(dir, r));
-    if (ext === 'ccd') { const b = stripExt(indexFile); return [abs(`${b}.img`), abs(`${b}.sub`)]; }
-    if (ext === 'mds') { return [abs(`${stripExt(indexFile)}.mdf`)]; }
-    let text = '';
-    try { text = fs.readFileSync(indexFile, 'utf8'); } catch { return []; }
-    const refs = [];
-    for (const raw of text.split(/\r?\n/)) {
-        const l = raw.trim();
-        if (!l || l.startsWith('#')) continue;
-        const q = l.match(/"([^"]+)"/);
-        if (q) { refs.push(q[1]); continue; }
-        if (ext === 'cue') { const m = l.match(/^FILE\s+(\S+)\s+\w+/i); if (m) refs.push(m[1]); }
-        else if (ext === 'gdi') { const m = l.match(/(\S+\.(?:bin|raw|iso))\b/i); if (m) refs.push(m[1]); }
-        else if (ext === 'm3u' || ext === 'toc') { refs.push(l); }
-    }
-    return refs.map(abs);
-}
-
-function scanFolderEntries(folderPath, extensions) {
-    const exts = new Set(
-        (extensions || '').split(',')
-            .map(e => e.trim().toLowerCase().replace(/^\./, ''))
-            .filter(Boolean)
-    );
-    const matched = [];
-    (function walk(dir) {
-        let entries;
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-        for (const e of entries) {
-            const full = path.join(dir, e.name);
-            if (e.isDirectory()) { walk(full); continue; }
-            const ext = extOf(e.name);
-            if (exts.size === 0 || exts.has(ext)) matched.push(full);
-        }
-    })(folderPath);
-
-    const single = p => ({ kind: 'single', path: p, title: stripExt(p) });
-    const discAware = [...exts].some(e => DISC_FORMAT_EXTS.has(e));
-    if (!discAware) return matched.map(single);
-
-    // 1. Suppress every track/disc referenced from inside an index or playlist.
-    const referenced = new Set();
-    for (const f of matched) {
-        if (DISC_INDEX_EXTS.has(extOf(f)) || DISC_PLAYLIST_EXTS.has(extOf(f)))
-            for (const r of discReferencedFiles(f)) referenced.add(r);
-    }
-    // 2. Launchable candidates: not referenced elsewhere, and never a bare sidecar.
-    const candidates = matched.filter(f =>
-        !referenced.has(path.resolve(f)) && !DISC_SIDECAR_EXTS.has(extOf(f)));
-
-    // 3. Group multi-disc sets (by game name + format); a lone disc stays single.
-    const entries = [];
-    const groups  = new Map();
-    const loose   = [];
-    for (const f of candidates) {
-        if (DISC_PLAYLIST_EXTS.has(extOf(f))) { entries.push({ kind: 'playlist', path: f, title: stripExt(f) }); continue; }
-        const disc = discNumberOf(stripExt(f));
-        if (disc == null) { loose.push(f); continue; }
-        const key = `${discGameKey(stripExt(f))}::${extOf(f)}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push({ path: f, disc });
-    }
-    for (const discs of groups.values()) {
-        if (discs.length < 2) { loose.push(discs[0].path); continue; }
-        discs.sort((a, b) => a.disc - b.disc);
-        entries.push({
-            kind: 'multidisc',
-            path: discs[0].path,
-            discs: discs.map(d => d.path),
-            discCount: discs.length,
-            title: discCleanTitle(stripExt(discs[0].path))
-        });
-    }
-    for (const f of loose) entries.push(single(f));
-    entries.sort((a, b) => a.title.localeCompare(b.title));
-    return entries;
-}
+// ── FOLDER SCANNING & THE LIBRARY SCAN ────────────────────────────────────────
+// The disc-aware scanner, the folder names and the scan itself live in rom-library.js. What
+// stays here is the IPC surface and the one place that decides when a scan happens.
 ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => scanFolderEntries(folderPath, extensions));
 
-// ── RESCAN: find NEW ROMs in every current system's folder(s) ─────────────────
-// Infers each system's ROM folder(s) from its existing games' rom_paths, scans
-// them (disc-aware) with that system's extensions, and returns only entries that
-// aren't already in the library. Powers the Refresh button's "find new games".
-const commonAncestor = (dirs) => {
-    const parts = dirs.map(d => path.resolve(d).split(path.sep));
-    if (!parts.length) return null;
-    const first = parts[0]; let n = first.length;
-    for (const pr of parts) { let i = 0; while (i < n && i < pr.length && pr[i] === first[i]) i++; n = i; }
-    return n <= 1 ? null : (first.slice(0, n).join(path.sep) || null);
-};
-ipcMain.handle('rescan-new-games', () => {
-    if (!db) return { entries: [], folders: 0 };
-    const systems = db.prepare('SELECT * FROM systems').all();
-    const sysById = new Map(systems.map(s => [s.id, s]));
-    const games   = db.prepare('SELECT id, system_id, rom_path FROM games').all();
-    const playlistsDir = path.resolve(path.join(configDir, 'playlists'));
+// Read every system's folder and make the library match it: new files become games, rows whose
+// file has gone are dropped. The BIOS folder is filed at the same time, since both are "what is
+// on disk right now".
+function runLibraryScan(opts = {}) {
+    if (!library) return { ok: false, error: 'The library is not open yet.' };
+    let bios = null;
+    try { bios = library.biosScan(); } catch (e) { console.error('BIOS scan failed:', e.message); }
+    let res;
+    try { res = library.scan(opts); } catch (e) { res = { ok: false, error: e.message }; }
+    lastScan = { ...res, bios, at: Date.now(), startup: !!opts.startup };
+    return lastScan;
+}
+ipcMain.handle('scan-library', (_, opts) => runLibraryScan(opts || {}));
+ipcMain.handle('get-last-scan', () => lastScan);
 
-    // Real ROM folder for a game (following a generated .m3u to where its discs live).
-    const discLines = (m3u) => {
-        try { return fs.readFileSync(m3u, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-            .map(l => path.isAbsolute(l) ? l : path.join(path.dirname(m3u), l)); } catch { return []; }
-    };
+// Every launch reads the folder, the way ES-DE and Batocera do — the user never has to ask for
+// it. It runs just after createWindow so a large collection can never hold the window back: a
+// face that loads before the scan finishes hears about it through 'library-scanned', and one
+// that loads after it reads the result from get-last-scan.
+function startupLibraryScan() {
+    setTimeout(() => {
+        const res = runLibraryScan({ startup: true });
+        const w = libraryWindow();
+        if (w && !w.isDestroyed()) w.webContents.send('library-scanned', res);
+    }, 250);
+}
 
-    // Everything already in the library (resolved paths + discs referenced by .m3u games).
-    const known = new Set();
-    const gameDirs = [];   // [system_id, resolvedDir] — immediate ROM folder of each game
-    for (const g of games) {
-        if (!g.rom_path) continue;
-        known.add(path.resolve(g.rom_path));
-        let dirs;
-        if (extOf(g.rom_path) === 'm3u') { const d = discLines(g.rom_path); d.forEach(x => known.add(path.resolve(x))); dirs = d.map(x => path.dirname(x)); }
-        else dirs = [path.dirname(g.rom_path)];
-        for (const d of dirs) {
-            const rd = path.resolve(d);
-            if (rd === playlistsDir || !g.system_id) continue;
-            gameDirs.push([g.system_id, rd]);
-        }
-    }
-
-    // Scan roots per system: prefer the common ancestor (catches new per-game subfolders)
-    // unless it's too shallow or shared with another system — then use the immediate folders.
-    const roots = new Map();   // system_id -> Set(dir)
-    for (const [sysId] of sysById) {
-        const dirs = [...new Set(gameDirs.filter(([s]) => s === sysId).map(([, d]) => d))];
-        if (!dirs.length) continue;
-        const anc = commonAncestor(dirs);
-        const deepEnough = anc && anc.split(path.sep).filter(Boolean).length >= 2;
-        const sharedWithOther = anc && gameDirs.some(([s, d]) => s !== sysId && (d === anc || d.startsWith(anc + path.sep)));
-        roots.set(sysId, new Set(deepEnough && !sharedWithOther ? [anc] : dirs));
-    }
-
-    const entries = [];
-    const seen = new Set();
-    let folders = 0;
-    for (const [sysId, dirSet] of roots) {
-        const sys = sysById.get(sysId); if (!sys) continue;
-        for (const dir of dirSet) {
-            if (!fs.existsSync(dir)) continue;   // drive not mounted, etc.
-            folders++;
-            for (const e of scanFolderEntries(dir, sys.extensions || '')) {
-                const dup = e.kind === 'multidisc'
-                    ? (e.discs || []).some(d => known.has(path.resolve(d)))
-                    : known.has(path.resolve(e.path));
-                if (dup) continue;
-                const key = path.resolve(e.path);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                entries.push({ ...e, system_id: sysId, system_name: sys.name });
-            }
-        }
-    }
-    entries.sort((a, b) => (a.system_name || '').localeCompare(b.system_name || '') || a.title.localeCompare(b.title));
-    return { entries, folders };
+// ── WHERE THE FOLDERS ARE ─────────────────────────────────────────────────────
+ipcMain.handle('library-folders', () => library ? library.folderReport() : { ok: false, error: 'DB not ready' });
+ipcMain.handle('open-library-folder', (_, which) => {
+    if (!library) return { ok: false };
+    const dir = which === 'bios' ? library.biosRoot() : library.romsRoot();
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    shell.openPath(dir);
+    return { ok: true, path: dir };
+});
+// Point EmuLatte at a collection that already exists somewhere else (an external drive, a NAS
+// mount) instead of moving it. The folders are created there and the library is re-read at once.
+ipcMain.handle('set-library-root', async (event, which) => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: which === 'bios' ? 'Choose the BIOS folder' : 'Choose the ROMS folder',
+        properties: ['openDirectory', 'createDirectory'],
+        defaultPath: which === 'bios' ? library.biosRoot() : library.romsRoot(),
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const dir = res.filePaths[0];
+    if (which === 'bios') { library.setBiosRoot(dir); library.pinBiosDir(); }
+    else { library.setRomsRoot(dir); library.ensureFolders(); }
+    return { ok: true, path: dir, scan: runLibraryScan({}) };
+});
+ipcMain.handle('reset-library-root', (_, which) => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    if (which === 'bios') { library.setBiosRoot(''); library.pinBiosDir(); }
+    else { library.setRomsRoot(''); library.ensureFolders(); }
+    return { ok: true, path: which === 'bios' ? library.biosRoot() : library.romsRoot() };
+});
+// A default system the user deleted stays deleted (see rom-library.js); this takes them all back.
+ipcMain.handle('restore-default-systems', () => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    library.undismissAll();
+    const seeded = library.seedSystems();
+    library.ensureFolders();
+    return { ok: true, ...seeded, scan: runLibraryScan({}) };
 });
 
 // Write a .m3u playlist (one disc path per line, absolute) into EmuLatte's own data
 // dir so it works even when the ROM folder is read-only (e.g. an external SSD).
 ipcMain.handle('create-m3u', (_, { title, discs }) => {
-    try {
-        const dir = path.join(configDir, 'playlists');
-        fs.mkdirSync(dir, { recursive: true });
-        const safe = (String(title || 'game').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '')) || 'game';
-        let file = path.join(dir, `${safe}.m3u`);
-        for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${safe}_${n}.m3u`);
-        fs.writeFileSync(file, (discs || []).join('\n') + '\n', 'utf8');
-        return { ok: true, path: file };
-    } catch (e) { return { ok: false, error: e.message }; }
+    try { return { ok: true, path: library.createM3u(title, discs) }; }
+    catch (e) { return { ok: false, error: e.message }; }
 });
 
 // ── REPAIR DISC REFERENCES ────────────────────────────────────────────────────

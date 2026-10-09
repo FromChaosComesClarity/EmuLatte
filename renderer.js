@@ -48,6 +48,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     updateTemplateButtonLabels();
     wireScrapeProgress();
     maybeShowWelcome();       // first run only; a no-op on every later start
+    // The launch scan runs in the main process and may finish before or after this face loads,
+    // so take it from whichever arrives: the result that is already waiting, or the event.
+    window.api.onLibraryScanned(res => applyScanResult(res, { quiet: true }));
+    window.api.getLastScan().then(res => applyScanResult(res, { quiet: true })).catch(() => {});
     window.api.signalReady();
 });
 
@@ -1239,13 +1243,21 @@ function startHeroCycle() {
 // ── SYSTEM FILTERS ────────────────────────────────────────────────────────────
 function renderSystemFilters() {
     const container = document.getElementById('system-filters');
-    if (!allSystems.length) {
-        container.innerHTML = '';
+    // Every system exists from the first launch, so browsing by system only lists the ones that
+    // have a game in them — the same thing ES-DE does. The full set, with each one's folder,
+    // is in Settings \u203a Library and in the Systems manager.
+    const counts = new Map();
+    for (const g of allGames) counts.set(g.system_id, (counts.get(g.system_id) || 0) + 1);
+    const shown = allSystems.filter(s => counts.get(s.id) || String(currentFilter) === String(s.id));
+    if (!shown.length) {
+        container.innerHTML = allSystems.length
+            ? `<div style="font-size:11px; color:var(--text_dim); padding:8px 2px; line-height:1.5;">No games yet. Drop ROMs into the system folders under your ROMS folder and press Rescan Library.</div>`
+            : '';
         return;
     }
     container.innerHTML = `<div style="font-size:10px; font-weight:900; color:var(--text_dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; padding-left:2px;">Systems</div>` +
-        allSystems.map(s => {
-            const count = allGames.filter(g => g.system_id === s.id).length;
+        shown.map(s => {
+            const count = counts.get(s.id) || 0;
             return `<button class="filter-btn-system" data-system-id="${s.id}" data-filter="${s.id}"
                 style="width:100%; text-align:left; font-size:11px; padding:8px 10px; background:var(--bg_menu); border:1px solid var(--border); color:var(--text_sec); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
                 <span>${escHtml(s.name)}</span>
@@ -1991,15 +2003,17 @@ function openSystemsModal() {
 function renderSystemsList() {
     const list = document.getElementById('systems-list');
     if (!allSystems.length) {
-        list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim); font-size:13px;">No systems added yet.</div>`;
+        list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim); font-size:13px;">No systems. Settings \u203a Library \u203a Restore Default Systems brings them all back.</div>`;
         return;
     }
+    // Every system is here, with or without games — unlike the side panel, which only lists the
+    // ones you can actually browse. The folder is shown because it is where the ROMs go.
     list.innerHTML = allSystems.map(s => {
         const count = allGames.filter(g => g.system_id === s.id).length;
         return `<div class="system-list-item">
             <div>
                 <div class="sys-name">${escHtml(s.name)}</div>
-                <div class="sys-meta">${escHtml(s.extensions || '—')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
+                <div class="sys-meta">ROMS/${escHtml(s.folder || '?')} · ${escHtml(s.extensions || '—')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
             </div>
             <button class="btn-edit-sys" data-id="${s.id}" style="font-size:11px; padding:6px 14px;">Edit</button>
         </div>`;
@@ -2107,6 +2121,12 @@ function openEditSystemModal(sys = null) {
     document.getElementById('edit-system-name').value          = sys?.name || '';
     document.getElementById('edit-system-short').value         = sys?.short_name || '';
     document.getElementById('edit-system-extensions').value    = sys?.extensions || '';
+    document.getElementById('edit-system-folder').value        = sys?.folder || '';
+    // The names the other front-ends use are read as well as this one, so say which ones apply.
+    const pre = allSystemPresets.find(pp => pp.short_name === sys?.short_name);
+    document.getElementById('edit-system-folder-hint').textContent = pre?.folder_aliases?.length
+        ? `The folder under your ROMS folder that this system's games are read from. These are read too: ${pre.folder_aliases.join(', ')}.`
+        : "The folder under your ROMS folder that this system's games are read from.";
     document.getElementById('edit-system-template').value      = sys?.launch_template || '';
     document.getElementById('edit-system-core-all').checked     = false;
     const storedCore = sys?.default_core || '';                    // resolve a bare filename to its installed path
@@ -2731,6 +2751,17 @@ async function showWelcome(noshowChecked) {
     if (chk) chk.checked = noshowChecked;
     openModal('modal-welcome');
     renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
+    showWelcomeRomsPath();
+}
+
+// The first thing a new user needs is where to put files, so the first run says it outright.
+async function showWelcomeRomsPath() {
+    const el = document.getElementById('wlc-roms-path');
+    if (!el) return;
+    try {
+        const rep = await window.api.libraryFolders();
+        if (rep?.ok) el.textContent = rep.root;
+    } catch {}
 }
 
 function dismissWelcome() {
@@ -3123,16 +3154,9 @@ function wireUI() {
         renderList(getFilteredGames());
     });
 
-    // Refresh — reload the library AND scan every system's folder(s) for new ROMs
-    document.getElementById('btn-refresh-library').addEventListener('click', async () => {
-        const btn = document.getElementById('btn-refresh-library');
-        btn.style.animation = 'spin 0.6s linear infinite';
-        await loadGames();
-        let res = null;
-        try { res = await window.api.rescanNewGames(); } catch (e) {}
-        btn.style.animation = '';
-        await handleRescanResults(res);
-    });
+    // Rescan Library — read the ROMS folder again and make the library match it. The same
+    // scan runs on every launch; this is for after dropping files in with EmuLatte open.
+    document.getElementById('btn-rescan-library').addEventListener('click', () => rescanLibrary());
 
     // Gallery search — debounced so typing doesn't rebuild the whole grid on every keystroke
     wireGalleryDelegation();
@@ -3629,6 +3653,7 @@ function wireUI() {
             name:             document.getElementById('edit-system-name').value.trim(),
             short_name:       document.getElementById('edit-system-short').value.trim(),
             extensions:       document.getElementById('edit-system-extensions').value.trim(),
+            folder:           document.getElementById('edit-system-folder').value.trim(),
             launch_template:  document.getElementById('edit-system-template').value.trim(),
             default_core:     document.getElementById('edit-system-core').value.trim(),
             default_emulator: document.getElementById('edit-system-emulator').value.trim(),
@@ -4490,6 +4515,7 @@ function wireUI() {
             const pane = item.dataset.pane;
             if (pane === 'express') renderExpressSettings();   // load fresh + render the chips on entry
             if (pane === 'omarchy') renderOmarchyPane();       // re-probe on entry, so an install just done in a terminal shows
+            if (pane === 'library')  renderLibraryPane();      // re-read the folders on entry, so a drive just plugged in shows
             document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b === item));
             document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
             document.getElementById('settings-content').scrollTop = 0;
@@ -4497,6 +4523,48 @@ function wireUI() {
     });
     // Manage Systems reachable from the hub (close Settings first so two blurred modals don't stack)
     document.getElementById('btn-settings-manage-systems').addEventListener('click', () => { closeModal('modal-settings'); openSystemsModal(); });
+
+    // ── Settings \u203a Library ──
+    document.getElementById('btn-library-rescan').addEventListener('click', async () => {
+        const st = document.getElementById('library-scan-status');
+        st.textContent = 'Reading the ROMS folder\u2026';
+        const res = await rescanLibrary('btn-library-rescan');
+        st.textContent = scanSummary(res);
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
+    document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
+    document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('roms');
+        if (r?.canceled) return;
+        if (!r?.ok) { showAlert(r?.error || 'That folder could not be used.', 'ROMS folder'); return; }
+        await applyScanResult(r.scan, { quiet: false });
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-set-bios').addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('bios');
+        if (r?.canceled) return;
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-reset-roms').addEventListener('click', async () => {
+        await window.api.resetLibraryRoot('roms');
+        const res = await rescanLibrary('btn-library-reset-roms');
+        document.getElementById('library-scan-status').textContent = scanSummary(res);
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-reset-bios').addEventListener('click', async () => {
+        await window.api.resetLibraryRoot('bios');
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-restore-systems').addEventListener('click', async () => {
+        const r = await window.api.restoreDefaultSystems();
+        if (!r?.ok) { showAlert(r?.error || 'The systems could not be restored.', 'Systems'); return; }
+        await loadSystems();
+        await applyScanResult(r.scan, { quiet: true });
+        document.getElementById('library-scan-status').textContent =
+            r.inserted ? `Brought back ${r.inserted} system${r.inserted !== 1 ? 's' : ''}.` : 'Every system was already here.';
+        renderLibraryPane();
+    });
 
     // About, opened from the CL/EL rail badge. Escape is handled by the global keydown
     // handler below; like the other modals here, the backdrop is not click-to-close.
@@ -4510,6 +4578,13 @@ function wireUI() {
     });
 
     document.getElementById('btn-welcome-done')?.addEventListener('click', dismissWelcome);
+    document.getElementById('btn-welcome-open-roms')?.addEventListener('click', () => window.api.openLibraryFolder('roms'));
+    document.getElementById('btn-welcome-set-roms')?.addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('roms');
+        if (r?.canceled) return;
+        showWelcomeRomsPath();
+        if (r?.ok) await applyScanResult(r.scan, { quiet: false });
+    });
     document.getElementById('btn-welcome-manual')?.addEventListener('click', () => { dismissWelcome(); window.api.openUserManual(); });
 
     document.getElementById('btn-about').addEventListener('click', () => openModal('modal-about'));
@@ -5172,29 +5247,99 @@ function enqueueScrapeIds(ids, source) {
     else runScrapeWorker();
 }
 
-// Refresh rescan → import the new ROMs, then offer to scrape them (source picker).
-async function handleRescanResults(res) {
-    const entries = res?.entries || [];
-    if (!entries.length) {
-        showLaunchToast(res?.folders
-            ? 'Library up to date — no new games found.'
-            : 'No ROM folders to scan yet — add a game or connect your drive first.', null);
-        return;
+// ── SETTINGS \u203a LIBRARY ────────────────────────────────────────────────────
+// Where the folders are, which system reads from which one, and what the BIOS folder is
+// missing. Re-read every time the pane opens, so a drive plugged in a second ago shows up.
+async function renderLibraryPane() {
+    let rep = null;
+    try { rep = await window.api.libraryFolders(); } catch {}
+    if (!rep?.ok) return;
+
+    const romsEl = document.getElementById('library-roms-path');
+    romsEl.textContent = rep.root + (rep.rootExists ? '' : '   (not there right now)');
+    romsEl.style.color = rep.rootExists ? '' : '#ef5350';
+    document.getElementById('btn-library-reset-roms').style.display = rep.isDefaultRoot ? 'none' : '';
+    document.getElementById('library-bios-path').textContent = rep.bios;
+
+    const list = document.getElementById('library-folder-list');
+    list.innerHTML = rep.systems.map(sys => {
+        const extra = sys.extras.length ? ` + ${sys.extras.join(', ')}` : '';
+        const state = sys.games
+            ? `<span style="color:var(--accent); font-weight:900;">${sys.games}</span>`
+            : `<span style="color:var(--text_dim);">empty</span>`;
+        return `<div style="display:flex; align-items:baseline; gap:8px; padding:5px 9px; border-bottom:1px solid var(--border); font-size:11px;">
+            <span style="flex:1 1 auto; color:var(--text_sec);">${escHtml(sys.name)}</span>
+            <code style="color:${sys.exists ? 'var(--text_dim)' : '#ef5350'}; font-size:10px;">${escHtml(sys.folder + extra)}</code>
+            <span style="width:48px; text-align:right;">${state}</span>
+        </div>`;
+    }).join('') || '<div style="padding:10px; font-size:11px; color:var(--text_dim);">No systems.</div>';
+
+    const dis = document.getElementById('library-dismissed');
+    dis.textContent = rep.dismissed.length
+        ? `Deleted and not seeded again: ${rep.dismissed.join(', ')}.`
+        : '';
+
+    const bEl = document.getElementById('library-bios-status');
+    bEl.textContent = 'Checking the BIOS folder\u2026';
+    let bios = null;
+    try { bios = await window.api.biosOverview(); } catch {}
+    if (!bios?.ok) { bEl.textContent = ''; return; }
+    const short = new Map(allSystems.map(sy => [sy.short_name, sy.name]));
+    const need = bios.systems.filter(b => b.missingRequired.length).map(b => short.get(b.short_name) || b.short_name);
+    const have = bios.systems.reduce((n, b) => n + (b.total - b.missing.length), 0);
+    const total = bios.systems.reduce((n, b) => n + b.total, 0);
+    const parts = [];
+    if (bios.pendingImport) parts.push(`Waiting to bring BIOS files across from ${bios.pendingImport} \u2014 that folder is not reachable yet.`);
+    if (!bios.systems.length) parts.push('Nothing in the BIOS database to check.');
+    else {
+        parts.push(`${have} of the ${total} BIOS files EmuLatte knows about are in this folder.`);
+        parts.push(need.length
+            ? `Cannot run without a file that is missing: ${need.slice(0, 10).join(', ')}${need.length > 10 ? `, and ${need.length - 10} more` : ''}.`
+            : 'No system is missing a file it cannot run without.');
     }
-    const newIds = [];
-    for (const e of entries) {
-        let romPath = e.path;
-        if (e.kind === 'multidisc') { const r = await window.api.createM3u({ title: e.title, discs: e.discs }); if (r?.ok) romPath = r.path; }
-        const id = await window.api.addGame({ system_id: e.system_id, title: e.title, rom_path: romPath });
-        if (id) newIds.push(id);
-    }
-    await loadGames();
-    const n = newIds.length;
-    if (!n) return;
+    bEl.textContent = parts.join(' ');
+}
+
+// ── THE LIBRARY SCAN ──────────────────────────────────────────────────────────
+// The scan itself is the main process's job (it runs on every launch, before any face is up).
+// All of this is reporting: reload what changed, say so, and offer to scrape whatever is new.
+let _lastScanSeen = 0;
+
+async function rescanLibrary(btnId = 'btn-rescan-library') {
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.disabled = true; btn.style.animation = 'spin 0.6s linear infinite'; }
+    let res = null;
+    try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
+    if (btn) { btn.disabled = false; btn.style.animation = ''; }
+    await applyScanResult(res, { quiet: false });
+    return res;
+}
+
+function scanSummary(res) {
+    if (!res?.ok) return res?.error || 'The library could not be read.';
+    const bits = [];
+    if (res.added)   bits.push(`Added ${res.added} game${res.added !== 1 ? 's' : ''}`);
+    if (res.removed) bits.push(`removed ${res.removed} whose file had gone`);
+    if (!bits.length) return res.rootExists
+        ? `Library up to date — nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+        : 'The ROMS folder is not there. Settings \u203a Library says where EmuLatte is looking.';
+    const top = (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
+    return bits.join(', ') + '.' + (top ? ` ${top}.` : '');
+}
+
+async function applyScanResult(res, { quiet = false } = {}) {
+    if (!res) return;
+    if (res.at && res.at === _lastScanSeen) return;    // the same scan reaching us twice
+    _lastScanSeen = res.at || Date.now();
+    if (res.added || res.removed) { await loadSystems(); await loadGames(); }
+    const newIds = res.newIds || [];
+    if (!quiet || res.added || res.removed) showLaunchToast(scanSummary(res), null, 'LIBRARY');
+    if (!newIds.length) return;
+    // Anything new has a filename for a title and no art, so offer to fill it in right away.
     _scraperPickerMode = 'batchIds';
     _scrapeBatchIds    = newIds;
     const statusEl = document.getElementById('scraper-picker-status');
-    statusEl.textContent = `Added ${n} new game${n !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
+    statusEl.textContent = `Added ${newIds.length} new game${newIds.length !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
     statusEl.style.color = 'var(--accent)';
     openModal('modal-scraper-picker');
 }

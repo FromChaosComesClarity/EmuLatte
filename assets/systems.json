@@ -2,6 +2,12 @@
   {
     "name": "Nintendo Entertainment System",
     "short_name": "nes",
+    "folder": "nes",
+    "folder_aliases": [
+      "famicom",
+      "nintendo",
+      "nintendoentertainmentsystem"
+    ],
     "extensions": "nes, fds, unf, unif, zip",
     "screenscraper_id": 3,
     "default_core": "nestopia_libretro.so",
@@ -10,6 +16,11 @@
   {
     "name": "Famicom Disk System",
     "short_name": "fds",
+    "folder": "fds",
+    "folder_aliases": [
+      "famicomdisksystem",
+      "fdsystem"
+    ],
     "extensions": "fds, zip",
     "screenscraper_id": 106,
     "default_core": "nestopia_libretro.so",
@@ -18,6 +29,15 @@
   {
     "name": "Super Nintendo",
     "short_name": "snes",
+    "folder": "snes",
+    "folder_aliases": [
+      "sfc",
+      "superfamicom",
+      "supernintendo",
+      "snes-msu1",
+      "satellaview",
+      "sufami"
+    ],
     "extensions": "sfc, smc, fig, bs, swc, zip",
     "screenscraper_id": 4,
     "default_core": "snes9x_libretro.so",
@@ -26,6 +46,11 @@
   {
     "name": "Nintendo 64",
     "short_name": "n64",
+    "folder": "n64",
+    "folder_aliases": [
+      "nintendo64",
+      "n64dd"
+    ],
     "extensions": "n64, z64, v64, zip",
     "screenscraper_id": 14,
     "default_core": "mupen64plus_next_libretro.so",
@@ -34,6 +59,12 @@
   {
     "name": "Nintendo GameCube",
     "short_name": "gc",
+    "folder": "gc",
+    "folder_aliases": [
+      "gamecube",
+      "ngc",
+      "nintendogamecube"
+    ],
     "extensions": "iso, gcm, gcz, rvz, wia, zip",
     "screenscraper_id": 13,
     "default_core": "dolphin_libretro.so",
@@ -42,6 +73,11 @@
   {
     "name": "Nintendo Wii",
     "short_name": "wii",
+    "folder": "wii",
+    "folder_aliases": [
+      "nintendowii",
+      "wiiu"
+    ],
     "extensions": "iso, rvz, wbfs, wad, wia, zip",
     "screenscraper_id": 16,
     "default_core": "dolphin_libretro.so",
@@ -50,6 +86,11 @@
   {
     "name": "Game Boy",
     "short_name": "gb",
+    "folder": "gb",
+    "folder_aliases": [
+      "gameboy",
+      "gameboyh"
+    ],
     "extensions": "gb, sgb, zip",
     "screenscraper_id": 9,
     "default_core": "gambatte_libretro.so",
@@ -58,6 +99,11 @@
   {
     "name": "Game Boy Color",
     "short_name": "gbc",
+    "folder": "gbc",
+    "folder_aliases": [
+      "gameboycolor",
+      "gbch"
+    ],
     "extensions": "gbc, gb, sgb, zip",
     "screenscraper_id": 10,
     "default_core": "gambatte_libretro.so",
@@ -66,6 +112,11 @@
   {
     "name": "Game Boy Advance",
     "short_name": "gba",
+    "folder": "gba",
+    "folder_aliases": [
+      "gameboyadvance",
+      "gbah"
+    ],
     "extensions": "gba, agb, gbz, zip",
     "screenscraper_id": 12,
     "default_core": "mgba_libretro.so",
@@ -74,6 +125,12 @@
   {
     "name": "Nintendo DS",
     "short_name": "nds",
+    "folder": "nds",
+    "folder_aliases": [
+      "ds",
+      "nintendods",
+      "dsi"
+    ],
     "extensions": "nds, dsi, zip",
     "screenscraper_id": 15,
     "default_core": "desmume_libretro.so",
@@ -82,6 +139,11 @@
   {
     "name": "Nintendo 3DS",
     "short_name": "3ds",
+    "folder": "n3ds",
+    "folder_aliases": [
+      "3ds",
+      "nintendo3ds"
+    ],
     "extensions": "3ds, 3dsx, cia, cxi, zip",
     "screenscraper_id": 17,
     "default_core": "citra_libretro.so",
@@ -90,6 +152,11 @@
   {
     "name": "Virtual Boy",
     "short_name": "vb",
+    "folder": "virtualboy",
+    "folder_aliases": [
+      "vb",
+      "virtual-boy"
+    ],
     "extensions": "vb, vboy, zip",
     "screenscraper_id": 11,
     "default_core": "mednafen_vb_libretro.so",
@@ -98,6 +165,12 @@
   {
     "name": "Sega Master System",
     "short_name": "sms",
+    "folder": "mastersystem",
+    "folder_aliases": [
+      "sms",
+      "segamastersystem",
+      "mastersystemh"
+    ],
     "extensions": "sms, sg, sc, zip",
     "screenscraper_id": 2,
     "default_core": "genesis_plus_gx_libretro.so",
@@ -106,6 +179,16 @@
   {
     "name": "Sega Mega Drive / Genesis",
     "short_name": "genesis",
+    "folder": "megadrive",
+    "folder_aliases": [
+      "genesis",
+      "segagenesis",
+      "md",
+      "megadrive-japan",
+      "megadrivejp",
+      "genh",
+      "megadriveh"
+    ],
     "extensions": "md, bin, smd, gen, 32x, zip",
     "screenscraper_id": 1,
     "default_core": "genesis_plus_gx_libretro.so",
@@ -114,6 +197,12 @@
   {
     "name": "Sega 32X",
     "short_name": "32x",
+    "folder": "sega32x",
+    "folder_aliases": [
+      "32x",
+      "sega32xh",
+      "sega32xjp"
+    ],
     "extensions": "32x, bin, smd, zip",
     "screenscraper_id": 19,
     "default_core": "picodrive_libretro.so",
@@ -122,6 +211,12 @@
   {
     "name": "Sega CD / Mega CD",
     "short_name": "segacd",
+    "folder": "segacd",
+    "folder_aliases": [
+      "megacd",
+      "megacdjp",
+      "segacdh"
+    ],
     "extensions": "iso, bin, cue, img, chd, zip, m3u",
     "screenscraper_id": 20,
     "default_core": "genesis_plus_gx_libretro.so",
@@ -130,6 +225,11 @@
   {
     "name": "Sega Saturn",
     "short_name": "saturn",
+    "folder": "saturn",
+    "folder_aliases": [
+      "segasaturn",
+      "saturnjp"
+    ],
     "extensions": "iso, bin, cue, img, chd, mds, zip, m3u",
     "screenscraper_id": 22,
     "default_core": "mednafen_saturn_libretro.so",
@@ -138,6 +238,11 @@
   {
     "name": "Sega Dreamcast",
     "short_name": "dc",
+    "folder": "dreamcast",
+    "folder_aliases": [
+      "dc",
+      "segadreamcast"
+    ],
     "extensions": "cdi, gdi, chd, iso, zip, m3u",
     "screenscraper_id": 23,
     "default_core": "flycast_libretro.so",
@@ -146,6 +251,11 @@
   {
     "name": "Game Gear",
     "short_name": "gg",
+    "folder": "gamegear",
+    "folder_aliases": [
+      "gg",
+      "segagamegear"
+    ],
     "extensions": "gg, zip",
     "screenscraper_id": 21,
     "default_core": "genesis_plus_gx_libretro.so",
@@ -154,6 +264,11 @@
   {
     "name": "SG-1000",
     "short_name": "sg1000",
+    "folder": "sg-1000",
+    "folder_aliases": [
+      "sg1000",
+      "segasg1000"
+    ],
     "extensions": "sg, sc, sms, zip",
     "screenscraper_id": 109,
     "default_core": "genesis_plus_gx_libretro.so",
@@ -162,6 +277,12 @@
   {
     "name": "Sony PlayStation",
     "short_name": "ps1",
+    "folder": "psx",
+    "folder_aliases": [
+      "ps1",
+      "playstation",
+      "sonyplaystation"
+    ],
     "extensions": "bin, cue, iso, img, chd, pbp, ecm, mds, zip, m3u",
     "screenscraper_id": 57,
     "default_core": "pcsx_rearmed_libretro.so",
@@ -170,6 +291,11 @@
   {
     "name": "Sony PlayStation 2",
     "short_name": "ps2",
+    "folder": "ps2",
+    "folder_aliases": [
+      "playstation2",
+      "sonyplaystation2"
+    ],
     "extensions": "iso, bin, img, mdf, chd, zip, m3u",
     "screenscraper_id": 58,
     "default_core": "pcsx2_libretro.so",
@@ -178,6 +304,11 @@
   {
     "name": "PlayStation Portable",
     "short_name": "psp",
+    "folder": "psp",
+    "folder_aliases": [
+      "playstationportable",
+      "pspminis"
+    ],
     "extensions": "iso, cso, pbp, elf, zip",
     "screenscraper_id": 61,
     "default_core": "ppsspp_libretro.so",
@@ -186,6 +317,11 @@
   {
     "name": "PlayStation Vita",
     "short_name": "vita",
+    "folder": "psvita",
+    "folder_aliases": [
+      "vita",
+      "playstationvita"
+    ],
     "extensions": "vpk, zip",
     "screenscraper_id": 62,
     "default_core": "",
@@ -194,6 +330,12 @@
   {
     "name": "Atari 2600",
     "short_name": "a2600",
+    "folder": "atari2600",
+    "folder_aliases": [
+      "2600",
+      "a2600",
+      "vcs"
+    ],
     "extensions": "a26, bin, rom, zip",
     "screenscraper_id": 26,
     "default_core": "stella_libretro.so",
@@ -202,6 +344,11 @@
   {
     "name": "Atari 5200",
     "short_name": "a5200",
+    "folder": "atari5200",
+    "folder_aliases": [
+      "5200",
+      "a5200"
+    ],
     "extensions": "a52, bin, rom, car, atr, xex, zip",
     "screenscraper_id": 40,
     "default_core": "a5200_libretro.so",
@@ -210,6 +357,11 @@
   {
     "name": "Atari 7800",
     "short_name": "a7800",
+    "folder": "atari7800",
+    "folder_aliases": [
+      "7800",
+      "a7800"
+    ],
     "extensions": "a78, bin, zip",
     "screenscraper_id": 41,
     "default_core": "prosystem_libretro.so",
@@ -218,6 +370,10 @@
   {
     "name": "Atari Lynx",
     "short_name": "lynx",
+    "folder": "atarilynx",
+    "folder_aliases": [
+      "lynx"
+    ],
     "extensions": "lnx, o, zip",
     "screenscraper_id": 28,
     "default_core": "handy_libretro.so",
@@ -226,6 +382,12 @@
   {
     "name": "Atari Jaguar",
     "short_name": "jaguar",
+    "folder": "atarijaguar",
+    "folder_aliases": [
+      "jaguar",
+      "atarijaguarcd",
+      "jaguarcd"
+    ],
     "extensions": "j64, jag, abs, cof, rom, bin, zip",
     "screenscraper_id": 27,
     "default_core": "virtualjaguar_libretro.so",
@@ -234,6 +396,11 @@
   {
     "name": "Atari ST",
     "short_name": "atarist",
+    "folder": "atarist",
+    "folder_aliases": [
+      "st",
+      "atari-st"
+    ],
     "extensions": "st, stx, msa, img, zip",
     "screenscraper_id": 42,
     "default_core": "hatari_libretro.so",
@@ -242,6 +409,14 @@
   {
     "name": "NEC PC Engine / TurboGrafx-16",
     "short_name": "pce",
+    "folder": "tg16",
+    "folder_aliases": [
+      "pcengine",
+      "pce",
+      "turbografx16",
+      "turbografx",
+      "pc-engine"
+    ],
     "extensions": "pce, sgx, zip",
     "screenscraper_id": 31,
     "default_core": "mednafen_pce_fast_libretro.so",
@@ -250,6 +425,13 @@
   {
     "name": "PC Engine CD / TurboGrafx-CD",
     "short_name": "pcecd",
+    "folder": "tg-cd",
+    "folder_aliases": [
+      "pcenginecd",
+      "pcecd",
+      "turbografxcd",
+      "pcengine-cd"
+    ],
     "extensions": "cue, ccd, iso, img, chd, zip, m3u",
     "screenscraper_id": 114,
     "default_core": "mednafen_pce_fast_libretro.so",
@@ -258,6 +440,11 @@
   {
     "name": "SuperGrafx",
     "short_name": "sgfx",
+    "folder": "supergrafx",
+    "folder_aliases": [
+      "sgfx",
+      "pcenginesupergrafx"
+    ],
     "extensions": "pce, zip",
     "screenscraper_id": 105,
     "default_core": "mednafen_supergrafx_libretro.so",
@@ -266,6 +453,10 @@
   {
     "name": "PC-FX",
     "short_name": "pcfx",
+    "folder": "pcfx",
+    "folder_aliases": [
+      "pc-fx"
+    ],
     "extensions": "pcfx, img, iso, zip, m3u",
     "screenscraper_id": 72,
     "default_core": "mednafen_pcfx_libretro.so",
@@ -274,6 +465,12 @@
   {
     "name": "Neo Geo AES",
     "short_name": "neogeo",
+    "folder": "neogeo",
+    "folder_aliases": [
+      "neo-geo",
+      "neogeoaes",
+      "neogeomvs"
+    ],
     "extensions": "neo, zip, 7z",
     "screenscraper_id": 142,
     "default_core": "fbalpha2012_neogeo_libretro.so",
@@ -282,6 +479,12 @@
   {
     "name": "Neo Geo CD",
     "short_name": "neocd",
+    "folder": "neogeocd",
+    "folder_aliases": [
+      "neocd",
+      "neogeo-cd",
+      "neogeocdjp"
+    ],
     "extensions": "cue, iso, chd, zip, m3u",
     "screenscraper_id": 70,
     "default_core": "neocd_libretro.so",
@@ -290,6 +493,10 @@
   {
     "name": "Neo Geo Pocket",
     "short_name": "ngp",
+    "folder": "ngp",
+    "folder_aliases": [
+      "neogeopocket"
+    ],
     "extensions": "ngp, ngc, zip",
     "screenscraper_id": 25,
     "default_core": "mednafen_ngp_libretro.so",
@@ -298,6 +505,10 @@
   {
     "name": "Neo Geo Pocket Color",
     "short_name": "ngpc",
+    "folder": "ngpc",
+    "folder_aliases": [
+      "neogeopocketcolor"
+    ],
     "extensions": "ngc, ngp, zip",
     "screenscraper_id": 82,
     "default_core": "mednafen_ngp_libretro.so",
@@ -306,6 +517,12 @@
   {
     "name": "Commodore 64",
     "short_name": "c64",
+    "folder": "c64",
+    "folder_aliases": [
+      "commodore64",
+      "vic20",
+      "c128"
+    ],
     "extensions": "d64, t64, prg, g64, p00, crt, zip",
     "screenscraper_id": null,
     "default_core": "vice_x64_libretro.so",
@@ -314,6 +531,14 @@
   {
     "name": "Commodore Amiga",
     "short_name": "amiga",
+    "folder": "amiga",
+    "folder_aliases": [
+      "amiga500",
+      "amiga1200",
+      "amigacd32",
+      "amigacdtv",
+      "commodoreamiga"
+    ],
     "extensions": "adf, adz, dms, fdi, ipf, hdf, lha, zip",
     "screenscraper_id": 64,
     "default_core": "puae_libretro.so",
@@ -322,6 +547,11 @@
   {
     "name": "Amstrad CPC",
     "short_name": "cpc",
+    "folder": "cpc",
+    "folder_aliases": [
+      "amstradcpc",
+      "gx4000"
+    ],
     "extensions": "cpc, dsk, sna, tap, cdt, zip",
     "screenscraper_id": 65,
     "default_core": "crocods_libretro.so",
@@ -330,6 +560,12 @@
   {
     "name": "ZX Spectrum",
     "short_name": "zxs",
+    "folder": "zxspectrum",
+    "folder_aliases": [
+      "spectrum",
+      "zxs",
+      "zx-spectrum"
+    ],
     "extensions": "tzx, tap, z80, rzx, scl, trd, dsk, zip",
     "screenscraper_id": 76,
     "default_core": "fuse_libretro.so",
@@ -338,6 +574,10 @@
   {
     "name": "MSX",
     "short_name": "msx",
+    "folder": "msx",
+    "folder_aliases": [
+      "msx1"
+    ],
     "extensions": "rom, ri, mx1, col, dsk, cas, zip",
     "screenscraper_id": null,
     "default_core": "bluemsx_libretro.so",
@@ -346,6 +586,11 @@
   {
     "name": "MSX2",
     "short_name": "msx2",
+    "folder": "msx2",
+    "folder_aliases": [
+      "msx2+",
+      "msxturbor"
+    ],
     "extensions": "rom, ri, mx2, col, dsk, cas, zip",
     "screenscraper_id": null,
     "default_core": "bluemsx_libretro.so",
@@ -354,6 +599,11 @@
   {
     "name": "ColecoVision",
     "short_name": "coleco",
+    "folder": "colecovision",
+    "folder_aliases": [
+      "coleco",
+      "colecoadam"
+    ],
     "extensions": "col, bin, rom, zip",
     "screenscraper_id": 48,
     "default_core": "bluemsx_libretro.so",
@@ -362,6 +612,10 @@
   {
     "name": "Intellivision",
     "short_name": "intv",
+    "folder": "intellivision",
+    "folder_aliases": [
+      "intv"
+    ],
     "extensions": "int, bin, rom, zip",
     "screenscraper_id": null,
     "default_core": "freeintv_libretro.so",
@@ -370,6 +624,11 @@
   {
     "name": "3DO",
     "short_name": "3do",
+    "folder": "3do",
+    "folder_aliases": [
+      "panasonic3do",
+      "3do-interactive"
+    ],
     "extensions": "iso, bin, cue, chd, zip, m3u",
     "screenscraper_id": 29,
     "default_core": "opera_libretro.so",
@@ -378,6 +637,11 @@
   {
     "name": "Wonderswan",
     "short_name": "ws",
+    "folder": "wonderswan",
+    "folder_aliases": [
+      "ws",
+      "wonderswanh"
+    ],
     "extensions": "ws, zip",
     "screenscraper_id": 45,
     "default_core": "mednafen_wswan_libretro.so",
@@ -386,6 +650,11 @@
   {
     "name": "Wonderswan Color",
     "short_name": "wsc",
+    "folder": "wonderswancolor",
+    "folder_aliases": [
+      "wsc",
+      "wonderswancolorh"
+    ],
     "extensions": "wsc, zip",
     "screenscraper_id": 46,
     "default_core": "mednafen_wswan_libretro.so",
@@ -394,6 +663,10 @@
   {
     "name": "Vectrex",
     "short_name": "vectrex",
+    "folder": "vectrex",
+    "folder_aliases": [
+      "gcevectrex"
+    ],
     "extensions": "vec, gam, bin, rom, zip",
     "screenscraper_id": 102,
     "default_core": "vecx_libretro.so",
@@ -402,6 +675,15 @@
   {
     "name": "Arcade (MAME)",
     "short_name": "mame",
+    "folder": "arcade",
+    "folder_aliases": [
+      "mame",
+      "mame-current",
+      "mame2003",
+      "mame2010",
+      "mame2016",
+      "mamemerged"
+    ],
     "extensions": "zip, 7z, chd",
     "screenscraper_id": 75,
     "default_core": "mame_libretro.so",
@@ -410,6 +692,13 @@
   {
     "name": "Arcade (FinalBurn Neo)",
     "short_name": "fbn",
+    "folder": "fbneo",
+    "folder_aliases": [
+      "fba",
+      "fbn",
+      "finalburnneo",
+      "fba_libretro"
+    ],
     "extensions": "zip, 7z",
     "screenscraper_id": 75,
     "default_core": "fbneo_libretro.so",
@@ -418,6 +707,12 @@
   {
     "name": "DOS / PC",
     "short_name": "dos",
+    "folder": "dos",
+    "folder_aliases": [
+      "msdos",
+      "pc",
+      "dosbox"
+    ],
     "extensions": "exe, com, bat, conf, zip",
     "screenscraper_id": 135,
     "default_core": "dosbox_pure_libretro.so",
@@ -426,6 +721,11 @@
   {
     "name": "PlayStation 3",
     "short_name": "ps3",
+    "folder": "ps3",
+    "folder_aliases": [
+      "playstation3",
+      "sonyplaystation3"
+    ],
     "extensions": "pkg, iso, bin, zip",
     "screenscraper_id": 59,
     "default_core": "",
@@ -434,6 +734,11 @@
   {
     "name": "Nintendo Switch",
     "short_name": "switch",
+    "folder": "switch",
+    "folder_aliases": [
+      "nintendoswitch",
+      "nswitch"
+    ],
     "extensions": "nsp, xci, zip",
     "screenscraper_id": null,
     "default_core": "",
@@ -442,6 +747,11 @@
   {
     "name": "ScummVM",
     "short_name": "scummvm",
+    "folder": "scummvm",
+    "folder_aliases": [
+      "scumm",
+      "scummvmwin"
+    ],
     "extensions": "scummvm",
     "screenscraper_id": 123,
     "default_core": "scummvm_libretro.so",

@@ -41,8 +41,17 @@ contextBridge.exposeInMainWorld('api', {
     selectFile:      (filters) => ipcRenderer.invoke('select-file', filters),
     selectDirectory: ()        => ipcRenderer.invoke('select-directory'),
     scanRomFolder:   (p, exts) => ipcRenderer.invoke('scan-rom-folder', p, exts),
-    rescanNewGames:  ()        => ipcRenderer.invoke('rescan-new-games'),
     createM3u:       (payload) => ipcRenderer.invoke('create-m3u', payload),
+
+    // ── The library is the ROMS folder ──
+    scanLibrary:         (opts)  => ipcRenderer.invoke('scan-library', opts),
+    getLastScan:         ()      => ipcRenderer.invoke('get-last-scan'),
+    onLibraryScanned:    (cb)    => ipcRenderer.on('library-scanned', (_, d) => cb(d)),
+    libraryFolders:      ()      => ipcRenderer.invoke('library-folders'),
+    openLibraryFolder:   (which) => ipcRenderer.invoke('open-library-folder', which),
+    setLibraryRoot:      (which) => ipcRenderer.invoke('set-library-root', which),
+    resetLibraryRoot:    (which) => ipcRenderer.invoke('reset-library-root', which),
+    restoreDefaultSystems: ()    => ipcRenderer.invoke('restore-default-systems'),
     repairDiscRefsGame:   (id) => ipcRenderer.invoke('repair-disc-refs-game', id),
     repairDiscRefsSystem: (id) => ipcRenderer.invoke('repair-disc-refs-system', id),
 
@@ -149,6 +158,7 @@ contextBridge.exposeInMainWorld('api', {
     // System presets
     getSystemPresets: () => ipcRenderer.invoke('get-system-presets'),
     biosStatus:     (short)       => ipcRenderer.invoke('bios-status', short),
+    biosOverview:   ()            => ipcRenderer.invoke('bios-overview'),
     biosAddFile:    (short, file) => ipcRenderer.invoke('bios-add-file', short, file),
     biosScanFolder: ()            => ipcRenderer.invoke('bios-scan-folder'),
 

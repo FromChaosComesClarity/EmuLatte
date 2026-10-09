@@ -8,9 +8,10 @@
  * a *lookup*, never a guess.
  *
  * ⚠️ That is not a hypothetical. EmuLatte keeps its database beside the AppImage
- * (`<baseDir>/GameManagerConfig/EmuLatte/emulatte.db`), not under ~/.config or the Electron
- * userData directory, so a consumer deriving "the obvious path" gets it wrong on every
- * machine rather than most of them. The app publishes the real answer instead.
+ * (`<baseDir>/Emulatte_Stuff/emulatte.db`), not under ~/.config or the Electron userData
+ * directory, and that folder moved once already, so a consumer deriving "the obvious path"
+ * gets it wrong on every machine rather than most of them. The app publishes the real
+ * answer instead.
  *
  * So every start rewrites ~/.config/emulatte/desktop.json, and anything on the desktop that
  * wants to talk to EmuLatte reads it there.
@@ -107,7 +108,7 @@ function writeDescriptor(patch) {
 /*
  * Called once per start with everything main.js has already resolved.
  */
-function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecutable, appImagePath, gameClasses }) {
+function publish({ version, baseDir, configDir, libraryDb, imagesDir, romsDir, biosDir, selfExecutable, appImagePath, gameClasses }) {
     return writeDescriptor({
         version: version || null,
         exec: appExecutable(baseDir, selfExecutable, appImagePath),
@@ -121,6 +122,10 @@ function publish({ version, baseDir, configDir, libraryDb, imagesDir, selfExecut
         configDir: configDir || null,
         libraryDb: libraryDb || null,
         imagesDir: imagesDir || null,
+        // The folders the library is read from. Configurable, so a consumer that wants to drop a
+        // ROM in has to be told where rather than assuming it is beside the database.
+        romsDir: romsDir || null,
+        biosDir: biosDir || null,
         // The window classes an emulator launched from here arrives under, seeded and learned.
         // A widget asking "is a game running" reads this rather than keeping its own copy.
         gameClasses: Array.isArray(gameClasses) ? gameClasses : [],

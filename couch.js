@@ -94,8 +94,23 @@ async function init() {
     applyStartMode();   // reflect the remembered carousel/tiles view
     resetIdle();
     couchReady = true;
+    window.api.getLastScan?.().then(couchApplyScan).catch(() => {});
     window.api.signalReady?.();   // releases a --game=<id> that arrived before the library loaded (start-in-couch)
 }
+
+// The launch scan runs in the main process, so Couch Mode can be the face that is up when it
+// lands. Take the library it produced rather than the one loaded a moment earlier.
+let _couchScanSeen = 0;
+async function couchApplyScan(res) {
+    if (!res?.ok || (res.at && res.at === _couchScanSeen)) return;
+    _couchScanSeen = res.at || Date.now();
+    if (!res.added && !res.removed) return;
+    [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+    gamesById = new Map(games.map(g => [g.id, g]));
+    buildCategories();
+    renderCarousel(); renderTiles();
+}
+window.api.onLibraryScanned?.(res => { if (couchReady) couchApplyScan(res); });
 
 // Opened with --game=<id> while Couch Mode is up. Stay in Couch Mode — the user is across the
 // room with a pad — and just navigate to the couch game page rather than dropping them onto the
@@ -361,9 +376,40 @@ function overlayMove(dir) {
     let p = sel.indexOf(overlayIndex); if (p < 0) p = 0;
     overlayIndex = sel[(p + dir + sel.length) % sel.length]; highlightOverlay();
 }
-async function openMenu() {
+async function openMenu(hint) {
     menuOpen = true; menuMode = 'main';
-    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode']);
+    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§LIBRARY', 'Rescan Library', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode'], hint);
+}
+
+// ── RESCAN FROM THE COUCH ────────────────────────────────────────────────────
+// The same scan the desktop face and every launch run: read the ROMS folder, make the library
+// match it. Reported back into the menu's own hint line, since there is no cursor out here.
+async function rescanFromMenu() {
+    const i = overlayItems.findIndex(t => String(t) === 'Rescan Library');
+    const row = $('ov-' + i);
+    if (row) row.textContent = 'Rescanning\u2026';
+    let res = null;
+    try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
+    let msg;
+    if (!res?.ok) msg = res?.error || 'The library could not be read.';
+    else if (!res.added && !res.removed) msg = res.rootExists
+        ? `Library up to date \u2014 nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+        : 'The ROMS folder is not there. Set it from the desktop face, in Settings \u203a Library.';
+    else {
+        const bits = [];
+        if (res.added)   bits.push(`added ${res.added}`);
+        if (res.removed) bits.push(`removed ${res.removed}`);
+        msg = `Library ${bits.join(', ')}. ` + (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
+    }
+    if (res?.added || res?.removed) {
+        [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+        gamesById = new Map(games.map(g => [g.id, g]));
+        buildCategories();
+        renderCarousel(); renderTiles();
+    }
+    await openMenu(msg);
+    const back = overlayItems.findIndex(t => String(t) === 'Rescan Library');
+    if (back >= 0) { overlayIndex = back; highlightOverlay(); }
 }
 function closeMenu() { menuOpen = false; $('overlay-backdrop').classList.add('hidden'); }
 let _themeCat = null;
@@ -615,6 +661,7 @@ async function overlayConfirm() {
         else if (raw === 'Sound') openSoundMenu();
         else if (raw === 'Gamepad Icons') openLayoutMenu();
         else if (raw === 'Return Combo') openComboMenu();
+        else if (raw === 'Rescan Library') rescanFromMenu();
         else if (raw === 'RetroArch Simple Setup') openRssMenu();
         else if (raw === 'Manage Save States') openSaveMgr();
         else if (raw === 'Close Menu') closeMenu();

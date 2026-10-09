@@ -8,3 +8,6 @@ assets/bin/
 assets/ss_dev.json
 assets/ss_dev.dat
 GameManagerConfig/
+
+# The data folder a dev run writes beside the checkout
+Emulatte_Stuff/
