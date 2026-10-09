@@ -160,6 +160,40 @@ ok(fs.existsSync(path.join(newHome, 'emulatte.db')) && fs.existsSync(path.join(n
 ok(!fs.existsSync(legacy), 'the old folder is gone');
 ok(romLib.migrateHomeOnDisk(b2, newHome).moved === false, 'a second run does nothing');
 
+// ⚠️ The sibling app's folder is NOT ours. Only the EmuLatte sub-folder inside it may move;
+// GameManagerConfig itself, and everything else in it, has to come out untouched.
+const b3 = fs.mkdtempSync(path.join(os.tmpdir(), 'el-sibling-'));
+const gmc = path.join(b3, 'GameManagerConfig');
+fs.mkdirSync(path.join(gmc, 'EmuLatte'), { recursive: true });
+fs.mkdirSync(path.join(gmc, 'images', 'covers'), { recursive: true });
+fs.mkdirSync(path.join(gmc, 'couch_wallpapers'), { recursive: true });
+fs.writeFileSync(path.join(gmc, 'games.db'), 'SIBLING-LIBRARY');
+fs.writeFileSync(path.join(gmc, 'audio.json'), '{"vol":1}');
+fs.writeFileSync(path.join(gmc, 'images', 'covers', 'theirs.jpg'), 'THEIR-COVER');
+fs.writeFileSync(path.join(gmc, 'couch_wallpapers', 'wall.jpg'), 'THEIR-WALL');
+fs.writeFileSync(path.join(gmc, 'EmuLatte', 'emulatte.db'), 'OUR-DB');
+const fingerprint = (dir) => {
+    const out = [];
+    (function walk(d, rel) {
+        for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+            const r = rel ? rel + '/' + e.name : e.name;
+            if (r === 'EmuLatte' || r.startsWith('EmuLatte/')) continue;   // ours, it is allowed to move
+            if (e.isDirectory()) { out.push('d ' + r); walk(path.join(d, e.name), r); }
+            else out.push('f ' + r + ' = ' + fs.readFileSync(path.join(d, e.name), 'utf8'));
+        }
+    })(dir, '');
+    return out.join('\n');
+};
+const before3 = fingerprint(gmc);
+romLib.migrateHomeOnDisk(b3, path.join(b3, 'Emulatte_Stuff'), () => {});
+ok(fs.existsSync(gmc) && fs.statSync(gmc).isDirectory(), 'GameManagerConfig is still there, still a directory');
+ok(fingerprint(gmc) === before3, "nothing of the sibling app's changed", { before: before3, after: fingerprint(gmc) });
+ok(!fs.existsSync(path.join(gmc, 'EmuLatte')), 'only the EmuLatte sub-folder moved out');
+ok(fs.readFileSync(path.join(b3, 'Emulatte_Stuff', 'emulatte.db'), 'utf8') === 'OUR-DB', 'and it arrived intact');
+ok(fs.readFileSync(path.join(gmc, 'games.db'), 'utf8') === 'SIBLING-LIBRARY', "the sibling's database is byte-for-byte untouched");
+ok(!fs.existsSync(path.join(b3, 'GameManagerConfig.moved-to-Emulatte_Stuff')), 'the parent folder is never given a moved marker');
+fs.rmSync(b3, { recursive: true, force: true });
+
 const db2 = new Database(path.join(b2, 't.db'));
 db2.prepare('CREATE TABLE games (id INTEGER PRIMARY KEY, rom_path TEXT)').run();
 db2.prepare('INSERT INTO games (id, rom_path) VALUES (1, ?)').run('/home/x/Games/CNGM/GameManagerConfig/EmuLatte/playlists/shenmue2.m3u');

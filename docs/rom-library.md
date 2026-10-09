@@ -83,8 +83,16 @@ it, never for RetroArch's own default folder.
 
 ## Moving home, once
 
-`migrateHomeOnDisk()` runs before the database is opened and renames
-`GameManagerConfig/EmuLatte` to `Emulatte_Stuff` (falling back to a copy across filesystems).
+`migrateHomeOnDisk()` runs before the database is opened and renames the **`EmuLatte`
+sub-folder** out of `GameManagerConfig/` to `Emulatte_Stuff`, beside the binary.
+
+⚠️ **`GameManagerConfig/` itself is never touched** — not renamed, not moved, not deleted. It is
+the sibling app's folder and its library lives in it. The only path this code mutates is
+`<baseDir>/GameManagerConfig/EmuLatte`; the cross-filesystem fallback copies that sub-folder and
+renames *it* to `EmuLatte.moved-to-Emulatte_Stuff`, still inside the parent. There is no
+`rmSync`, `rmdirSync` or `unlinkSync` anywhere near either folder. Verified against a sandbox
+mirroring a real `GameManagerConfig`: after the move, all 41 tree entries were still present,
+all 30 files byte-for-byte identical, and `games.db` still opened with its 883 games.
 `migrateHomeInDb()` then re-points the paths that pointed inside the old home: generated `.m3u`
 `rom_path`s and path keys in the owned RetroArch config. It matches on the
 `GameManagerConfig/EmuLatte` **segment** rather than one absolute prefix, so a folder that moved
@@ -111,7 +119,7 @@ new folder, so an old backup restores into a current install), and the sibling a
 
 ## Tests
 
-`npm test` → `scripts/test-rom-library.js`: 45 checks over seeding, folder creation, the scanner
+`npm test` → `scripts/test-rom-library.js`: 51 checks over seeding, folder creation, the scanner
 (standalone `.bin`, suppressed tracks, multi-disc grouping, alias folders, sub-folders,
 idempotence), pruning and its safety rules, dismissal, BIOS filing and status, the folder report,
 and both halves of the move.
