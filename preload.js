@@ -32,6 +32,9 @@ contextBridge.exposeInMainWorld('api', {
 
     // Settings
     getSetting: (k)    => ipcRenderer.invoke('get-setting', k),
+    reportSections: (prefs)         => ipcRenderer.invoke('report-sections', prefs),
+    reportPreview:  (prefs)         => ipcRenderer.invoke('report-preview', prefs),
+    reportExport:   (prefs, format) => ipcRenderer.invoke('report-export', prefs, format),
     setSetting: (k, v) => ipcRenderer.invoke('set-setting', k, v),
 
     // File / folder pickers
