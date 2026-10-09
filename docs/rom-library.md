@@ -218,6 +218,48 @@ the same reason the BIOS folder is: `/usr/share/libretro/shaders` is root-owned,
 be downloaded into it, and it belongs to the host. The Ready to play card offers to fetch
 libretro's slang pack into EmuLatte's own folder when it is empty.
 
+## Where the picture lands
+
+RetroArch's native Wayland path puts the viewport in the wrong place when the output uses a
+**fractional** scale. Measured with `grim` and a pixel count on a 3440x1440 monitor at scale
+1.25, Master System content:
+
+| | picture | padding L/R |
+|---|---|---|
+| native Wayland | 2661x1440 | 779 / **0** (runs off the right edge) |
+| XWayland | 2194x1440 | 623 / 623 (centred) |
+
+The compositor places the window correctly either way (2752x1152 logical, the full monitor), so
+this is inside RetroArch, and no combination of fullscreen mode, aspect index or hand-computed
+custom viewport changes it. So the emulator is launched through XWayland, but **only when a
+fractional scale is actually in use** and only when there is an X display to use. An
+integer-scaled session renders correctly on Wayland natively, which is the better path. It
+costs nothing measurable: 57.6 fps against 57.9.
+
+⚠️ Switching toolkit backends means switching **all** of them. Omarchy exports
+`GDK_BACKEND=wayland` for the whole session, so dropping `WAYLAND_DISPLAY` on its own leaves
+GTK pointed at a Wayland display that no longer has a name: `cannot open display: :0`, and the
+emulator exits before drawing a frame. `emulatorEnv()` sets `GDK_BACKEND`, `QT_QPA_PLATFORM`,
+`SDL_VIDEODRIVER`, `CLUTTER_BACKEND` and `XDG_SESSION_TYPE` together, and bails out entirely if
+`DISPLAY` is unset.
+
+⚠️ This is the **emulator child process** only. Relaunching EmuLatte itself under XWayland was
+tried and abandoned as fragile with the AppImage runtime (see `docs/omarchy-plan.md`). One
+spawned process with a coherent environment is a different proposition.
+
+`aspect_ratio_index = 22` ("core provided") is seeded too: left unset, RetroArch stretched a
+Master System across the whole ultrawide. 22 means the core says what shape it is and RetroArch
+fits the largest copy of that shape on the screen, centred, with `video_scale_integer = false`
+so it fills rather than leaving bars for an integer multiple.
+
+### Measuring this honestly
+
+Two different quick scripts gave two different answers here, and both were wrong once: a
+centre-row scan is fooled by a dark title screen, and a whole-image bounding box is fooled by a
+single on-screen notification in a corner. What settled it was printing a **column occupancy
+profile** of the screenshot and reading it. Any future claim about where the picture sits
+should be made the same way, not from a glance at a screenshot.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

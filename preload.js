@@ -160,6 +160,9 @@ contextBridge.exposeInMainWorld('api', {
     biosStatus:     (short)       => ipcRenderer.invoke('bios-status', short),
     biosOverview:   ()            => ipcRenderer.invoke('bios-overview'),
     playReadiness:  ()            => ipcRenderer.invoke('play-readiness'),
+    installToMenu:     ()         => ipcRenderer.invoke('install-to-menu'),
+    removeFromMenu:    ()         => ipcRenderer.invoke('remove-from-menu'),
+    menuEntriesPresent:()         => ipcRenderer.invoke('menu-entries-present'),
     biosAddFile:    (short, file) => ipcRenderer.invoke('bios-add-file', short, file),
     biosScanFolder: ()            => ipcRenderer.invoke('bios-scan-folder'),
 

@@ -673,8 +673,55 @@ function endGameSession() {
  * optional either, spawn reports a failure asynchronously, so a try/catch alone would let an
  * unhandled 'error' event take the whole app down.
  */
+// ── WHY A GAME MAY HAVE TO GO THROUGH XWAYLAND ───────────────────────────────
+// RetroArch's native Wayland path gets the viewport wrong when the output it lands on uses a
+// FRACTIONAL scale. Measured on a 3440x1440 monitor at scale 1.25, with grim and a pixel
+// count rather than an opinion:
+//
+//     native Wayland   padding left 779, right 0   -> shoved right, cut off at the edge
+//     XWayland         padding left 623, right 623 -> centred, full height
+//
+// The compositor places the window correctly in both cases (2752x1152 logical at the right
+// spot), so this is inside RetroArch, and no combination of fullscreen mode, aspect index or
+// hand-computed custom viewport fixes it. Costs nothing measurable: 57.6 fps against 57.9.
+//
+// Only when a fractional scale is actually in play. An integer-scaled session renders
+// correctly on Wayland natively, which is the better path, and keeps its own vsync.
+//
+// ⚠️ This is the EMULATOR child process only. Relaunching EmuLatte itself under XWayland was
+// tried and abandoned as fragile with the AppImage runtime (see docs/omarchy-plan.md); this is
+// one spawned process with one environment variable, which is a different proposition.
+function fractionalScaleInUse() {
+    try {
+        if (!omarchy.isHyprland()) return false;
+        return omarchy.monitors().some(m => {
+            const s = Number(m.scale);
+            return Number.isFinite(s) && Math.abs(s - Math.round(s)) > 0.001;
+        });
+    } catch { return false; }
+}
+function emulatorEnv() {
+    const env = { ...process.env };
+    if (!settingFlag('xwayland_on_fractional', true) || !fractionalScaleInUse()) return env;
+    // ⚠️ No X server, no X11 path. Without this the switch below would hand the emulator a
+    // session it cannot connect to at all, which is worse than an off-centre picture.
+    if (!env.DISPLAY) return env;
+    // ⚠️ Every one of these, not just WAYLAND_DISPLAY. Omarchy exports GDK_BACKEND=wayland
+    // for the whole session, so dropping WAYLAND_DISPLAY on its own leaves GTK pointed at a
+    // Wayland display that is no longer named: "cannot open display: :0", and the emulator
+    // exits before it draws a frame. Switching toolkits means switching all of them together.
+    delete env.WAYLAND_DISPLAY;
+    delete env.MOZ_ENABLE_WAYLAND;
+    env.GDK_BACKEND      = 'x11';
+    env.QT_QPA_PLATFORM  = 'xcb';
+    env.SDL_VIDEODRIVER  = 'x11';
+    env.CLUTTER_BACKEND  = 'x11';
+    env.XDG_SESSION_TYPE = 'x11';
+    return env;
+}
+
 function launchEmulator(cmd) {
-    const child = spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' });
+    const child = spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore', env: emulatorEnv() });
     child.on('error', () => {});
     child.unref();
     beginGameSession();
@@ -905,8 +952,7 @@ function ensureOwnedRaCfg(force = false) {
         '# Seeded clean — only directory paths were imported from your host config; everything else is RetroArch defaults.',
         '# Tailor this from EmuLatte (Settings -> RetroArch). RetroArch is the engine; this is the config.',
         'config_save_on_exit = "true"',
-        'input_quit_gamepad_combo = "4"',   // Select + Start quits RetroArch (device-independent RetroPad combo)
-        ...Object.entries(videoDefaults()).map(([k, v]) => `${k} = "${v}"`),
+        ...Object.entries({ ...inputDefaults(), ...videoDefaults() }).map(([k, v]) => `${k} = "${v}"`),
         ...Object.entries({ ...readHostPathKeys(), ...biosPin }).map(([k, v]) => `${k} = "${v}"`),
     ];
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
@@ -938,6 +984,14 @@ function detectVideoDriver() {
 // it is a global default that gets switched back off for those systems at launch. See
 // launchConfigFile.
 const HW_RENDERED_SYSTEMS = new Set(['gc', 'wii', 'ps2', 'ps3', 'psp', 'vita', 'dc', '3ds', 'switch', 'saturn']);
+// The pad-native way into RetroArch's own menu mid-game, and back out of the game entirely.
+// Same enum for both: 0 none, 1 Down+Y+L+R, 2 L3+R3, 3 L1+R1+Start+Select, 4 Start+Select.
+function inputDefaults() {
+    return {
+        input_menu_toggle_gamepad_combo: '2',   // L3 + R3 opens the RetroArch menu
+        input_quit_gamepad_combo: '4',          // Select + Start leaves the game
+    };
+}
 function videoDefaults() {
     return {
         video_driver: detectVideoDriver(),
@@ -946,6 +1000,13 @@ function videoDefaults() {
         video_smooth: 'false',          // sharp pixels; bilinear blur is not what retro wants
         video_fullscreen: 'true',       // a game started from a library belongs on the whole screen
         video_windowed_fullscreen: 'true',
+        // Keep the system's own shape and letterbox around it, rather than stretching a 4:3
+        // console across an ultrawide. Left unset, RetroArch filled the whole 3440x1440 and
+        // Alex Kidd came out a third too wide. 22 is "core provided": the core says what shape
+        // it is and RetroArch fits the largest copy of that shape on the screen, centred.
+        aspect_ratio_index: '22',
+        video_aspect_ratio_auto: 'false',
+        video_scale_integer: 'false',   // fill the screen; integer scaling would leave bars
     };
 }
 
@@ -991,8 +1052,9 @@ function repairOwnedRaCfg() {
     if (!updates.libretro_info_path && stale('libretro_info_path')) {
         const d = coreInfoSearchDirs().find(hasCoreInfo); if (d) updates.libretro_info_path = d;
     }
-    // Video: only ever filled in when absent, so a driver somebody chose on purpose stands.
-    for (const [k, v] of Object.entries(videoDefaults())) if (cur[k] == null || cur[k] === '') updates[k] = v;
+    // Video and pad combos: only ever filled in when absent, so anything chosen on purpose stands.
+    for (const [k, v] of Object.entries({ ...videoDefaults(), ...inputDefaults() }))
+        if (cur[k] == null || cur[k] === '') updates[k] = v;
     if (library) {
         updates.system_directory = library.biosRoot();     // always ours
         updates.video_shader_dir = library.shaderRoot();   // ditto: EmuLatte's shaders, not the host's
@@ -3877,6 +3939,93 @@ ipcMain.handle('download-trailer', (event, title, videoId) => {
 });
 
 // ── MISC ──────────────────────────────────────────────────────────────────────
+// ── THE APP MENU ──────────────────────────────────────────────────────────────
+// A .desktop entry per face, written the same way the sibling app writes its own: one file in
+// ~/.local/share/applications, the icon beside the binary, and update-desktop-database told
+// about it afterwards so the launcher notices without a logout.
+const appsDir = () => path.join(os.homedir(), '.local', 'share', 'applications');
+// ⚠️ % is a field code in a desktop entry (%f, %U), so a path containing one has to write
+// it as %% or the launcher eats it.
+const desktopArg = a => '"' + String(a).replace(/(["$`\\])/g, '\\$1').replace(/%/g, '%%') + '"';
+function launcherContent(entry) {
+    const args = (entry.args || []).length ? ' ' + entry.args.map(desktopArg).join(' ') : '';
+    const lines = [
+        '[Desktop Entry]', 'Version=1.0', 'Type=Application',
+        `Name=${String(entry.name || '').replace(/[\r\n]/g, ' ')}`,
+    ];
+    if (entry.comment) lines.push(`Comment=${String(entry.comment).replace(/[\r\n]/g, ' ')}`);
+    lines.push(`Exec="${entry.exec}"${args}`);
+    if (entry.icon) lines.push(`Icon=${entry.icon}`);
+    lines.push('Terminal=false');
+    lines.push(`Categories=${(entry.categories || ['Game']).join(';')};`);
+    if (entry.keywords?.length) lines.push(`Keywords=${entry.keywords.join(';')};`);
+    if (entry.wmClass) lines.push(`StartupWMClass=${entry.wmClass}`);
+    return lines.join('\n') + '\n';
+}
+function writeLauncher(dir, entry) {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${entry.id}.desktop`);
+    fs.writeFileSync(file, launcherContent(entry));
+    try { fs.chmodSync(file, '755'); } catch {}
+    return file;
+}
+// Which file the menu should actually run. The AppImage we were launched from is the
+// authoritative answer; a directory scan is the fallback for a dev run.
+function selfLaunchTarget() {
+    if (process.env.APPIMAGE) return { exec: process.env.APPIMAGE, args: [] };
+    const hit = safeReaddir(baseDir).find(f => /^EmuLatte.*\.AppImage$/i.test(f));
+    if (hit) return { exec: path.join(baseDir, hit), args: [] };
+    if (app.isPackaged) return { exec: process.execPath, args: [] };
+    return { exec: process.execPath, args: [__dirname] };     // dev: Electron needs the app folder
+}
+ipcMain.handle('install-to-menu', () => {
+    try {
+        const dir = appsDir();
+        const { exec, args } = selfLaunchTarget();
+        if (!exec || !fs.existsSync(exec)) return { ok: false, error: 'Could not work out which file to launch.' };
+        try { fs.chmodSync(exec, '755'); } catch {}
+        const iconsDir = path.join(baseDir, 'icons');
+        let icon = '';
+        try {
+            fs.mkdirSync(iconsDir, { recursive: true });
+            const src = path.join(baseAssetPath, 'assets', 'icons', 'EmuLatte.svg');
+            if (fs.existsSync(src)) { icon = path.join(iconsDir, 'EmuLatte.svg'); fs.copyFileSync(src, icon); }
+        } catch {}
+        const made = [];
+        writeLauncher(dir, {
+            id: 'emulatte', name: 'EmuLatte',
+            comment: 'Your ROM library: scraping, art, RetroArch and Couch Mode in one.',
+            exec, args, icon, categories: ['Game', 'Emulator'],
+            wmClass: 'emulatte_electron_build',
+            keywords: ['emulator', 'rom', 'retroarch', 'retro', 'games', 'emulatte'],
+        });
+        made.push('EmuLatte');
+        writeLauncher(dir, {
+            id: 'emulatte-couch', name: 'EmuLatte Couch Mode',
+            comment: 'EmuLatte fullscreen and gamepad-first, made for the living room.',
+            exec, args: [...args, '--couch'], icon, categories: ['Game', 'Emulator'],
+            wmClass: 'emulatte_electron_build',
+            keywords: ['couch', 'tv', 'living room', 'gamepad', 'controller', 'fullscreen', 'emulatte'],
+        });
+        made.push('Couch Mode');
+        try { spawn('update-desktop-database', [dir], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+        return { ok: true, installed: made, dir };
+    } catch (err) { return { ok: false, error: err.message }; }
+});
+ipcMain.handle('remove-from-menu', () => {
+    const dir = appsDir(); let n = 0;
+    for (const id of ['emulatte', 'emulatte-couch']) {
+        try { fs.unlinkSync(path.join(dir, `${id}.desktop`)); n++; } catch {}
+    }
+    try { spawn('update-desktop-database', [dir], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+    return { ok: true, removed: n };
+});
+ipcMain.handle('menu-entries-present', () => {
+    const dir = appsDir();
+    const present = ['emulatte', 'emulatte-couch'].filter(id => { try { return fs.existsSync(path.join(dir, `${id}.desktop`)); } catch { return false; } });
+    return { ok: true, present, dir };
+});
+
 ipcMain.handle('get-basedir',    () => baseDir);
 ipcMain.handle('get-config-dir', () => configDir);
 ipcMain.handle('open-path',  (_, p) => shell.openPath(p));

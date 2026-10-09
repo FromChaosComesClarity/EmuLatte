@@ -2773,10 +2773,38 @@ async function showWelcome(noshowChecked) {
     openModal('modal-welcome');
     renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
     showWelcomeRomsPath();
-    renderPlayReadiness('wlc-play-body', 'btn-welcome-install-cores').then(r => {
-        const card = document.getElementById('wlc-play-card');
-        if (card) card.style.display = (r && (r.missing?.length || r.retroarch === 'none')) ? '' : 'none';
-    }).catch(() => {});
+    renderPlayReadiness('wlc-play-body', 'btn-welcome-install-cores').catch(() => {});
+    refreshMenuEntryButton();
+}
+
+// The app-menu button says which way it will go, so pressing it is never a guess.
+async function refreshMenuEntryButton() {
+    for (const [btnId, statusId] of [['btn-welcome-add-menu', 'wlc-menu-status'], ['btn-settings-add-menu', 'settings-menu-status']]) {
+        const btn = document.getElementById(btnId);
+        if (!btn) continue;
+        let r = null;
+        try { r = await window.api.menuEntriesPresent(); } catch {}
+        const on = !!r?.present?.length;
+        btn.textContent = on ? 'Remove from Application Menu' : 'Add to Application Menu';
+        btn.classList.toggle('primary', !on);
+        btn.dataset.installed = on ? '1' : '';
+        const st = document.getElementById(statusId);
+        if (st && on) { st.textContent = `In your app menu (${r.present.length} entr${r.present.length === 1 ? 'y' : 'ies'}).`; st.style.color = 'var(--accent)'; }
+        else if (st) st.textContent = '';
+    }
+}
+async function toggleMenuEntries(statusId) {
+    const st = document.getElementById(statusId);
+    const btn = document.getElementById(statusId === 'wlc-menu-status' ? 'btn-welcome-add-menu' : 'btn-settings-add-menu');
+    const installed = btn?.dataset.installed === '1';
+    const r = installed ? await window.api.removeFromMenu() : await window.api.installToMenu();
+    if (st) {
+        st.textContent = r?.ok
+            ? (installed ? 'Removed from your app menu.' : `Added: ${(r.installed || []).join(' and ')}.`)
+            : (r?.error || 'That did not work.');
+        st.style.color = r?.ok ? 'var(--accent)' : '#ef5350';
+    }
+    refreshMenuEntryButton();
 }
 
 // The first thing a new user needs is where to put files, so the first run says it outright.
@@ -4559,6 +4587,9 @@ function wireUI() {
     });
     document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
     document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
+    document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);
+    document.getElementById('btn-welcome-add-menu')?.addEventListener('click', () => toggleMenuEntries('wlc-menu-status'));
+    document.getElementById('btn-settings-add-menu')?.addEventListener('click', () => toggleMenuEntries('settings-menu-status'));
     document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
@@ -5329,9 +5360,10 @@ async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-inst
 // The shader pack is EmuLatte's own, downloaded into its folder rather than borrowed from the
 // host, so the button only shows while there is nothing there.
 function _toggleShaderBtn(r) {
-    const b = document.getElementById('btn-download-shaders');
-    if (!b) return;
-    b.style.display = r && !r.hasShaders ? '' : 'none';
+    for (const id of ['btn-download-shaders', 'btn-welcome-shaders']) {
+        const b = document.getElementById(id);
+        if (b) b.style.display = r && !r.hasShaders ? '' : 'none';
+    }
 }
 async function downloadShaders() {
     const b = document.getElementById('btn-download-shaders');
