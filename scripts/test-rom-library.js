@@ -2,7 +2,7 @@
 // tree in /tmp. Run it with:  npm test
 //
 // better-sqlite3 is built against Electron's ABI, so the runner is Electron with
-// ELECTRON_RUN_AS_NODE=1 — plain `node` cannot load it.
+// ELECTRON_RUN_AS_NODE=1, because plain `node` cannot load it.
 const fs = require('fs'), path = require('path'), os = require('os');
 const Database = require('better-sqlite3');
 const REPO = path.join(__dirname, '..');
@@ -19,7 +19,10 @@ db.pragma('journal_mode = WAL');
 db.prepare(`CREATE TABLE systems (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, short_name TEXT,
   folder TEXT, extensions TEXT, default_core TEXT, default_emulator TEXT, launch_template TEXT, screenscraper_id INTEGER)`).run();
 db.prepare(`CREATE TABLE games (id INTEGER PRIMARY KEY AUTOINCREMENT, system_id INTEGER, title TEXT NOT NULL,
-  rom_path TEXT, cover TEXT, hero TEXT, logo TEXT, screenshot TEXT)`).run();
+  rom_path TEXT, cover TEXT, hero TEXT, logo TEXT, screenshot TEXT, description TEXT,
+  screenscraper_id INTEGER, ra_game_id INTEGER, last_played INTEGER DEFAULT 0,
+  fav INTEGER DEFAULT 0, want INTEGER DEFAULT 0, launch_override TEXT, core_override TEXT)`).run();
+db.prepare(`CREATE TABLE playlist_games (playlist_id INTEGER, game_id INTEGER, sort_order INTEGER DEFAULT 0)`).run();
 db.prepare(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`).run();
 
 let inserted = 0, deleted = 0;
@@ -107,6 +110,76 @@ ok(r4.added === 1, `a sibling of an outside game is picked up (got ${r4.added})`
 fs.unlinkSync(path.join(away, 'Mario 64.z64'));
 const r5 = lib.scan();
 ok(r5.removed === 0, `an outside game whose file is gone is left alone (got -${r5.removed})`);
+
+console.log('\n── the same game in a new place is adopted, not duplicated ──');
+// The case that matters: a collection on a drive that is no longer plugged in, then copied into
+// the ROMS folder. The scraped row must be re-pointed at the copy, not shadowed by a bare one.
+{
+  const nes = db.prepare("SELECT id FROM systems WHERE short_name='nes'").get().id;
+  const dead = '/nowhere/unplugged/roms/nes/Adopt Me (USA).nes';
+  const id = db.prepare("INSERT INTO games (system_id,title,rom_path,cover,description,screenscraper_id,fav,last_played) VALUES (?,?,?,?,?,?,1,12345)")
+    .run(nes, 'Adopt Me', dead, '/art/covers/adopt.jpg', 'A scraped description.', 999).lastInsertRowid;
+  const before = db.prepare('SELECT COUNT(*) n FROM games').get().n;
+  put('nes/Adopt Me (USA).nes');
+  const r = lib.scan();
+  const row = db.prepare('SELECT * FROM games WHERE id=?').get(id);
+  ok(r.added === 0, `nothing was imported (got ${r.added})`);
+  ok(r.adopted === 1 && r.revived === 1, `one row adopted and revived (got ${r.adopted}/${r.revived})`);
+  ok(db.prepare('SELECT COUNT(*) n FROM games').get().n === before, 'the library did not grow');
+  ok(row.rom_path === path.join(R, 'nes', 'Adopt Me (USA).nes'), 'it points at the file in the ROMS folder', row.rom_path);
+  ok(fs.existsSync(row.rom_path), 'and that file is really there, so the game is playable again');
+  ok(row.cover === '/art/covers/adopt.jpg' && row.description === 'A scraped description.'
+     && row.screenscraper_id === 999 && row.fav === 1 && row.last_played === 12345,
+     'the art, description, scrape id, favourite and play history all survived', row);
+  ok(lib.scan().adopted === 0, 'scanning again adopts nothing further');
+}
+
+console.log('\n── a duplicate that already exists is folded back in ──');
+// The state an earlier scan could leave behind: the scraped row on the dead path, plus a bare
+// row on the copy. The bare one goes and the scraped one takes over its file.
+{
+  const nes = db.prepare("SELECT id FROM systems WHERE short_name='nes'").get().id;
+  const dead = '/nowhere/unplugged/roms/nes/Dupe Me (USA).nes';
+  const file = put('nes/Dupe Me (USA).nes');
+  const rich = db.prepare("INSERT INTO games (system_id,title,rom_path,cover,screenscraper_id) VALUES (?,?,?,?,?)")
+    .run(nes, 'Dupe Me', dead, '/art/covers/dupe.jpg', 777).lastInsertRowid;
+  const bare = db.prepare("INSERT INTO games (system_id,title,rom_path) VALUES (?,?,?)")
+    .run(nes, 'dupe me (usa)', file).lastInsertRowid;
+  const r = lib.scan();
+  ok(r.merged === 1, `one duplicate merged (got ${r.merged})`);
+  ok(!db.prepare('SELECT 1 FROM games WHERE id=?').get(bare), 'the bare row is gone');
+  const kept = db.prepare('SELECT * FROM games WHERE id=?').get(rich);
+  ok(!!kept, 'the scraped row is the one that survived');
+  ok(kept.rom_path === file, 'and it now points at the file that exists', kept.rom_path);
+  ok(kept.cover === '/art/covers/dupe.jpg' && kept.screenscraper_id === 777, 'with its art and scrape id intact');
+}
+
+console.log('\n── two rows that both hold something are never merged ──');
+{
+  const snes = db.prepare("SELECT id FROM systems WHERE short_name='snes'").get().id;
+  const f = put('snes/Both Rich.sfc');
+  const a = db.prepare("INSERT INTO games (system_id,title,rom_path,cover) VALUES (?,?,?,?)")
+    .run(snes, 'Both Rich A', '/elsewhere/snes/Both Rich.sfc', '/art/a.jpg').lastInsertRowid;
+  const b = db.prepare("INSERT INTO games (system_id,title,rom_path,description) VALUES (?,?,?,?)")
+    .run(snes, 'Both Rich B', f, 'has a description').lastInsertRowid;
+  const r = lib.scan();
+  ok(db.prepare('SELECT 1 FROM games WHERE id=?').get(a) && db.prepare('SELECT 1 FROM games WHERE id=?').get(b),
+     'both rows are still there, the choice left to the user');
+  ok(r.merged === 0, `nothing was merged (got ${r.merged})`);
+}
+
+console.log('\n── a playlist link alone is enough to protect a row ──');
+{
+  const gb = db.prepare("SELECT id FROM systems WHERE short_name='gb'").get().id;
+  const f = put('gb/Protected.gb');
+  const inPlaylist = db.prepare("INSERT INTO games (system_id,title,rom_path) VALUES (?,?,?)")
+    .run(gb, 'Protected', f).lastInsertRowid;
+  db.prepare('INSERT INTO playlist_games (playlist_id, game_id) VALUES (1, ?)').run(inPlaylist);
+  const other = db.prepare("INSERT INTO games (system_id,title,rom_path) VALUES (?,?,?)")
+    .run(gb, 'Protected copy', '/elsewhere/gb/Protected.gb').lastInsertRowid;
+  lib.scan();
+  ok(!!db.prepare('SELECT 1 FROM games WHERE id=?').get(inPlaylist), 'a row someone put in a playlist is kept');
+}
 
 console.log('\n── an unmounted ROMS folder empties nothing ──');
 const before = db.prepare('SELECT COUNT(*) n FROM games').get().n;

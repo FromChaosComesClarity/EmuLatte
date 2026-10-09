@@ -310,7 +310,7 @@ app.whenReady().then(() => {
         // Every system exists from the first launch with a folder of its own, and the folder is
         // what the library is read from. See rom-library.js for the scanner and the folder names.
         const raCfgIO = { ensure: ensureOwnedRaCfg, parse: parseRaCfg, writeKeys: writeRaCfgKeys };
-        // Where BIOS files were read from until now — captured before anything repoints it, so
+        // Where BIOS files were read from until now, captured before anything repoints it, so
         // a working setup can be brought across rather than quietly lost. A folder somebody
         // configured is worth waiting for; RetroArch's own default, on a machine that may never
         // have had one, is not.
@@ -906,7 +906,7 @@ function ensureOwnedRaCfg(force = false) {
 }
 // Re-derive only the path keys from the local host config (portability / a new machine).
 // Re-deriving the path keys from the host must not hand system_directory back to the host's
-// own BIOS folder — EmuLatte's BIOS folder is the one the user drops files into.
+// own BIOS folder. EmuLatte's BIOS folder is the one the user drops files into.
 const reimportRaPaths = () => {
     const f = ensureOwnedRaCfg();
     const keys = readHostPathKeys();
@@ -3044,7 +3044,7 @@ function runLibraryScan(opts = {}) {
 ipcMain.handle('scan-library', (_, opts) => runLibraryScan(opts || {}));
 ipcMain.handle('get-last-scan', () => lastScan);
 
-// Every launch reads the folder, the way ES-DE and Batocera do — the user never has to ask for
+// Every launch reads the folder, the way ES-DE and Batocera do, so the user never has to ask for
 // it. It runs just after createWindow so a large collection can never hold the window back: a
 // face that loads before the scan finishes hears about it through 'library-scanned', and one
 // that loads after it reads the result from get-last-scan.

@@ -1244,7 +1244,7 @@ function startHeroCycle() {
 function renderSystemFilters() {
     const container = document.getElementById('system-filters');
     // Every system exists from the first launch, so browsing by system only lists the ones that
-    // have a game in them — the same thing ES-DE does. The full set, with each one's folder,
+    // have a game in them, the same thing ES-DE does. The full set, with each one's folder,
     // is in Settings \u203a Library and in the Systems manager.
     const counts = new Map();
     for (const g of allGames) counts.set(g.system_id, (counts.get(g.system_id) || 0) + 1);
@@ -2006,14 +2006,14 @@ function renderSystemsList() {
         list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim); font-size:13px;">No systems. Settings \u203a Library \u203a Restore Default Systems brings them all back.</div>`;
         return;
     }
-    // Every system is here, with or without games — unlike the side panel, which only lists the
+    // Every system is here, with or without games, unlike the side panel, which only lists the
     // ones you can actually browse. The folder is shown because it is where the ROMs go.
     list.innerHTML = allSystems.map(s => {
         const count = allGames.filter(g => g.system_id === s.id).length;
         return `<div class="system-list-item">
             <div>
                 <div class="sys-name">${escHtml(s.name)}</div>
-                <div class="sys-meta">ROMS/${escHtml(s.folder || '?')} · ${escHtml(s.extensions || '—')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
+                <div class="sys-meta">ROMS/${escHtml(s.folder || '?')} · ${escHtml(s.extensions || 'any file type')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
             </div>
             <button class="btn-edit-sys" data-id="${s.id}" style="font-size:11px; padding:6px 14px;">Edit</button>
         </div>`;
@@ -3154,7 +3154,7 @@ function wireUI() {
         renderList(getFilteredGames());
     });
 
-    // Rescan Library — read the ROMS folder again and make the library match it. The same
+    // Rescan Library: read the ROMS folder again and make the library match it. The same
     // scan runs on every launch; this is for after dropping files in with EmuLatte open.
     document.getElementById('btn-rescan-library').addEventListener('click', () => rescanLibrary());
 
@@ -5321,7 +5321,7 @@ function scanSummary(res) {
     if (res.added)   bits.push(`Added ${res.added} game${res.added !== 1 ? 's' : ''}`);
     if (res.removed) bits.push(`removed ${res.removed} whose file had gone`);
     if (!bits.length) return res.rootExists
-        ? `Library up to date — nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+        ? `Library up to date. Nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
         : 'The ROMS folder is not there. Settings \u203a Library says where EmuLatte is looking.';
     const top = (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
     return bits.join(', ') + '.' + (top ? ` ${top}.` : '');

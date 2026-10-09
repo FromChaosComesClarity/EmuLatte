@@ -600,7 +600,7 @@
         <button class="rail-btn" id="btn-add-rom" title="Add ROM">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         </button>
-        <button class="rail-btn" id="btn-rescan-library" title="Rescan Library — read the ROMS folder again">
+        <button class="rail-btn" id="btn-rescan-library" title="Rescan Library: read the ROMS folder again">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.56"/></svg>
         </button>
         <button class="rail-btn" id="btn-scan-folder" title="Scan ROM Folder">
@@ -1256,7 +1256,7 @@
               <div class="hint" style="margin-top:0;">EmuLatte's library <b>is</b> this folder. There is one sub-folder per system; drop ROMs in and they are in the library the next time EmuLatte opens. Sub-folders inside a system folder are read too, and a multi-disc set is grouped into one entry.</div>
               <div class="form-row" style="margin-top:10px;">
                 <label>ROMS folder</label>
-                <code id="library-roms-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">—</code>
+                <code id="library-roms-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
                 <button id="btn-library-rescan" style="flex:1 1 150px;">Rescan Library</button>
@@ -1264,7 +1264,7 @@
                 <button id="btn-library-set-roms" style="flex:1 1 110px;">Change…</button>
                 <button id="btn-library-reset-roms" style="flex:1 1 110px;">Use Default</button>
               </div>
-              <div class="hint">Point this at a collection you already have — an external drive, a NAS mount — instead of moving it. Folders named the way ES-DE, Batocera, RetroBat or RetroPie name them are all recognised.</div>
+              <div class="hint">Point this at a collection you already have, such as an external drive or a NAS mount, instead of moving it. Folders named the way ES-DE, Batocera, RetroBat or RetroPie name them are all recognised.</div>
               <div id="library-scan-status" style="font-size:11px; color:var(--accent); margin-top:8px; min-height:14px;"></div>
             </div>
             <div class="tool-card" data-search="bios firmware folder scan missing required system directory">
@@ -1272,7 +1272,7 @@
               <div class="hint" style="margin-top:0;">Drop BIOS and firmware files in here, flat or in sub-folders. EmuLatte files them under the exact name each core expects, matching by checksum so a correct file with a wrong name still lands right. This folder is EmuLatte's RetroArch system directory, so what is in it is what the cores read.</div>
               <div class="form-row" style="margin-top:10px;">
                 <label>BIOS folder</label>
-                <code id="library-bios-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">—</code>
+                <code id="library-bios-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
               </div>
               <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
                 <button id="btn-library-open-bios" style="flex:1 1 110px;">Open Folder</button>
@@ -1434,9 +1434,9 @@
             <div class="tool-card" data-search="backup restore zip export import save states credentials portable 1:1 copy machine suite clarity">
               <div class="tool-card-title">Backup &amp; Restore</div>
               <button id="btn-backup-emulatte" style="width:100%;">Back Up EmuLatte</button>
-              <div class="hint" style="margin-top:4px;">One zip holding the library database, every piece of scraped artwork, trailers, game manuals, your settings and credentials, the RetroArch config and your RetroArch save states. Your <b>ROMS and BIOS folders are left out on purpose</b> — the point of the folder layout is that those are replaceable, and a backup of a library is its metadata, not the ROMs you already have.</div>
+              <div class="hint" style="margin-top:4px;">One zip holding the library database, every piece of scraped artwork, trailers, game manuals, your settings and credentials, the RetroArch config and your RetroArch save states. Your <b>ROMS and BIOS folders are left out on purpose</b>. The point of the folder layout is that those are replaceable, and a backup of a library is its metadata, not the ROMs you already have.</div>
               <button id="btn-backup-suite" style="width:100%; margin-top:10px; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Back Up Clarity Suite</button>
-              <div class="hint" style="margin-top:4px;">Emulatte_Stuff plus Clarity's GameManagerConfig (Clarity + Couch Mode + Clock) + save states, as one archive of both apps. Your ROMS and BIOS folders are left out on purpose — see the manual, section 22.</div>
+              <div class="hint" style="margin-top:4px;">Emulatte_Stuff plus Clarity's GameManagerConfig (Clarity + Couch Mode + Clock) + save states, as one archive of both apps. Your ROMS and BIOS folders are left out on purpose; see the manual, section 22.</div>
               <button id="btn-restore-backup" style="width:100%; margin-top:10px;">Restore from Backup…</button>
               <div id="backup-status" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
               <div class="hint">Restore overwrites the current data and restarts EmuLatte. ROM paths &amp; RetroArch folders are machine-specific — use “Re-import Paths” after restoring on another computer.</div>
@@ -2268,7 +2268,7 @@
           folder for their system and they are in the library the next time EmuLatte opens, or
           the moment you press <b>Rescan Library</b>.
         </div>
-        <code id="wlc-roms-path" style="display:block; font-size:11px; word-break:break-all; margin-top:8px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px; text-align:left;">&mdash;</code>
+        <code id="wlc-roms-path" style="display:block; font-size:11px; word-break:break-all; margin-top:8px; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px; text-align:left;">(reading)</code>
         <div style="display:flex; gap:6px; margin-top:8px;">
           <button id="btn-welcome-open-roms" style="flex:1;">Open the ROMS folder</button>
           <button id="btn-welcome-set-roms" style="flex:1;">My ROMs are elsewhere&hellip;</button>

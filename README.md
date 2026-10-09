@@ -61,11 +61,11 @@ A full **user manual** ships inside the app: 22 sections covering every feature.
 
 **All 56 systems exist from the first launch**, each with an opinionated RetroArch core default, the identifiers the scrapers need, and a folder of its own. You never add a system. Browsing by system lists only the ones with games in them, so an empty library is not 56 empty shelves.
 
-Folders are named the way **ES-DE** names them, and each system also answers to the names **Batocera**, **RetroBat** and **RetroPie** use — so a collection already laid out by one of those is read as it stands. If it lives on an external drive, point EmuLatte's ROMS folder at it instead of moving it.
+Folders are named the way **ES-DE** names them, and each system also answers to the names **Batocera**, **RetroBat** and **RetroPie** use, so a collection already laid out by one of those is read as it stands. If it lives on an external drive, point EmuLatte's ROMS folder at it instead of moving it.
 
-Every launch makes the library match the disk: new files become games, rows whose file you deleted go with them. **Rescan Library** does it on demand, from the desktop rail, Settings → Library, or the Couch Mode menu. A folder that is not there — an unplugged drive — is skipped rather than treated as empty.
+Every launch makes the library match the disk: new files become games, rows whose file you deleted go with them. **Rescan Library** does it on demand, from the desktop rail, Settings → Library, or the Couch Mode menu. A folder that is not there, an unplugged drive say, is skipped rather than treated as empty.
 
-Launch via RetroArch (native or Flatpak, auto-detected) or any fully custom emulator command you define, with a per-game core override when the system default isn't right. An **Emulator Scanner** detects what's already installed — RetroArch, standalone cores, Flatpak variants — and maps them automatically.
+Launch via RetroArch (native or Flatpak, auto-detected) or any fully custom emulator command you define, with a per-game core override when the system default isn't right. An **Emulator Scanner** detects what's already installed, from RetroArch to standalone cores to Flatpak variants, and maps them automatically.
 
 **Repair Disc References** fixes `.m3u` and `.cue` files whose internal paths point somewhere that no longer exists — the thing that silently breaks half a multi-disc collection the moment you move or re-rip it. Run it per game or across a whole system.
 
@@ -182,7 +182,7 @@ Enter it with **▶ GO FULLSCREEN**, or set it to launch straight into Couch Mod
 - **Ambient sound** — background music and interface SFX, with volume
 - **Now-playing screen** — shows what launched, and what you're returning from
 - **RetroArch Simple Setup** — the Express settings rebuilt for a gamepad, shaders included, synced with the desktop face
-- **Rescan Library** — reads the ROMS folder again and reports what changed, without leaving the sofa
+- **Rescan Library**: reads the ROMS folder again and reports what changed, without leaving the sofa
 - **Display density** for low-res TVs, on-screen button labels in Xbox / PlayStation / Nintendo lettering, and its own theme (or sync with the desktop's)
 
 > **On Wayland**, apps can't choose their output. Leave **Target Screen** on *Current screen*, drag EmuLatte onto your TV, then go fullscreen. Target Screen works on X11, Windows and macOS.
@@ -276,7 +276,7 @@ chmod +x EmuLatte.AppImage
 ./EmuLatte.AppImage
 ```
 
-EmuLatte keeps everything — library, artwork, `ROMS/` and `BIOS/` — in an `Emulatte_Stuff/` folder **next to the AppImage**, so put the AppImage somewhere permanent before building a library. Place it alongside your Clarity installation (e.g. `~/Games/Clarity/`) and credential import and export to Clarity work with no configuration.
+EmuLatte keeps everything (library, artwork, `ROMS/` and `BIOS/`) in an `Emulatte_Stuff/` folder **next to the AppImage**, so put the AppImage somewhere permanent before building a library. Place it alongside your Clarity installation (e.g. `~/Games/Clarity/`) and credential import and export to Clarity work with no configuration.
 
 > **Language:** EmuLatte 1.0 is English-only. (Clarity and Couch Mode also ship pt_BR; EmuLatte does not yet.)
 

@@ -1,7 +1,7 @@
 # The library is the ROMS folder
 
 EmuLatte used to be a database you fed by hand: add a system, point it at a folder, scan.
-It is now a folder you fill, read on every launch — the model ES-DE, Batocera and RetroBat use.
+It is now a folder you fill, read on every launch: the model ES-DE, Batocera and RetroBat use.
 
 ## Where everything lives
 
@@ -26,7 +26,7 @@ lives on an external drive is pointed at rather than moved (Settings ▸ Library
 
 `assets/systems.json` carries `folder` (ES-DE's name) and `folder_aliases` (the names Batocera,
 RetroBat and RetroPie use) for all 56 systems. **Only the primary name is created**; an alias is
-read when it happens to exist. No name is claimed by two systems — `scripts/test-rom-library.js`
+read when it happens to exist. No name is claimed by two systems, and `scripts/test-rom-library.js`
 asserts that, and `systems.folder` is editable per system.
 
 ## Seeding
@@ -42,7 +42,7 @@ The full set is in Settings ▸ Library and in the Systems manager.
 ## The scan
 
 `library.scan()` runs on every launch (just after `createWindow`, so a big collection never
-holds the window back) and on demand from **Rescan Library** — the desktop rail, Settings ▸
+holds the window back) and on demand from **Rescan Library**, in the desktop rail, Settings ▸
 Library, or the Couch Mode menu under LIBRARY.
 
 Two passes:
@@ -58,6 +58,23 @@ Pruning is confined to folders the scan actually read. An unmounted drive reads 
 folder, and an absent folder is skipped, never treated as empty. A game whose `rom_path` is an
 EmuLatte-generated `.m3u` goes only when none of its discs are left.
 
+### The same game in a new place
+
+Path-equality dedupe cannot see that `/mnt/roms/nes/castlevania (usa).nes` and
+`ROMS/nes/castlevania (usa).nes` are one game, so copying a collection into the ROMS folder
+would double the library. A found file is therefore also matched on **its own system plus its
+filename**, and a row that already exists is **re-pointed** rather than a bare second row being
+inserted. The art, description, achievements and play history stay with it.
+
+Which row gets adopted: the one whose own file has gone first, because re-pointing that one is
+what brings a game back to life, then whichever holds more metadata. A row already inside the
+ROMS folder is left where it is, and a second copy found outside the root is skipped.
+
+`merged` cleans up duplicates an earlier scan already created: same system, same filename, one
+row carrying art and history and one bare. The richer row survives and takes over the file that
+actually exists; the bare one goes. **Two rows that both hold something are never touched** (a
+playlist link counts as holding something), because that judgement is the user's.
+
 ### Disc handling, and the `.bin` trap
 
 `.sub` and `.ecm` are never games. `.bin`, `.img` and `.raw` are decided **per file**: a track
@@ -72,13 +89,13 @@ from a folder scan. Covered by a test.
 ## BIOS
 
 `BIOS/` is EmuLatte's RetroArch `system_directory`, pinned into the owned config on every launch
-and excluded from `reimportRaPaths` — not a staging area that copies elsewhere. What is dropped
+and excluded from `reimportRaPaths`. It is not a staging area that copies elsewhere. What is dropped
 in is what the cores read.
 
 The launch scan files loose drops under the exact name a core expects, matched by **MD5** first
 and filename second, so a correct file with a wrong name still lands right. A folder BIOS files
 used to be read from is imported once; if it is on a drive that is not plugged in, the path is
-kept in `bios_import_from` and retried on later launches — but only when a human had configured
+kept in `bios_import_from` and retried on later launches, but only when a human had configured
 it, never for RetroArch's own default folder.
 
 ## Moving home, once
@@ -86,7 +103,7 @@ it, never for RetroArch's own default folder.
 `migrateHomeOnDisk()` runs before the database is opened and renames the **`EmuLatte`
 sub-folder** out of `GameManagerConfig/` to `Emulatte_Stuff`, beside the binary.
 
-⚠️ **`GameManagerConfig/` itself is never touched** — not renamed, not moved, not deleted. It is
+⚠️ **`GameManagerConfig/` itself is never touched**: not renamed, not moved, not deleted. It is
 the sibling app's folder and its library lives in it. The only path this code mutates is
 `<baseDir>/GameManagerConfig/EmuLatte`; the cross-filesystem fallback copies that sub-folder and
 renames *it* to `EmuLatte.moved-to-Emulatte_Stuff`, still inside the parent. There is no
@@ -110,7 +127,7 @@ what makes them replaceable. **Back Up Clarity Suite** adds the sibling app's fo
 
 ⚠️ `adm-zip`'s `addLocalFolder` filter is handed the path *inside* the zip, prefix included. The
 first version of the exclusion tested the first segment of that and so matched `Emulatte_Stuff`
-instead of `ROMS` — silently zipping the whole collection. Verified with a ROM and a BIOS file
+instead of `ROMS`, silently zipping the whole collection. Verified with a ROM and a BIOS file
 sitting in those folders: 0 entries from either.
 
 Restore accepts `Emulatte_Stuff/`, the pre-move `GameManagerConfig/EmuLatte/` (re-homed into the
@@ -119,7 +136,7 @@ new folder, so an old backup restores into a current install), and the sibling a
 
 ## Tests
 
-`npm test` → `scripts/test-rom-library.js`: 51 checks over seeding, folder creation, the scanner
+`npm test` → `scripts/test-rom-library.js`: 66 checks over seeding, folder creation, the scanner
 (standalone `.bin`, suppressed tracks, multi-disc grouping, alias folders, sub-folders,
 idempotence), pruning and its safety rules, dismissal, BIOS filing and status, the folder report,
 and both halves of the move.

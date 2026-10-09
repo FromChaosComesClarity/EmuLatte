@@ -391,17 +391,21 @@ async function rescanFromMenu() {
     let res = null;
     try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
     let msg;
+    const changed = res && (res.added || res.removed || res.adopted || res.merged);
     if (!res?.ok) msg = res?.error || 'The library could not be read.';
-    else if (!res.added && !res.removed) msg = res.rootExists
-        ? `Library up to date \u2014 nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+    else if (!changed) msg = res.rootExists
+        ? `Library up to date. Nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
         : 'The ROMS folder is not there. Set it from the desktop face, in Settings \u203a Library.';
     else {
         const bits = [];
         if (res.added)   bits.push(`added ${res.added}`);
+        if (res.revived) bits.push(`${res.revived} playable again`);
+        if (res.adopted - res.revived > 0) bits.push(`${res.adopted - res.revived} re-pointed`);
+        if (res.merged)  bits.push(`${res.merged} duplicates folded in`);
         if (res.removed) bits.push(`removed ${res.removed}`);
         msg = `Library ${bits.join(', ')}. ` + (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
     }
-    if (res?.added || res?.removed) {
+    if (changed) {
         [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
         gamesById = new Map(games.map(g => [g.id, g]));
         buildCategories();

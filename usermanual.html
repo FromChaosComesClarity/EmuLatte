@@ -199,27 +199,27 @@
             </ul>
 
             <div class="warn-box">
-                <p><strong>Where you put the AppImage matters.</strong> EmuLatte keeps everything in a folder called <code>Emulatte_Stuff/</code> <em>next to the AppImage itself</em> &mdash; the library database, the artwork, and the <code>ROMS/</code> and <code>BIOS/</code> folders. Put the AppImage somewhere permanent before you start building a library. Moving it later means moving that folder with it.</p>
+                <p><strong>Where you put the AppImage matters.</strong> EmuLatte keeps everything in a folder called <code>Emulatte_Stuff/</code> <em>next to the AppImage itself</em>: the library database, the artwork, and the <code>ROMS/</code> and <code>BIOS/</code> folders. Put the AppImage somewhere permanent before you start building a library. Moving it later means moving that folder with it.</p>
             </div>
 
-            <p>The first launch creates <code>Emulatte_Stuff/</code> for you, with a sub-folder in <code>ROMS/</code> for <em>every</em> system EmuLatte knows &mdash; all 56 of them &mdash; and an empty <code>BIOS/</code>. If you have run EmuLatte before, its old folder inside Clarity's <code>GameManagerConfig/</code> is moved into the new one automatically, once, with your whole library intact.</p>
+            <p>The first launch creates <code>Emulatte_Stuff/</code> for you, with a sub-folder in <code>ROMS/</code> for <em>every</em> system EmuLatte knows, all 56 of them, and an empty <code>BIOS/</code>. If you have run EmuLatte before, its old folder inside Clarity's <code>GameManagerConfig/</code> is moved into the new one automatically, once, with your whole library intact.</p>
 
-            <p>So the order of operations is short: <strong>drop ROMs into the folder for their system</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10). There is no step where you tell EmuLatte which systems you want &mdash; they are all there from the start, and the ones with nothing in them stay out of your way.</p>
+            <p>So the order of operations is short: <strong>drop ROMs into the folder for their system</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10). There is no step where you tell EmuLatte which systems you want. They are all there from the start, and the ones with nothing in them stay out of your way.</p>
 
             <p>If you also run Clarity, drop EmuLatte alongside it so both sit in the same parent folder. That is what makes credential import (section 11) and export (section 21) work without any configuration. The two apps no longer share a data folder, only a parent.</p>
 
             <h2 id="man-3">3. Systems</h2>
-            <p>A <strong>system</strong> is a console or platform &mdash; SNES, PS1, Dreamcast. It owns a folder under <code>ROMS/</code>, a default emulator core, and its own scraping and launch settings. Every game belongs to exactly one system.</p>
+            <p>A <strong>system</strong> is a console or platform: SNES, PS1, Dreamcast. It owns a folder under <code>ROMS/</code>, a default emulator core, and its own scraping and launch settings. Every game belongs to exactly one system.</p>
 
             <p><strong>You do not add systems.</strong> All 56 are there from the first launch, each with a sensible default RetroArch core already chosen and the identifiers the scrapers need to search the right platform, and each with its own folder waiting for ROMs. Browsing by system only lists the ones that have a game in them, so an empty library does not mean 56 empty shelves.</p>
 
             <p><strong>Settings &rarr; Library</strong> lists every system, the folder it reads from, and how many games are in it. <strong>Settings &rarr; Systems &rarr; Manage Systems</strong> is where you change one: its default core, its file extensions, its ScreenScraper platform, its folder name.</p>
 
             <h3>Folder names</h3>
-            <p>Each system's folder is named the way <strong>ES-DE</strong> names it &mdash; <code>megadrive</code>, <code>psx</code>, <code>atari2600</code>, <code>tg16</code>. Each system also answers to the names <strong>Batocera</strong>, <strong>RetroBat</strong> and <strong>RetroPie</strong> use, so a collection laid out by any of them is read without renaming a single folder: drop a <code>genesis/</code> folder next to <code>megadrive/</code> and both are read as Mega Drive. Every system folder has a <code>systeminfo.txt</code> saying what belongs in it and which other names it answers to.</p>
+            <p>Each system's folder is named the way <strong>ES-DE</strong> names it: <code>megadrive</code>, <code>psx</code>, <code>atari2600</code>, <code>tg16</code>. Each system also answers to the names <strong>Batocera</strong>, <strong>RetroBat</strong> and <strong>RetroPie</strong> use, so a collection laid out by any of them is read without renaming a single folder: drop a <code>genesis/</code> folder next to <code>megadrive/</code> and both are read as Mega Drive. Every system folder has a <code>systeminfo.txt</code> saying what belongs in it and which other names it answers to.</p>
 
             <h3>A system of your own</h3>
-            <p>If your platform is not in the list, create it in Manage Systems. You will need a name, a launch method &mdash; either a RetroArch core or a custom command (section 14) &mdash; and the file extensions it takes. It gets a folder under <code>ROMS/</code> like every other system and is scanned the same way.</p>
+            <p>If your platform is not in the list, create it in Manage Systems. You will need a name, a launch method (either a RetroArch core or a custom command, section 14) and the file extensions it takes. It gets a folder under <code>ROMS/</code> like every other system and is scanned the same way.</p>
 
             <h3>Deleting one</h3>
             <p>Deleting a system in Manage Systems <strong>sticks</strong>: it is remembered, so the next launch does not hand it back. <strong>Settings &rarr; Library &rarr; Restore Default Systems</strong> brings every shipped system back.</p>
@@ -240,17 +240,17 @@
             </ul>
 
             <h3>Rescan without restarting</h3>
-            <p>Dropped files in while EmuLatte was open? Press <strong>Rescan Library</strong> &mdash; the circular arrow on the left rail, or the button in <strong>Settings &rarr; Library</strong>. In Couch Mode it is in the menu, under <strong>LIBRARY</strong>, so you never have to leave the sofa.</p>
+            <p>Dropped files in while EmuLatte was open? Press <strong>Rescan Library</strong>: the circular arrow on the left rail, or the button in <strong>Settings &rarr; Library</strong>. In Couch Mode it is in the menu, under <strong>LIBRARY</strong>, so you never have to leave the sofa.</p>
 
             <h3>A collection that already lives somewhere else</h3>
             <p>If your ROMs are on an external drive or a NAS mount, do not move them. <strong>Settings &rarr; Library &rarr; Change&hellip;</strong> points EmuLatte's <code>ROMS</code> folder at where they already are, and the per-system folders are created there. Because the folder names match what ES-DE, Batocera, RetroBat and RetroPie use (section 3), a collection organised by one of those usually needs nothing beyond this one step.</p>
 
             <div class="tip-box">
-                <p><strong>A ROM somewhere unusual.</strong> <strong>Add ROM</strong> and <strong>Scan Folder</strong> on the left rail still exist, for a single file or a folder that sits outside your ROMS folder entirely. Games added that way are kept and never pruned, and their folder is checked for new siblings on every rescan too &mdash; but nothing outside your ROMS folder is ever removed from the library automatically.</p>
+                <p><strong>A ROM somewhere unusual.</strong> <strong>Add ROM</strong> and <strong>Scan Folder</strong> on the left rail still exist, for a single file or a folder that sits outside your ROMS folder entirely. Games added that way are kept and never pruned, and their folder is checked for new siblings on every rescan too, but nothing outside your ROMS folder is ever removed from the library automatically.</p>
             </div>
 
             <div class="warn-box">
-                <p><strong>What "removed" means.</strong> Deleting a ROM from a system folder removes that game from the library, along with the art and metadata EmuLatte scraped for it. Your other files are never touched, and a folder that is not there at all &mdash; an unplugged drive, say &mdash; is skipped rather than treated as empty, so the library survives a missing disk.</p>
+                <p><strong>What "removed" means.</strong> Deleting a ROM from a system folder removes that game from the library, along with the art and metadata EmuLatte scraped for it. Your other files are never touched, and a folder that is not there at all, an unplugged drive say, is skipped rather than treated as empty, so the library survives a missing disk.</p>
             </div>
 
             <h3>Multi-disc and archives</h3>
@@ -330,7 +330,7 @@
 
             <h2 id="man-10">11. Clarity Credential Import</h2>
             <p>If Clarity is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from Clarity</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
-            <p>This reads Clarity's settings out of its own <code>GameManagerConfig/</code> folder, next to EmuLatte's. If the button reports nothing found, the two AppImages are not in the same parent folder &mdash; see section 2.</p>
+            <p>This reads Clarity's settings out of its own <code>GameManagerConfig/</code> folder, next to EmuLatte's. If the button reports nothing found, the two AppImages are not in the same parent folder; see section 2.</p>
 
             <h2 id="man-11">12. The Emulator Scanner</h2>
             <p><strong>Settings &rarr; Systems &rarr; Add Emulators</strong> scans your machine for installed emulators and offers to assign them to existing systems or create new systems around them.</p>
@@ -373,7 +373,7 @@
             <h2 id="man-14">15. BIOS Files</h2>
             <p>Some systems will not run without their BIOS. EmuLatte ships a database of what each platform requires and checks whether you have it.</p>
 
-            <p><strong>Drop them in <code>Emulatte_Stuff/BIOS/</code>.</strong> Flat, or in sub-folders, in whatever shape the files arrived in. Every launch reads that folder and files each one it recognises under the exact name the core expects &mdash; matching by <strong>checksum</strong>, so a correct file with the wrong name still lands in the right place.</p>
+            <p><strong>Drop them in <code>Emulatte_Stuff/BIOS/</code>.</strong> Flat, or in sub-folders, in whatever shape the files arrived in. Every launch reads that folder and files each one it recognises under the exact name the core expects, matching by <strong>checksum</strong>, so a correct file with the wrong name still lands in the right place.</p>
 
             <p>That folder <em>is</em> EmuLatte's RetroArch system directory, not a staging area: what is in it is what the cores read. If you had BIOS files somewhere else before, the first launch brings them across for you; if that folder was on a drive that was not plugged in, EmuLatte keeps trying on later launches and says so in <strong>Settings &rarr; Library</strong>.</p>
 
@@ -491,13 +491,13 @@
                 <tr><td><code>playlists/</code></td><td>The <code>.m3u</code> files EmuLatte writes for multi-disc games</td></tr>
                 <tr><td><code>retroarch/</code></td><td>EmuLatte's own RetroArch config (section 13)</td></tr>
             </table>
-            <p>If you point the ROMS or BIOS folder somewhere else (section 4), that is the one thing that lives outside. Nothing here belongs to Clarity and nothing of Clarity's is in here &mdash; the two apps share a parent folder and nothing more.</p>
+            <p>If you point the ROMS or BIOS folder somewhere else (section 4), that is the one thing that lives outside. Nothing here belongs to Clarity and nothing of Clarity's is in here. The two apps share a parent folder and nothing more.</p>
 
             <h3>Backups</h3>
             <p>From <strong>Settings &rarr; Data</strong>:</p>
             <ul>
-                <li><strong>Back Up EmuLatte</strong> &mdash; the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states. <code>ROMS/</code> and <code>BIOS/</code> are deliberately left out: a backup of a library is its metadata, not tens of gigabytes you already have. The folder layout is what makes them replaceable.</li>
-                <li><strong>Back Up Clarity Suite</strong> &mdash; the same, plus Clarity's own <code>GameManagerConfig</code> folder (Clarity, Couch Mode and the Clock), as one archive of both apps</li>
+                <li><strong>Back Up EmuLatte</strong>: the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states. <code>ROMS/</code> and <code>BIOS/</code> are deliberately left out: a backup of a library is its metadata, not tens of gigabytes you already have. The folder layout is what makes them replaceable.</li>
+                <li><strong>Back Up Clarity Suite</strong>: the same, plus Clarity's own <code>GameManagerConfig</code> folder (Clarity, Couch Mode and the Clock), as one archive of both apps</li>
                 <li><strong>Restore from Backup</strong> &mdash; overwrites current data and restarts EmuLatte</li>
             </ul>
 

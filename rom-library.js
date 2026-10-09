@@ -14,7 +14,7 @@ const DISC_PLAYLIST_EXTS = new Set(['m3u']);
 const DISC_INDEX_EXTS    = new Set(['cue', 'gdi', 'ccd', 'mds', 'toc']);
 // Never a game on their own, whatever else is in the folder.
 const DISC_SIDECAR_EXTS  = new Set(['sub', 'ecm']);
-// A game on their own OR a track belonging to an index file — which one depends on the folder,
+// A game on their own OR a track belonging to an index file. Which one depends on the folder,
 // so they are decided per file in scanFolderEntries. A Mega Drive library is .bin files and a
 // PlayStation one is .bin + .cue; a flat sidecar rule would have swallowed the first.
 const DISC_TRACK_EXTS    = new Set(['bin', 'img', 'raw']);
@@ -185,7 +185,7 @@ function createLibrary(ctx) {
 
     // ── Systems are seeded, not added by hand ────────────────────────────────
     // Every preset exists as a system from the first launch, configured exactly as the preset
-    // says — the user never has to create one. A system the user deliberately deleted is
+    // says, and the user never has to create one. A system the user deliberately deleted is
     // remembered in `systems_dismissed` so seeding does not drag it back; Restore Default
     // Systems clears that list.
     const dismissed = () => new Set(String(setting('systems_dismissed', '') || '').split(',').map(s => s.trim()).filter(Boolean));
@@ -331,10 +331,49 @@ function createLibrary(ctx) {
         } catch { return []; }
     };
 
+    // ── THE SAME GAME, IN A NEW PLACE ────────────────────────────────────────
+    // Moving or copying a collection into the ROMS folder must not double the library. The scan
+    // dedupes on the exact path, which cannot see that
+    // `/mnt/roms/nes/castlevania (usa).nes` and `ROMS/nes/castlevania (usa).nes` are one game.
+    // So a file is also matched on **its own system plus its filename**, and an entry that
+    // already exists is re-pointed at the new location instead of a bare second row being
+    // inserted. The scraped art, the description, the achievements and the play history stay
+    // with it: adoption, not import.
+    const nameKey = (sysId, p) => `${sysId}::${path.basename(String(p || '')).toLowerCase()}`;
+
+    // How much a row would cost to lose, for deciding which of two duplicates to keep.
+    const RICH_COLS = ['cover', 'hero', 'logo', 'screenshot', 'description', 'screenscraper_id',
+                       'ra_game_id', 'last_played', 'fav', 'want', 'launch_override', 'core_override'];
+    const richness = (g) => {
+        let n = 0;
+        for (const c of ['cover', 'hero', 'logo', 'screenshot']) if (g[c]) n += 1;
+        if (g.description) n += 2;
+        if (g.screenscraper_id) n += 2;
+        if (g.ra_game_id) n += 2;
+        if (Number(g.last_played) > 0) n += 1;
+        if (Number(g.fav) > 0) n += 1;
+        if (Number(g.want) > 0) n += 1;
+        if (g.launch_override || g.core_override) n += 1;
+        return n;
+    };
+    // Which columns this database actually has, so the same code runs against an older schema.
+    const gameCols = () => {
+        try { return new Set(getDb().prepare('PRAGMA table_info(games)').all().map(r => r.name)); }
+        catch { return new Set(); }
+    };
+    const playlistCounts = () => {
+        const m = new Map();
+        try {
+            for (const r of getDb().prepare('SELECT game_id, COUNT(*) n FROM playlist_games GROUP BY game_id').all())
+                m.set(r.game_id, r.n);
+        } catch {}
+        return m;
+    };
+
     // ── THE SCAN ─────────────────────────────────────────────────────────────
     // Reads every system's folder and makes the library match it: files that are not in the
     // library are added, rows whose file has gone are dropped. Dropping is deliberately
-    // confined to folders the scan actually read — an unmounted drive reads as an absent
+    // confined to folders the scan actually read. An unmounted drive reads as an absent
     // folder, and an absent folder is skipped, never emptied.
     //
     // A second pass covers games whose ROMs live outside the ROMS root (added by hand, or on a
@@ -349,13 +388,23 @@ function createLibrary(ctx) {
 
         const systems = db.prepare('SELECT * FROM systems').all();
         const sysById = new Map(systems.map(s => [s.id, s]));
-        const games = db.prepare('SELECT id, system_id, rom_path FROM games').all();
+        const have = gameCols();
+        const cols = ['id', 'system_id', 'rom_path', ...RICH_COLS.filter(c => have.has(c))];
+        const games = db.prepare(`SELECT ${cols.join(', ')} FROM games`).all();
         const playlistsDir = path.resolve(path.join(configDir, 'playlists'));
+        const underRoot = p => rootExists && path.resolve(p).startsWith(path.resolve(root) + path.sep);
 
         // What the library already holds: every rom_path, plus the discs an .m3u game points at.
         const known = new Set();
-        const gameDirs = [];                  // [system_id, dir] — the real folder of each game
+        const gameDirs = [];                  // [system_id, dir], the real folder of each game
         const byPath = new Map();             // resolved path -> game id (for pruning)
+        const byName = new Map();             // system + filename -> the games that could be it
+        const addName = (sysId, p, g) => {
+            if (!sysId || !p) return;
+            const k = nameKey(sysId, p);
+            if (!byName.has(k)) byName.set(k, []);
+            if (!byName.get(k).some(x => x.id === g.id)) byName.get(k).push(g);
+        };
         for (const g of games) {
             if (!g.rom_path) continue;
             const rp = path.resolve(g.rom_path);
@@ -364,9 +413,9 @@ function createLibrary(ctx) {
             let dirs;
             if (extOf(g.rom_path) === 'm3u') {
                 const d = m3uDiscs(g.rom_path);
-                d.forEach(x => { known.add(path.resolve(x)); byPath.set(path.resolve(x), g.id); });
+                d.forEach(x => { known.add(path.resolve(x)); byPath.set(path.resolve(x), g.id); addName(g.system_id, x, g); });
                 dirs = d.map(x => path.dirname(x));
-            } else dirs = [path.dirname(g.rom_path)];
+            } else { addName(g.system_id, g.rom_path, g); dirs = [path.dirname(g.rom_path)]; }
             for (const d of dirs) {
                 const rd = path.resolve(d);
                 if (rd === playlistsDir || !g.system_id) continue;
@@ -380,7 +429,7 @@ function createLibrary(ctx) {
         const seen = new Set();
         const onlySystems = opts.systemIds ? new Set(opts.systemIds.map(Number)) : null;
 
-        // Pass 1 — the ROMS root, folder per system.
+        // Pass 1: the ROMS root, folder per system.
         if (rootExists) {
             for (const sys of systems) {
                 if (onlySystems && !onlySystems.has(sys.id)) continue;
@@ -405,7 +454,7 @@ function createLibrary(ctx) {
             }
         }
 
-        // Pass 2 — the folders existing games already live in, for libraries kept outside the
+        // Pass 2: the folders existing games already live in, for libraries kept outside the
         // ROMS root. Same inference as the old Refresh: prefer the folder the games share when
         // it is deep enough and not shared with another system, else the immediate folders.
         const outsideRoot = d => !rootExists || !path.resolve(d).startsWith(path.resolve(root) + path.sep);
@@ -424,7 +473,7 @@ function createLibrary(ctx) {
             const sys = sysById.get(sysId); if (!sys) continue;
             let added = 0;
             for (const dir of dirSet) {
-                if (!fs.existsSync(dir)) continue;          // drive not mounted — leave it alone
+                if (!fs.existsSync(dir)) continue;          // drive not mounted, so leave it alone
                 extraFolders++;
                 for (const e of scanFolderEntries(dir, sys.extensions || '')) {
                     const dup = e.kind === 'multidisc'
@@ -445,9 +494,53 @@ function createLibrary(ctx) {
             }
         }
 
-        // ── Import ──
+        // ── Import, or adopt ──
+        // A file already in the library under this system and this filename is the SAME game in
+        // a new place, so the row is re-pointed rather than a second one inserted. That is what
+        // makes "copy my collection into the ROMS folder" lossless: the art, the description,
+        // the achievements and the play history move with it, and an entry whose drive is
+        // unplugged becomes playable again the moment a copy of its ROM turns up in a folder.
         const newIds = [];
+        const adopted = [];
+        const claimed = new Set();            // rows this scan has already re-pointed
+        const repoint = db.prepare('UPDATE games SET rom_path=? WHERE id=?');
+        const exists = p => { try { return fs.existsSync(p); } catch { return false; } };
         for (const e of found) {
+            const keys = e.kind === 'multidisc'
+                ? (e.discs || []).map(d => nameKey(e.system_id, d))
+                : [nameKey(e.system_id, e.path)];
+            const cands = [];
+            for (const k of keys)
+                for (const g of (byName.get(k) || []))
+                    if (!claimed.has(g.id) && !cands.some(x => x.id === g.id)) cands.push(g);
+
+            // Prefer the row whose file has gone, because re-pointing that one is what brings a game
+            // back to life. Then whichever holds more metadata. A row already inside the ROMS
+            // folder is left alone: it is where it belongs.
+            const pick = cands
+                .filter(g => !underRoot(g.rom_path))
+                .sort((a, b) => (exists(a.rom_path) - exists(b.rom_path)) || (richness(b) - richness(a)))[0];
+
+            if (pick) {
+                let romPath = e.path;
+                if (e.kind === 'multidisc') {
+                    // Rewrite the playlist the row already points at, so its path stays put and
+                    // no orphan .m3u is left behind.
+                    if (extOf(pick.rom_path) === 'm3u' && path.resolve(path.dirname(pick.rom_path)) === playlistsDir) {
+                        try { fs.writeFileSync(pick.rom_path, (e.discs || []).join('\n') + '\n', 'utf8'); romPath = pick.rom_path; }
+                        catch { try { romPath = createM3u(e.title, e.discs); } catch { romPath = e.path; } }
+                    } else {
+                        try { romPath = createM3u(e.title, e.discs); } catch { romPath = e.path; }
+                    }
+                }
+                if (romPath !== pick.rom_path) repoint.run(romPath, pick.id);
+                claimed.add(pick.id);
+                adopted.push({ id: pick.id, from: pick.rom_path, to: romPath, revived: !exists(pick.rom_path) });
+                continue;
+            }
+            // Held already, from inside the ROMS folder: this is a second copy elsewhere on disk.
+            if (cands.length) continue;
+
             let romPath = e.path;
             if (e.kind === 'multidisc') {
                 try { romPath = createM3u(e.title, e.discs); } catch { romPath = e.path; }
@@ -456,25 +549,56 @@ function createLibrary(ctx) {
             if (id) newIds.push(id);
         }
 
+        // ── Merge the duplicates an earlier path-only match let through ──
+        // Same system, same filename, two rows: one carrying scraped art and history, one bare.
+        // Keep the one that holds more and drop the bare one, making sure the survivor ends up
+        // pointed at a file that is actually there. Two rows that both hold something are never
+        // touched, because a judgement call like that is the user's.
+        const merged = [];
+        if (!opts.noMerge) {
+            const pl = playlistCounts();
+            const score = g => richness(g) + (pl.get(g.id) ? 3 : 0);
+            const groups = new Map();
+            for (const g of db.prepare(`SELECT ${cols.join(', ')} FROM games`).all()) {
+                if (!g.system_id || !g.rom_path) continue;
+                if (extOf(g.rom_path) === 'm3u') continue;     // a generated playlist shares no filename with a ROM
+                const k = nameKey(g.system_id, g.rom_path);
+                if (!groups.has(k)) groups.set(k, []);
+                groups.get(k).push(g);
+            }
+            for (const rows of groups.values()) {
+                if (rows.length < 2) continue;
+                const sorted = [...rows].sort((a, b) => score(b) - score(a) || (exists(b.rom_path) - exists(a.rom_path)));
+                const keep = sorted[0];
+                for (const g of sorted.slice(1)) {
+                    if (score(g) > 0) continue;                // not bare, so never delete it
+                    if (path.resolve(g.rom_path) === path.resolve(keep.rom_path)) continue;
+                    if (!exists(keep.rom_path) && exists(g.rom_path)) { repoint.run(g.rom_path, keep.id); keep.rom_path = g.rom_path; }
+                    try { ctx.deleteGame(g.id); merged.push({ kept: keep.id, dropped: g.id }); } catch {}
+                }
+            }
+        }
+
         // ── Prune ──
         // Only rows whose file sat in a folder this scan read. A game is gone when its file is
-        // gone; an .m3u game is gone when none of its discs are left.
+        // gone; an .m3u game is gone when none of its discs are left. Re-read, because adoption
+        // and merging have moved paths around since the scan started.
         const removed = [];
         if (!opts.noPrune) {
             const inReadDir = p => readDirs.some(d => p === d || p.startsWith(d + path.sep));
-            for (const g of games) {
+            for (const g of db.prepare('SELECT id, rom_path FROM games').all()) {
                 if (!g.rom_path) continue;
                 if (extOf(g.rom_path) === 'm3u') {
                     const discs = m3uDiscs(g.rom_path);
                     if (!discs.length) continue;
                     if (!discs.every(d => inReadDir(path.resolve(path.dirname(d))))) continue;
-                    if (discs.some(d => fs.existsSync(d))) continue;
+                    if (discs.some(d => exists(d))) continue;
                     removed.push(g);
                     try { fs.unlinkSync(g.rom_path); } catch {}
                 } else {
                     const rp = path.resolve(g.rom_path);
                     if (!inReadDir(path.resolve(path.dirname(rp)))) continue;
-                    if (fs.existsSync(rp)) continue;
+                    if (exists(rp)) continue;
                     removed.push(g);
                 }
             }
@@ -484,11 +608,13 @@ function createLibrary(ctx) {
         const res = {
             ok: true, root, rootExists,
             added: newIds.length, removed: removed.length, newIds,
+            adopted: adopted.length, revived: adopted.filter(a => a.revived).length,
+            merged: merged.length,
             folders: readDirs.length + extraFolders,
             systems: scanned.filter(s => s.added > 0).sort((a, b) => b.added - a.added),
             ms: Date.now() - t0,
         };
-        log(`library scan: +${res.added} −${res.removed} across ${res.folders} folder(s) in ${res.ms}ms`);
+        log(`library scan: +${res.added} −${res.removed} adopted ${res.adopted} (${res.revived} revived) merged ${res.merged} across ${res.folders} folder(s) in ${res.ms}ms`);
         return res;
     }
 
@@ -533,7 +659,7 @@ function createLibrary(ctx) {
     //
     // `retry` is for a folder the user had actually configured: those often live on a drive that
     // is not always plugged in, so an absent one is remembered and tried again on later launches.
-    // RetroArch's own default folder gets no such treatment — on a machine that never had one,
+    // RetroArch's own default folder gets no such treatment. On a machine that never had one,
     // "waiting to import from a folder that does not exist" is a worry about nothing.
     function importOldBios(oldDir, { retry = false } = {}) {
         const dest = biosRoot();
