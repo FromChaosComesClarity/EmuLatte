@@ -906,11 +906,49 @@ function ensureOwnedRaCfg(force = false) {
         '# Tailor this from EmuLatte (Settings -> RetroArch). RetroArch is the engine; this is the config.',
         'config_save_on_exit = "true"',
         'input_quit_gamepad_combo = "4"',   // Select + Start quits RetroArch (device-independent RetroPad combo)
+        ...Object.entries(videoDefaults()).map(([k, v]) => `${k} = "${v}"`),
         ...Object.entries({ ...readHostPathKeys(), ...biosPin }).map(([k, v]) => `${k} = "${v}"`),
     ];
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
     return file;
 }
+// ── THE VIDEO DEFAULTS EMULATTE PICKS FOR ITSELF ─────────────────────────────
+// RetroArch's own compiled-in default is the legacy `gl` driver, and on a modern desktop that
+// is not a neutral choice, it is a slow one. Measured on an RTX 4060 Ti, NES, fullscreen at
+// 3440x1440 with a CRT shader:
+//
+//     gl                 29.1 fps   207% of the time a frame should take (half speed)
+//     vulkan             54.6 fps   110%
+//     vulkan + threaded  58.6 fps   103%
+//
+// The core itself runs at 800+ fps unthrottled, so none of that is emulation cost: it is the
+// driver. `gl` also cannot load slang shaders at all, which is the only kind libretro ships
+// any more, so the shader a user picks silently does nothing on top of running at half speed.
+function detectVideoDriver() {
+    // Vulkan needs both a loader and at least one installed ICD; either missing and RetroArch
+    // falls back on its own, badly. glcore is the fallback rather than gl because it is the
+    // older of the two that can still load slang shaders.
+    const loader = ['/usr/lib/libvulkan.so.1', '/usr/lib64/libvulkan.so.1', '/usr/lib/x86_64-linux-gnu/libvulkan.so.1']
+        .some(f => { try { return fs.existsSync(f); } catch { return false; } });
+    const icd = ['/usr/share/vulkan/icd.d', '/usr/local/share/vulkan/icd.d', path.join(os.homedir(), '.local/share/vulkan/icd.d')]
+        .some(d => { try { return fs.readdirSync(d).some(f => f.endsWith('.json')); } catch { return false; } });
+    return (loader && icd) ? 'vulkan' : 'glcore';
+}
+// Threaded video buys the last 7% but is a known problem for cores that render in hardware, so
+// it is a global default that gets switched back off for those systems at launch. See
+// launchConfigFile.
+const HW_RENDERED_SYSTEMS = new Set(['gc', 'wii', 'ps2', 'ps3', 'psp', 'vita', 'dc', '3ds', 'switch', 'saturn']);
+function videoDefaults() {
+    return {
+        video_driver: detectVideoDriver(),
+        video_threaded: 'true',
+        video_vsync: 'true',
+        video_smooth: 'false',          // sharp pixels; bilinear blur is not what retro wants
+        video_fullscreen: 'true',       // a game started from a library belongs on the whole screen
+        video_windowed_fullscreen: 'true',
+    };
+}
+
 // ⚠️ The owned config is written ONCE and then never revisited, so whatever the host config
 // happened to say at that moment is what EmuLatte is stuck with. If RetroArch had not been run
 // yet, or wrote its config a minute later, the owned config ends up with no libretro_directory
@@ -953,7 +991,12 @@ function repairOwnedRaCfg() {
     if (!updates.libretro_info_path && stale('libretro_info_path')) {
         const d = coreInfoSearchDirs().find(hasCoreInfo); if (d) updates.libretro_info_path = d;
     }
-    if (library) updates.system_directory = library.biosRoot();   // always ours
+    // Video: only ever filled in when absent, so a driver somebody chose on purpose stands.
+    for (const [k, v] of Object.entries(videoDefaults())) if (cur[k] == null || cur[k] === '') updates[k] = v;
+    if (library) {
+        updates.system_directory = library.biosRoot();     // always ours
+        updates.video_shader_dir = library.shaderRoot();   // ditto: EmuLatte's shaders, not the host's
+    }
     if (Object.keys(updates).length) {
         writeRaCfgKeys(file, updates);
         console.log('[retroarch] repaired the owned config:', Object.keys(updates).join(', '));
@@ -967,7 +1010,8 @@ function repairOwnedRaCfg() {
 const reimportRaPaths = () => {
     const f = ensureOwnedRaCfg();
     const keys = readHostPathKeys();
-    delete keys.system_directory;
+    delete keys.system_directory;     // the BIOS folder is ours
+    delete keys.video_shader_dir;     // so are the shaders
     writeRaCfgKeys(f, keys);
     if (library) library.pinBiosDir();
     return f;
@@ -1062,6 +1106,13 @@ function launchConfigFile(game, extra = {}) {
         if (data.shaderEnable === 'true' && data.shader) cfg.video_shader = data.shader;
         if (data.custom && data.custom.trim())
             for (const line of data.custom.trim().split('\n')) { const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?(.*?)"?\s*$/); if (m) cfg[m[1]] = m[2]; }
+    }
+    // ⚠️ Threaded video is a 7% win on software cores and a known source of trouble on the
+    // ones that render in hardware, so the systems in that group get it switched back off.
+    if (game) {
+        let shortName = '';
+        try { shortName = db?.prepare('SELECT short_name FROM systems WHERE id=?').get(game.system_id)?.short_name || ''; } catch {}
+        if (HW_RENDERED_SYSTEMS.has(shortName)) cfg.video_threaded = 'false';
     }
     Object.assign(cfg, extra);
     cfg.config_save_on_exit = 'false';
@@ -1390,7 +1441,9 @@ function httpsDownload(url, dest, onProgress) {
         get(url);
     });
 }
-const shaderDir = () => readRaCfgKey('video_shader_dir') || path.join(getRetroArchCfgDir(), 'shaders');
+// EmuLatte's own shader folder wins over anything a host config says, so a download has
+// somewhere writable to land and the collection belongs to this app.
+const shaderDir = () => (library && library.shaderRoot()) || readRaCfgKey('video_shader_dir') || path.join(getRetroArchCfgDir(), 'shaders');
 
 // Download libretro's official slang-shaders into <shaders>/shaders_slang (same layout RetroArch's updater uses).
 ipcMain.handle('download-shader-pack', async (e) => {
@@ -2267,8 +2320,15 @@ ipcMain.handle('play-readiness', () => {
         if (found) ready.push({ ...r, core, path: found });
         else missing.push({ ...r, core, base: path.basename(core).replace(/\.so$/, ''), reason: 'core not installed' });
     }
+    const raCfg = parseRaCfg(ensureOwnedRaCfg());
     return {
         ok: true, retroarch: variant,
+        // What EmuLatte is actually telling RetroArch to render with, and whether it has its
+        // own shaders yet. Both decide whether a game looks and runs the way it should.
+        videoDriver: raCfg.video_driver || '(RetroArch default)',
+        recommendedDriver: detectVideoDriver(),
+        shaderDir: library ? library.shaderRoot() : '',
+        hasShaders: library ? library.hasShaderPack() : false,
         coreDirs: coreSearchDirs(), coresFound: coreSearchDirs().reduce((n, d) => {
             try { return n + fs.readdirSync(d).filter(f => f.endsWith('_libretro.so')).length; } catch { return n; }
         }, 0),

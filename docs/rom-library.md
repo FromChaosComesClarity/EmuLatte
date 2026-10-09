@@ -181,6 +181,43 @@ and one button to fetch the lot. The first-run screen shows the same card when t
 something to fix. Downloaded cores go somewhere writable, never `/usr/lib/libretro`, which is
 root-owned and would fail with EACCES.
 
+## Video: the defaults EmuLatte picks for itself
+
+EmuLatte runs RetroArch on its own config and never touches the host's. That means RetroArch's
+compiled-in defaults apply unless EmuLatte says otherwise, and on a modern desktop the default
+`gl` driver is not a neutral choice, it is a slow one.
+
+Measured on an RTX 4060 Ti, NES (nestopia), fullscreen at 3440x1440 with `crt-aperture`:
+
+| driver | achieved | vs correct speed |
+|---|---|---|
+| `gl` | 29.1 fps | **207%** (half speed) |
+| `vulkan` | 54.6 fps | 110% |
+| `vulkan` + `video_threaded` | 58.6 fps | 103% |
+
+The core runs at 800+ fps unthrottled, so none of that is emulation cost. Windowed, the same
+comparison is 50.6 fps against 58.0.
+
+⚠️ `gl` also cannot load **slang** shaders, which is the only kind libretro ships any more.
+The log line is `[GLSL] Stock GLSL shaders will be used`. So a user picking a CRT shader got
+nothing on screen *and* half the speed, with nothing said either way.
+
+So `videoDefaults()` seeds `video_driver` (vulkan when a loader and an ICD are both present,
+else `glcore`, which is the older driver that can still load slang), `video_threaded`,
+`video_vsync`, `video_smooth = false` and fullscreen. They are seeded on creation and filled in
+on an older install **only when absent**, so a driver somebody chose on purpose stands.
+
+⚠️ Threaded video is a known problem for cores that render in hardware, so
+`launchConfigFile` switches it back off for the systems in `HW_RENDERED_SYSTEMS` (GameCube,
+Wii, PS2/PS3, PSP, Vita, Dreamcast, 3DS, Switch, Saturn). Global win, per-system exception.
+
+### Shaders are EmuLatte's too
+
+`video_shader_dir` is pinned to `Emulatte_Stuff/shaders` and excluded from the host import, for
+the same reason the BIOS folder is: `/usr/share/libretro/shaders` is root-owned, so nothing can
+be downloaded into it, and it belongs to the host. The Ready to play card offers to fetch
+libretro's slang pack into EmuLatte's own folder when it is empty.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

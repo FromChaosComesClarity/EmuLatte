@@ -182,6 +182,14 @@ function createLibrary(ctx) {
     const defaultBiosRoot = () => path.join(configDir, 'BIOS');
     const romsRoot = () => setting('roms_root') || defaultRomsRoot();
     const biosRoot = () => setting('bios_root') || defaultBiosRoot();
+    // EmuLatte's own shaders, for the same reason its BIOS folder is its own: the host's
+    // /usr/share/libretro/shaders is root-owned, so nothing can be downloaded into it, and it
+    // is the host's to change. EmuLatte keeps its collection where it can manage it.
+    const shaderRoot = () => setting('shader_root') || path.join(configDir, 'shaders');
+    const shaderPackDir = () => path.join(shaderRoot(), 'shaders_slang');
+    const hasShaderPack = () => {
+        try { return fs.readdirSync(shaderPackDir()).length > 0; } catch { return false; }
+    };
 
     // ── Systems are seeded, not added by hand ────────────────────────────────
     // Every preset exists as a system from the first launch, configured exactly as the preset
@@ -265,6 +273,7 @@ function createLibrary(ctx) {
         const created = [];
         try { fs.mkdirSync(root, { recursive: true }); } catch (e) { return { ok: false, error: e.message, root }; }
         try { fs.mkdirSync(bios, { recursive: true }); } catch {}
+        try { fs.mkdirSync(shaderRoot(), { recursive: true }); } catch {}
         const systems = db.prepare('SELECT * FROM systems ORDER BY name ASC').all();
         for (const s of systems) {
             const f = folderOf(s, presetBy.get(s.short_name));
@@ -762,6 +771,7 @@ function createLibrary(ctx) {
 
     return {
         romsRoot, biosRoot, defaultRomsRoot, defaultBiosRoot,
+        shaderRoot, shaderPackDir, hasShaderPack,
         setRomsRoot: p => putSetting('roms_root', p),
         setBiosRoot: p => putSetting('bios_root', p),
         seedSystems, dismiss, undismissAll, ensureFolders, candidateFolders, folderReport,

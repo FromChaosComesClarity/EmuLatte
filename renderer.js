@@ -4558,6 +4558,7 @@ function wireUI() {
         renderLibraryPane();
     });
     document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
+    document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
     document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
@@ -5296,12 +5297,21 @@ async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-inst
         return r;
     }
     _missingCores = r.needed || [];
+    // How the picture gets drawn, which decides whether a game runs at full speed and whether
+    // the shaders can load at all.
+    const drvLine = `Rendering with <b>${escHtml(r.videoDriver)}</b>.`
+        + (r.videoDriver === 'gl'
+            ? ` <span style="color:#ef5350;">That is the legacy driver: it runs roughly half speed with a shader at full resolution, and cannot load slang shaders at all. ${escHtml(r.recommendedDriver)} is the one to use.</span>`
+            : '')
+        + (r.hasShaders ? '' : ` Shaders are not downloaded yet.`);
     if (!r.missing.length) {
         const n = r.ready.reduce((a, x) => a + x.games, 0);
-        body.innerHTML = r.ready.length
+        body.innerHTML = (r.ready.length
             ? `<b style="color:var(--accent);">Everything is ready.</b> ${n} game${n !== 1 ? 's' : ''} across ${r.ready.length} system${r.ready.length !== 1 ? 's' : ''}, every core installed. ${r.coresFound} cores found in ${r.coreDirs.length} folder${r.coreDirs.length !== 1 ? 's' : ''}.`
-            : `No games yet. Drop ROMs into the folders below and press Rescan Library.`;
+            : `No games yet. Drop ROMs into the folders below and press Rescan Library.`)
+            + `<div style="margin-top:6px; color:var(--text_dim);">${drvLine}</div>`;
         if (btn) btn.style.display = 'none';
+        _toggleShaderBtn(r);
         return r;
     }
     const rows = r.missing.map(m =>
@@ -5309,9 +5319,29 @@ async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-inst
         + `<span style="color:var(--text_dim);">${m.games} game${m.games !== 1 ? 's' : ''}</span>`
         + `<code style="color:#ef5350; font-size:10px;">${escHtml(m.base || m.reason)}</code></div>`).join('');
     body.innerHTML = `<b>${r.missing.length} system${r.missing.length !== 1 ? 's' : ''} cannot play yet</b>, because the core each one needs is not on this machine.`
-        + `<div style="margin-top:6px;">${rows}</div>`;
+        + `<div style="margin-top:6px;">${rows}</div>`
+        + `<div style="margin-top:6px; color:var(--text_dim);">${drvLine}</div>`;
+    _toggleShaderBtn(r);
     if (btn && _missingCores.length) { btn.style.display = ''; btn.textContent = `Install ${_missingCores.length} missing core${_missingCores.length !== 1 ? 's' : ''}`; }
     return r;
+}
+
+// The shader pack is EmuLatte's own, downloaded into its folder rather than borrowed from the
+// host, so the button only shows while there is nothing there.
+function _toggleShaderBtn(r) {
+    const b = document.getElementById('btn-download-shaders');
+    if (!b) return;
+    b.style.display = r && !r.hasShaders ? '' : 'none';
+}
+async function downloadShaders() {
+    const b = document.getElementById('btn-download-shaders');
+    const st = document.getElementById('play-ready-progress');
+    if (b) { b.disabled = true; b.textContent = 'Downloading the shader pack...'; }
+    let r = null;
+    try { r = await window.api.downloadShaderPack(); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (b) { b.disabled = false; b.textContent = 'Download the shader pack'; }
+    if (st) st.textContent = r?.ok ? `Installed ${r.files} shader files into EmuLatte's own folder.` : (r?.error || 'The shader pack could not be downloaded.');
+    renderPlayReadiness();
 }
 
 // Fetch every core the library is short of, reporting as it goes.
