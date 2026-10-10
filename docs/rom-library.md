@@ -364,6 +364,25 @@ importing Clarity's API keys, and the Suite backup. Restoring a backup zip still
 the old `GameManagerConfig/EmuLatte/` prefix, which is now the only way to carry an old library
 forward, and it is an act somebody chooses.
 
+## Saying what the scan is doing
+
+A rescan on a large collection is several seconds of nothing, and nothing looks like a hang.
+`scan()` takes an `onProgress` callback and reports each phase as it happens: the BIOS folder,
+then each system's folder as it is read, then importing, folding in duplicates, and checking
+for files that have gone. `runLibraryScan` forwards those to the renderer.
+
+The scan is synchronous, which does not matter here: the renderer is a separate process and
+paints each message as it arrives while the main process is still working.
+
+⚠️ Two backdrop-filter overlays must not stack, so a rescan started from inside Settings
+reports on the card that started it rather than opening a window over the top. Same progress,
+different destination, picked by whether the Settings modal is open.
+
+Orphaned artwork was already handled: **Settings ▸ Data ▸ Clean Unused Images & Videos**, also
+reachable from Cleanup at the foot of the Settings rail. It compares every file in
+`images/`, `videos/` and `manuals/` against what the database references, reports the count and
+the megabytes, and deletes only after a confirmation.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

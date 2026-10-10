@@ -3447,10 +3447,17 @@ ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => scanFolderEntri
 // on disk right now".
 function runLibraryScan(opts = {}) {
     if (!library) return { ok: false, error: 'The library is not open yet.' };
+    // The scan is synchronous, but these reach the renderer as they are sent: it is a separate
+    // process and paints them while this one is still working.
+    const tell = (info) => {
+        const w = libraryWindow();
+        if (w && !w.isDestroyed()) w.webContents.send('library-scan-progress', info);
+    };
+    tell({ phase: 'bios' });
     let bios = null;
     try { bios = library.biosScan(); } catch (e) { console.error('BIOS scan failed:', e.message); }
     let res;
-    try { res = library.scan(opts); } catch (e) { res = { ok: false, error: e.message }; }
+    try { res = library.scan({ ...opts, onProgress: tell }); } catch (e) { res = { ok: false, error: e.message }; }
     lastScan = { ...res, bios, at: Date.now(), startup: !!opts.startup };
     return lastScan;
 }

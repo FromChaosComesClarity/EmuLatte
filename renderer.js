@@ -51,6 +51,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     // The launch scan runs in the main process and may finish before or after this face loads,
     // so take it from whichever arrives: the result that is already waiting, or the event.
     window.api.onLibraryScanned(res => applyScanResult(res, { quiet: true }));
+    window.api.onLibraryScanProgress(paintScanProgress);
     window.api.getLastScan().then(res => applyScanResult(res, { quiet: true })).catch(() => {});
     window.api.signalReady();
 });
@@ -4648,11 +4649,12 @@ function wireUI() {
     document.getElementById('btn-library-rescan').addEventListener('click', async () => {
         const st = document.getElementById('library-scan-status');
         st.textContent = 'Reading the ROMS folder\u2026';
-        const res = await rescanLibrary('btn-library-rescan');
+        const res = await rescanLibrary('btn-library-rescan', 'library-scan-status');
         st.textContent = scanSummary(res);
         renderLibraryPane();
     });
     document.getElementById('btn-sp-cancel').addEventListener('click', () => closeModal('modal-save-pick'));
+    document.getElementById('btn-scan-close').addEventListener('click', () => closeModal('modal-scan'));
     document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
     document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
     document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);
@@ -5579,13 +5581,74 @@ async function renderLibraryPane() {
 // All of this is reporting: reload what changed, say so, and offer to scrape whatever is new.
 let _lastScanSeen = 0;
 
-async function rescanLibrary(btnId = 'btn-rescan-library') {
+// Only the rescan the user asked for reports itself; the one on every launch stays quiet.
+// ⚠️ Two backdrop-filter overlays must not stack, so a rescan started from inside Settings
+// reports on the card that started it instead of opening a window over the top.
+let _scanModalOpen = false;
+let _scanInlineEl = null;
+const SCAN_PHASES = {
+    bios:      'Checking the BIOS folder',
+    reading:   'Reading the ROMS folder',
+    importing: 'Adding what is new',
+    tidying:   'Folding in duplicates',
+    checking:  'Checking for games whose file has gone',
+};
+function scanProgressText(info) {
+    const phase = SCAN_PHASES[info.phase] || 'Working';
+    if (!info.system) return info.total ? `${phase}: ${info.step} of ${info.total}` : `${phase}\u2026`;
+    return info.total ? `${phase}: ${info.system} (${info.step} of ${info.total})` : `${phase}: ${info.system}`;
+}
+function paintScanProgress(info) {
+    if (!info) return;
+    if (_scanInlineEl) { _scanInlineEl.textContent = scanProgressText(info); return; }
+    if (!_scanModalOpen) return;
+    const phase = document.getElementById('scan-phase');
+    const detail = document.getElementById('scan-detail');
+    const bar = document.getElementById('scan-bar');
+    if (phase) phase.textContent = SCAN_PHASES[info.phase] || 'Working';
+    if (detail) detail.textContent = info.system
+        ? (info.total ? `${info.system} (${info.step} of ${info.total})` : info.system)
+        : (info.total ? `${info.step} of ${info.total}` : '');
+    if (bar) bar.style.width = info.total ? `${Math.round((info.step / info.total) * 100)}%` : '';
+}
+
+async function rescanLibrary(btnId = 'btn-rescan-library', inlineStatusId = null) {
     const btn = document.getElementById(btnId);
     if (btn) { btn.disabled = true; btn.style.animation = 'spin 0.6s linear infinite'; }
+    const settingsOpen = document.getElementById('modal-settings')?.classList.contains('active');
+    _scanInlineEl = settingsOpen && inlineStatusId ? document.getElementById(inlineStatusId) : null;
+
+    if (!_scanInlineEl) {
+        // Show what is happening rather than freezing a button: a big collection is several
+        // seconds of nothing otherwise, and nothing looks like a hang.
+        _scanModalOpen = true;
+        document.getElementById('scan-result').style.display = 'none';
+        document.getElementById('btn-scan-close').style.display = 'none';
+        document.getElementById('scan-phase').textContent = 'Starting\u2026';
+        document.getElementById('scan-detail').textContent = '';
+        document.getElementById('scan-bar').style.width = '0%';
+        openModal('modal-scan');
+    }
+
     let res = null;
     try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
     if (btn) { btn.disabled = false; btn.style.animation = ''; }
-    await applyScanResult(res, { quiet: false });
+
+    if (_scanModalOpen) {
+        document.getElementById('scan-bar').style.width = '100%';
+        document.getElementById('scan-phase').textContent = res?.ok ? 'Done' : 'Could not finish';
+        document.getElementById('scan-detail').textContent = res?.ok
+            ? `${res.folders} folder${res.folders !== 1 ? 's' : ''} read in ${((res.ms || 0) / 1000).toFixed(1)}s`
+            : '';
+        const out = document.getElementById('scan-result');
+        out.textContent = scanSummary(res);
+        out.style.display = '';
+        document.getElementById('btn-scan-close').style.display = '';
+        _scanModalOpen = false;
+    }
+    _scanInlineEl = null;
+
+    await applyScanResult(res, { quiet: true, noToast: true });
     return res;
 }
 
@@ -5605,7 +5668,7 @@ function scanSummary(res) {
     return bits.join(', ') + '.' + (top ? ` ${top}.` : '');
 }
 
-async function applyScanResult(res, { quiet = false } = {}) {
+async function applyScanResult(res, { quiet = false, noToast = false } = {}) {
     if (!res) return;
     if (res.at && res.at === _lastScanSeen) return;    // the same scan reaching us twice
     _lastScanSeen = res.at || Date.now();
@@ -5617,7 +5680,7 @@ async function applyScanResult(res, { quiet = false } = {}) {
         const g = gamesById.get(id);
         return g && !g.cover && !g.hero && !g.logo && !g.screenshot && !g.description && !g.screenscraper_id;
     });
-    if (!quiet || changed) showLaunchToast(scanSummary(res), null, 'LIBRARY');
+    if ((!quiet || changed) && !noToast) showLaunchToast(scanSummary(res), null, 'LIBRARY');
     if (!unscraped.length) return;
     const newIds = unscraped;
     // Anything new has a filename for a title and no art, so offer to fill it in right away.

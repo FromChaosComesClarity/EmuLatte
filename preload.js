@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
     scanLibrary:         (opts)  => ipcRenderer.invoke('scan-library', opts),
     getLastScan:         ()      => ipcRenderer.invoke('get-last-scan'),
     onLibraryScanned:    (cb)    => ipcRenderer.on('library-scanned', (_, d) => cb(d)),
+    onLibraryScanProgress: (cb)  => ipcRenderer.on('library-scan-progress', (_, d) => cb(d)),
     libraryFolders:      ()      => ipcRenderer.invoke('library-folders'),
     openLibraryFolder:   (which) => ipcRenderer.invoke('open-library-folder', which),
     setLibraryRoot:      (which) => ipcRenderer.invoke('set-library-root', which),

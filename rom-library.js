@@ -391,6 +391,9 @@ function createLibrary(ctx) {
     function scan(opts = {}) {
         const db = getDb();
         if (!db) return { ok: false, error: 'DB not ready' };
+        // Progress is reported as it happens rather than totalled at the end: a scan of a large
+        // collection is several seconds of silence otherwise, and silence looks like a hang.
+        const say = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
         const root = romsRoot();
         const t0 = Date.now();
         const rootExists = fs.existsSync(root);
@@ -440,10 +443,13 @@ function createLibrary(ctx) {
 
         // Pass 1: the ROMS root, folder per system.
         if (rootExists) {
+            const todo = systems.filter(sy => (!onlySystems || onlySystems.has(sy.id)) && candidateFolders(sy, root).length).length;
+            let step = 0;
             for (const sys of systems) {
                 if (onlySystems && !onlySystems.has(sys.id)) continue;
                 const dirs = candidateFolders(sys, root);
                 if (!dirs.length) continue;
+                say({ phase: 'reading', system: sys.name, step: ++step, total: todo, found: found.length });
                 let added = 0;
                 for (const dir of dirs) {
                     readDirs.push(path.resolve(dir));
@@ -478,8 +484,10 @@ function createLibrary(ctx) {
             roots.set(sys.id, new Set(deepEnough && !sharedWithOther ? [anc] : dirs));
         }
         let extraFolders = 0;
+        let step2 = 0;
         for (const [sysId, dirSet] of roots) {
             const sys = sysById.get(sysId); if (!sys) continue;
+            say({ phase: 'reading', system: `${sys.name}, outside the ROMS folder`, step: ++step2, total: roots.size, found: found.length });
             let added = 0;
             for (const dir of dirSet) {
                 if (!fs.existsSync(dir)) continue;          // drive not mounted, so leave it alone
@@ -509,12 +517,16 @@ function createLibrary(ctx) {
         // makes "copy my collection into the ROMS folder" lossless: the art, the description,
         // the achievements and the play history move with it, and an entry whose drive is
         // unplugged becomes playable again the moment a copy of its ROM turns up in a folder.
+        if (found.length) say({ phase: 'importing', step: 0, total: found.length });
         const newIds = [];
         const adopted = [];
         const claimed = new Set();            // rows this scan has already re-pointed
         const repoint = db.prepare('UPDATE games SET rom_path=? WHERE id=?');
         const exists = p => { try { return fs.existsSync(p); } catch { return false; } };
+        let imported = 0;
         for (const e of found) {
+            if (++imported % 25 === 0 || imported === found.length)
+                say({ phase: 'importing', step: imported, total: found.length, system: e.system_name });
             const keys = e.kind === 'multidisc'
                 ? (e.discs || []).map(d => nameKey(e.system_id, d))
                 : [nameKey(e.system_id, e.path)];
@@ -565,6 +577,7 @@ function createLibrary(ctx) {
         // touched, because a judgement call like that is the user's.
         const merged = [];
         if (!opts.noMerge) {
+            say({ phase: 'tidying' });
             const pl = playlistCounts();
             const score = g => richness(g) + (pl.get(g.id) ? 3 : 0);
             const groups = new Map();
@@ -594,6 +607,7 @@ function createLibrary(ctx) {
         // and merging have moved paths around since the scan started.
         const removed = [];
         if (!opts.noPrune) {
+            say({ phase: 'checking' });
             const inReadDir = p => readDirs.some(d => p === d || p.startsWith(d + path.sep));
             for (const g of db.prepare('SELECT id, rom_path FROM games').all()) {
                 if (!g.rom_path) continue;
