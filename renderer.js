@@ -5558,9 +5558,15 @@ async function applyScanResult(res, { quiet = false } = {}) {
     _lastScanSeen = res.at || Date.now();
     const changed = res.added || res.removed || res.adopted || res.merged;
     if (changed) { await loadSystems(); await loadGames(); }
-    const newIds = res.newIds || [];
+    // Second guard, under the one-shot delivery: never offer to scrape a game that already
+    // has something. Whatever the plumbing does, a scraped game is not a pending job.
+    const unscraped = (res.newIds || []).filter(id => {
+        const g = gamesById.get(id);
+        return g && !g.cover && !g.hero && !g.logo && !g.screenshot && !g.description && !g.screenscraper_id;
+    });
     if (!quiet || changed) showLaunchToast(scanSummary(res), null, 'LIBRARY');
-    if (!newIds.length) return;
+    if (!unscraped.length) return;
+    const newIds = unscraped;
     // Anything new has a filename for a title and no art, so offer to fill it in right away.
     _scraperPickerMode = 'batchIds';
     _scrapeBatchIds    = newIds;

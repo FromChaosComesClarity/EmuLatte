@@ -56,6 +56,7 @@ const ytDlpConfigPath = path.join(binDir, 'yt-dlp.conf');
 let db;
 let library = null;      // the ROMS/BIOS folder layer, built once the database is open
 let lastScan = null;     // the most recent library scan, for a renderer that loads after it
+let rendererReady = false;   // whether a face is up and listening, which decides how a scan reaches it
 let mainWin = null;   // the library/couch window; not the user manual or any other child window
 
 function getSavedBounds() {
@@ -86,7 +87,7 @@ function createWindow() {
     win.setMenu(null);
     mainWin = win;
     win.on('closed', () => { if (mainWin === win) mainWin = null; });
-    if (shouldStartCouch()) enterCouch(win); else win.loadFile('index.html');
+    if (shouldStartCouch()) enterCouch(win); else { couchMode = false; win.loadFile('index.html'); }
 
     win.on('close', () => {
         if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {   // don't persist couch-mode fullscreen bounds
@@ -97,6 +98,7 @@ function createWindow() {
 
     const showWin = () => { if (!win.isVisible()) win.show(); };
     ipcMain.once('renderer-ready', showWin);
+    ipcMain.on('renderer-ready', () => { rendererReady = true; });
     win.once('ready-to-show', () => setTimeout(showWin, 3000));
 }
 
@@ -379,15 +381,41 @@ function couchDisplayIndex() {
     return Number(couchSetting('couch_display', '0')) || 0;   // 0 = current/primary
 }
 function couchDisplay(idx) { if (!idx) return null; try { return require('electron').screen.getAllDisplays()[idx - 1] || null; } catch { return null; } }
+// Whether the library window is wearing the Couch face. Needed because a game taking the
+// screen is indistinguishable, from the compositor's side, from the user leaving.
+let couchMode = false;
+
 function enterCouch(win) {
     if (!win) return;
+    couchMode = true;
     const target = couchDisplay(couchDisplayIndex());
     if (target) { win.setFullScreen(false); win.setBounds(target.bounds); }   // move first (honoured on X11/Win/macOS)
     win.setFullScreen(true);
     win.loadFile('couch.html');
     win.show();   // show immediately (esp. start-in-couch) rather than waiting on couch.js's own 'renderer-ready'
 }
-function exitCouch(win) { if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
+function exitCouch(win) { couchMode = false; if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
+
+/*
+ * Put Couch Mode back on the whole screen after a game closes.
+ *
+ * ⚠️ Hyprland takes fullscreen away from the window underneath when the game fullscreens,
+ * and does not give it back when the game exits. Measured: Couch Mode goes from 2752x1152
+ * fullscreen to a tiled 688x563 the moment the emulator appears, and stays tiled afterwards.
+ * Electron's own isFullScreen() follows the compositor down to false, so re-requesting is a
+ * real request rather than a no-op, but only once the game's window has actually gone, which
+ * is why this retries rather than firing once and hoping.
+ */
+function restoreCouchFullscreen() {
+    if (!couchMode) return;
+    const again = (tries) => {
+        const w = libraryWindow();
+        if (!couchMode || !w || w.isDestroyed()) return;
+        if (!w.isFullScreen()) { w.setFullScreen(true); w.focus(); }
+        if (tries > 0) setTimeout(() => again(tries - 1), 400);
+    };
+    setTimeout(() => again(5), 250);
+}
 const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
 // Shipped version, straight from package.json, so the About dialog can never drift from the build.
 ipcMain.handle('get-app-version', () => { try { return app.getVersion(); } catch { return ''; } });
@@ -661,6 +689,7 @@ function endGameSession() {
     if (_liveSessions === 0 || --_liveSessions !== 0) return;
     omarchy.inhibitIdle(false, powerSaveBlocker);
     omarchy.setGamingPower(false);
+    restoreCouchFullscreen();
 }
 
 /*
@@ -3408,7 +3437,19 @@ function runLibraryScan(opts = {}) {
     return lastScan;
 }
 ipcMain.handle('scan-library', (_, opts) => runLibraryScan(opts || {}));
-ipcMain.handle('get-last-scan', () => lastScan);
+
+// ⚠️ The offer to scrape what was just imported is ONE SHOT. `lastScan` lives for the whole
+// session and every face that loads reads it, so leaving Couch Mode reloaded the desktop face,
+// which read the launch scan again and offered to scrape games that had been scraped half an
+// hour earlier. Handing the ids over consumes them; the counts stay, because they are a
+// description of what happened rather than a job to do.
+function takeScanOffer() {
+    if (!lastScan) return null;
+    const out = { ...lastScan };
+    if (lastScan.newIds?.length) lastScan = { ...lastScan, newIds: [] };
+    return out;
+}
+ipcMain.handle('get-last-scan', () => takeScanOffer());
 
 // Every launch reads the folder, the way ES-DE and Batocera do, so the user never has to ask for
 // it. It runs just after createWindow so a large collection can never hold the window back: a
@@ -3416,9 +3457,13 @@ ipcMain.handle('get-last-scan', () => lastScan);
 // that loads after it reads the result from get-last-scan.
 function startupLibraryScan() {
     setTimeout(() => {
-        const res = runLibraryScan({ startup: true });
+        runLibraryScan({ startup: true });
+        // ⚠️ The event is only any use once a face is actually listening. Sent before that,
+        // it vanishes, and since delivery consumes the offer it would vanish WITH the ids. So
+        // it goes out only when a renderer has announced itself; otherwise the face claims the
+        // offer itself through get-last-scan as it initialises. Exactly one of the two.
         const w = libraryWindow();
-        if (w && !w.isDestroyed()) w.webContents.send('library-scanned', res);
+        if (rendererReady && w && !w.isDestroyed()) w.webContents.send('library-scanned', takeScanOffer());
     }, 250);
 }
 

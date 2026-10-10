@@ -312,6 +312,30 @@ summary now names the first real error and calls out a rejected login specifical
 `ssApiCall` marks `authFailed` on 401/403 or an "Erreur de login" body, which is a different
 thing from a game that simply is not in the database.
 
+## Coming back from a game
+
+**Couch Mode returned tiled.** Hyprland takes fullscreen away from the window underneath when
+the game fullscreens, and does not give it back when the game exits. Measured: Couch Mode goes
+from 2752x1152 fullscreen to a tiled 688x563 the moment the emulator appears, and stays tiled
+afterwards. Electron's own `isFullScreen()` follows the compositor down to false, so
+re-requesting is a real request rather than a no-op, but only once the game's window has
+actually gone, which is why `restoreCouchFullscreen()` retries instead of firing once and
+hoping. It is gated on `couchMode`, because a game taking the screen is indistinguishable,
+from the compositor's side, from the user leaving.
+
+**The scrape offer came back.** `lastScan` lives for the whole session and every face that
+loads reads it, so leaving Couch Mode reloaded the desktop face, which read the launch scan
+again and offered to scrape games that had been scraped half an hour earlier. The ids are now
+consumed on delivery: `takeScanOffer()` hands them over once and blanks them, while the counts
+stay, because those describe what happened rather than name a job to do.
+
+⚠️ Delivery is one-shot **and** must not be lost. The `library-scanned` event is useless before
+a face is listening, and since delivery consumes the offer, sending it early would take the ids
+down with it. So the event goes out only once a renderer has announced itself, and otherwise
+the face claims the offer through `get-last-scan` as it initialises. Exactly one of the two
+paths runs. A second guard in the renderer drops any id that already has art or a scrape id,
+because whatever the plumbing does, a scraped game is not a pending job.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply
