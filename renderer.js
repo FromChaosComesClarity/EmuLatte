@@ -1483,13 +1483,65 @@ function switchView(viewId) {
 function closeGamePage() { switchView(_bgView || 'view-gallery'); renderCurrentView(); }
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
-async function launchGame(id) {
+// A game with a save behind it gets asked about first, on this face as well as Couch Mode:
+// resume one of them, or start fresh. Skipped entirely when there is nothing saved, so the
+// common case is still one click.
+async function launchGame(id, opts = null) {
     _lastLaunchId = id;
+    if (opts === null) {
+        let states = [];
+        try { states = await window.api.listSaveStates(id); } catch {}
+        if (states.length) { openSavePicker(id, states); return; }
+    }
+    if (opts) return launchGameWith(id, opts);
     const result = await window.api.launchGame(id);
     // A game that cannot start because its core is not installed is a question, not an error:
     // the core is one download away and EmuLatte knows exactly which one.
     if (!result.ok && result.needCore) { await offerMissingCore(result); return; }
     if (!result.ok) { showLaunchToast(result.error || 'No launch command configured', result.cmd); return; }
+    markPlayed(id);
+    const game = allGames.find(g => g.id === id);
+    if (game) showNowPlaying(game);
+}
+
+// ── RESUME OR START FRESH ─────────────────────────────────────────────────────
+const saveRelTime = (ms) => {
+    const d = Math.max(0, Date.now() - ms) / 1000;
+    if (d < 90) return 'just now';
+    if (d < 5400) return `${Math.round(d / 60)} min ago`;
+    if (d < 172800) return `${Math.round(d / 3600)} h ago`;
+    return new Date(ms).toLocaleDateString();
+};
+function openSavePicker(id, states) {
+    const g = gamesById.get(id);
+    document.getElementById('sp-sub').textContent =
+        `${g?.title || 'This game'} has ${states.length} save${states.length !== 1 ? 's' : ''}.`;
+    const cards = [`<button class="sp-card" data-slot="__fresh__"><div class="sp-blank">▶</div>
+        <div class="sp-meta"><div class="sp-slot">Start Fresh</div><div class="sp-time">From the beginning</div></div></button>`];
+    for (const st of states) {
+        const name = st.label || (st.slot === 'auto' ? 'Auto Save' : `Slot ${st.slot}`);
+        // The thumbnail RetroArch writes beside the state. file:// so it loads straight off disk.
+        const art = st.thumb
+            ? `<img class="sp-thumb" src="file://${encodeURI(st.thumb)}" alt="">`
+            : `<div class="sp-blank" style="font-size:16px; letter-spacing:1px;">NO SHOT</div>`;
+        cards.push(`<button class="sp-card" data-slot="${escHtml(String(st.slot))}">${art}
+            <div class="sp-meta"><div class="sp-slot">${escHtml(name)}</div><div class="sp-time">${escHtml(saveRelTime(st.mtime))}</div></div></button>`);
+    }
+    const host = document.getElementById('sp-cards');
+    host.innerHTML = cards.join('');
+    host.querySelectorAll('.sp-card').forEach(el => el.addEventListener('click', () => {
+        const slot = el.dataset.slot;
+        closeModal('modal-save-pick');
+        launchGame(id, slot === '__fresh__' ? { fresh: true } : { slot });
+    }));
+    openModal('modal-save-pick');
+    host.querySelector('.sp-card')?.focus();
+}
+// Launch with an explicit choice from the picker.
+async function launchGameWith(id, opts) {
+    const result = await window.api.launchGameEx(id, opts);
+    if (!result?.ok && result?.needCore) { await offerMissingCore({ ...result, gameId: id }); return; }
+    if (!result?.ok) { showLaunchToast(result?.error || 'Could not launch.', result?.cmd); return; }
     markPlayed(id);
     const game = allGames.find(g => g.id === id);
     if (game) showNowPlaying(game);
@@ -4600,6 +4652,7 @@ function wireUI() {
         st.textContent = scanSummary(res);
         renderLibraryPane();
     });
+    document.getElementById('btn-sp-cancel').addEventListener('click', () => closeModal('modal-save-pick'));
     document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
     document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
     document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);

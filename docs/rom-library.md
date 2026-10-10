@@ -336,6 +336,34 @@ the face claims the offer through `get-last-scan` as it initialises. Exactly one
 paths runs. A second guard in the renderer drops any id that already has art or a scrape id,
 because whatever the plumbing does, a scraped game is not a pending job.
 
+## Resume or start fresh
+
+A game with a save behind it asks before it starts, on both faces: Start Fresh, or one card per
+save with the screenshot RetroArch wrote beside it, its label and when it was made. Couch Mode
+already had this; the desktop face now has the same thing, and `savestate_thumbnail_enable` is
+seeded so the screenshots exist to show.
+
+Both choices have to override the config rather than hope it agrees: Start Fresh forces
+`savestate_auto_load = false`, and picking the auto save forces it **true**, or the choice just
+made is silently ignored in one direction or the other.
+
+`launchPreflight()` is shared by `playGame` and `launch-game-ex`, so resuming a save cannot
+skip the missing-ROM and missing-core checks that starting fresh performs.
+
+## Only Emulatte_Stuff
+
+⚠️ There is deliberately **no** migration from the sibling app's `GameManagerConfig` folder any
+more. EmuLatte used to adopt a `GameManagerConfig/EmuLatte` folder it found beside itself,
+which was right once and wrong ever after: dropping the AppImage next to an existing Clarity
+install on a second machine silently pulled that machine's library and artwork in, and the only
+way to start clean was to move the binary somewhere else. `Emulatte_Stuff` is the one place
+EmuLatte reads and writes.
+
+What remains is explicit and user-pressed, never automatic: exporting a game to Clarity,
+importing Clarity's API keys, and the Suite backup. Restoring a backup zip still understands
+the old `GameManagerConfig/EmuLatte/` prefix, which is now the only way to carry an old library
+forward, and it is an act somebody chooses.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

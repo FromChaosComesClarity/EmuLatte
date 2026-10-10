@@ -220,67 +220,6 @@ ok(rep.isDefaultRoot === true, 'the default root is recognised as default');
 const mdRow = rep.systems.find(r => r.short_name === 'genesis');
 ok(mdRow.folder === 'megadrive' && mdRow.extras.includes('genesis'), 'Mega Drive reports its folder and the alias in use', mdRow);
 
-console.log('\n── moving home ──');
-const b2 = fs.mkdtempSync(path.join(os.tmpdir(), 'el-home-'));
-const legacy = path.join(b2, 'GameManagerConfig', 'EmuLatte');
-fs.mkdirSync(path.join(legacy, 'images', 'covers'), { recursive: true });
-fs.writeFileSync(path.join(legacy, 'emulatte.db'), 'db');
-fs.writeFileSync(path.join(legacy, 'images', 'covers', 'a.jpg'), 'img');
-const newHome = path.join(b2, 'Emulatte_Stuff');
-const mv = romLib.migrateHomeOnDisk(b2, newHome, m => console.log('   [home]', m));
-ok(mv.moved === true, 'the old folder is moved');
-ok(fs.existsSync(path.join(newHome, 'emulatte.db')) && fs.existsSync(path.join(newHome, 'images', 'covers', 'a.jpg')), 'everything came with it');
-ok(!fs.existsSync(legacy), 'the old folder is gone');
-ok(romLib.migrateHomeOnDisk(b2, newHome).moved === false, 'a second run does nothing');
-
-// ⚠️ The sibling app's folder is NOT ours. Only the EmuLatte sub-folder inside it may move;
-// GameManagerConfig itself, and everything else in it, has to come out untouched.
-const b3 = fs.mkdtempSync(path.join(os.tmpdir(), 'el-sibling-'));
-const gmc = path.join(b3, 'GameManagerConfig');
-fs.mkdirSync(path.join(gmc, 'EmuLatte'), { recursive: true });
-fs.mkdirSync(path.join(gmc, 'images', 'covers'), { recursive: true });
-fs.mkdirSync(path.join(gmc, 'couch_wallpapers'), { recursive: true });
-fs.writeFileSync(path.join(gmc, 'games.db'), 'SIBLING-LIBRARY');
-fs.writeFileSync(path.join(gmc, 'audio.json'), '{"vol":1}');
-fs.writeFileSync(path.join(gmc, 'images', 'covers', 'theirs.jpg'), 'THEIR-COVER');
-fs.writeFileSync(path.join(gmc, 'couch_wallpapers', 'wall.jpg'), 'THEIR-WALL');
-fs.writeFileSync(path.join(gmc, 'EmuLatte', 'emulatte.db'), 'OUR-DB');
-const fingerprint = (dir) => {
-    const out = [];
-    (function walk(d, rel) {
-        for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-            const r = rel ? rel + '/' + e.name : e.name;
-            if (r === 'EmuLatte' || r.startsWith('EmuLatte/')) continue;   // ours, it is allowed to move
-            if (e.isDirectory()) { out.push('d ' + r); walk(path.join(d, e.name), r); }
-            else out.push('f ' + r + ' = ' + fs.readFileSync(path.join(d, e.name), 'utf8'));
-        }
-    })(dir, '');
-    return out.join('\n');
-};
-const before3 = fingerprint(gmc);
-romLib.migrateHomeOnDisk(b3, path.join(b3, 'Emulatte_Stuff'), () => {});
-ok(fs.existsSync(gmc) && fs.statSync(gmc).isDirectory(), 'GameManagerConfig is still there, still a directory');
-ok(fingerprint(gmc) === before3, "nothing of the sibling app's changed", { before: before3, after: fingerprint(gmc) });
-ok(!fs.existsSync(path.join(gmc, 'EmuLatte')), 'only the EmuLatte sub-folder moved out');
-ok(fs.readFileSync(path.join(b3, 'Emulatte_Stuff', 'emulatte.db'), 'utf8') === 'OUR-DB', 'and it arrived intact');
-ok(fs.readFileSync(path.join(gmc, 'games.db'), 'utf8') === 'SIBLING-LIBRARY', "the sibling's database is byte-for-byte untouched");
-ok(!fs.existsSync(path.join(b3, 'GameManagerConfig.moved-to-Emulatte_Stuff')), 'the parent folder is never given a moved marker');
-fs.rmSync(b3, { recursive: true, force: true });
-
-const db2 = new Database(path.join(b2, 't.db'));
-db2.prepare('CREATE TABLE games (id INTEGER PRIMARY KEY, rom_path TEXT)').run();
-db2.prepare('INSERT INTO games (id, rom_path) VALUES (1, ?)').run('/home/x/Games/CNGM/GameManagerConfig/EmuLatte/playlists/shenmue2.m3u');
-db2.prepare('INSERT INTO games (id, rom_path) VALUES (2, ?)').run('/mnt/roms/nes/mario.nes');
-const cfgFile = path.join(b2, 'ra.cfg');
-fs.writeFileSync(cfgFile, 'core_options_path = "/home/x/Games/CNGM/GameManagerConfig/EmuLatte/retroarch/opts.cfg"\nvideo_fullscreen = "true"\n');
-const parse = f => { const m = {}; for (const l of fs.readFileSync(f,'utf8').split('\n')) { const x = l.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?(.*?)"?\s*$/); if (x) m[x[1]] = x[2]; } return m; };
-const mi = romLib.migrateHomeInDb(db2, newHome, { ensure: () => cfgFile, parse, writeKeys: (f, u) => { let t = fs.readFileSync(f,'utf8'); for (const [k,v] of Object.entries(u)) t = t.replace(new RegExp(`^${k} = ".*"$`,'m'), `${k} = "${v}"`); fs.writeFileSync(f,t); } }, m => console.log('   [home]', m));
-ok(mi.rows === 1, 'the stale .m3u rom_path is re-homed');
-ok(db2.prepare('SELECT rom_path FROM games WHERE id=1').get().rom_path === path.join(newHome, 'playlists', 'shenmue2.m3u'), 'and points into the new home');
-ok(db2.prepare('SELECT rom_path FROM games WHERE id=2').get().rom_path === '/mnt/roms/nes/mario.nes', 'an unrelated ROM path is untouched');
-ok(mi.cfgKeys === 1 && parse(cfgFile).core_options_path === path.join(newHome, 'retroarch', 'opts.cfg'), 'the RetroArch path key is re-homed', parse(cfgFile));
-
 console.log(`\n${fails ? '✗ ' + fails + ' FAILED' : '✓ all checks passed'}`);
 fs.rmSync(root, { recursive: true, force: true });
-fs.rmSync(b2, { recursive: true, force: true });
 process.exit(fails ? 1 : 0);

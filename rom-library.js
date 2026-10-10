@@ -781,72 +781,17 @@ function createLibrary(ctx) {
     };
 }
 
-// ── MOVING HOME ──────────────────────────────────────────────────────────────
-// EmuLatte used to keep its data inside Clarity's GameManagerConfig folder. It keeps it in
-// Emulatte_Stuff beside its own binary now, so the two apps share nothing. This runs once,
-// before the database is opened, and is a move rather than a copy so there is one library and
-// not two drifting ones.
-const LEGACY_MARK = `${path.sep}GameManagerConfig${path.sep}EmuLatte`;
-function migrateHomeOnDisk(baseDir, configDir, log = () => {}) {
-    if (fs.existsSync(configDir)) return { moved: false };
-    const legacy = path.join(baseDir, 'GameManagerConfig', 'EmuLatte');
-    if (!fs.existsSync(legacy)) return { moved: false };
-    try {
-        fs.mkdirSync(path.dirname(configDir), { recursive: true });
-        fs.renameSync(legacy, configDir);
-        log(`moved the data folder from ${legacy} to ${configDir}`);
-        return { moved: true, from: legacy };
-    } catch (e) {
-        // Different filesystem, or a permission problem: copy, then stand the old one down.
-        try {
-            fs.cpSync(legacy, configDir, { recursive: true });
-            fs.renameSync(legacy, legacy + '.moved-to-Emulatte_Stuff');
-            log(`copied the data folder from ${legacy} to ${configDir}`);
-            return { moved: true, from: legacy, copied: true };
-        } catch (e2) {
-            log(`could not move the data folder: ${e2.message}`);
-            return { moved: false, error: e2.message };
-        }
-    }
-}
-
-// The paths that pointed inside the old home are still in the database and in the owned
-// RetroArch config. Matched on the GameManagerConfig/EmuLatte segment rather than one absolute
-// prefix, so a folder that was moved more than once is caught too.
-function migrateHomeInDb(db, configDir, raCfg, log = () => {}) {
-    if (!db) return { rows: 0, cfgKeys: 0 };
-    let rows = 0, cfgKeys = 0;
-    const rehome = p => {
-        const i = p.indexOf(LEGACY_MARK);
-        return i < 0 ? null : path.join(configDir, p.slice(i + LEGACY_MARK.length));
-    };
-    try {
-        const upd = db.prepare('UPDATE games SET rom_path=? WHERE id=?');
-        db.transaction(() => {
-            for (const g of db.prepare("SELECT id, rom_path FROM games WHERE rom_path LIKE '%GameManagerConfig%EmuLatte%'").all()) {
-                const np = rehome(g.rom_path);
-                if (np && np !== g.rom_path) { upd.run(np, g.id); rows++; }
-            }
-        })();
-    } catch (e) { log(`rom_path re-home failed: ${e.message}`); }
-    try {
-        const file = raCfg.ensure();
-        const parsed = raCfg.parse(file);
-        const updates = {};
-        for (const [k, v] of Object.entries(parsed)) {
-            if (typeof v !== 'string' || !v.includes(LEGACY_MARK)) continue;
-            const np = rehome(v);
-            if (np) updates[k] = np;
-        }
-        if (Object.keys(updates).length) { raCfg.writeKeys(file, updates); cfgKeys = Object.keys(updates).length; }
-    } catch (e) { log(`RetroArch config re-home failed: ${e.message}`); }
-    if (rows || cfgKeys) log(`re-homed ${rows} ROM path(s) and ${cfgKeys} RetroArch path(s) into ${configDir}`);
-    return { rows, cfgKeys };
-}
+// ⚠️ There is deliberately NO migration from the sibling app's GameManagerConfig folder.
+// EmuLatte used to adopt a `GameManagerConfig/EmuLatte` folder it found beside itself, which
+// was right once and wrong ever after: dropping the AppImage next to an existing Clarity
+// install on a second machine silently pulled that machine's library and artwork in, and the
+// only way to start clean was to move the binary somewhere else. Emulatte_Stuff is the one
+// place EmuLatte reads and writes. Bringing an older library forward is an explicit act:
+// restore a backup zip, which still understands the old prefix.
 
 module.exports = {
     DISC_PLAYLIST_EXTS, DISC_INDEX_EXTS, DISC_SIDECAR_EXTS, DISC_TRACK_EXTS, DISC_FORMAT_EXTS,
     extOf, stripExt, discNumberOf, discGameKey, discCleanTitle, discReferencedFiles,
     scanFolderEntries, commonAncestor, slugFolder, folderOf, md5File, walkFiles,
-    createLibrary, migrateHomeOnDisk, migrateHomeInDb, LEGACY_MARK,
+    createLibrary,
 };

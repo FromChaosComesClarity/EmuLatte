@@ -176,7 +176,6 @@ app.whenReady().then(() => {
         }
     });
 
-    romLib.migrateHomeOnDisk(baseDir, configDir, m => console.log('[home]', m));
     if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
     ['covers', 'heroes', 'logos', 'screenshots'].forEach(d =>
         fs.mkdirSync(path.join(imagesDir, d), { recursive: true })
@@ -328,8 +327,6 @@ app.whenReady().then(() => {
             insertGame, deleteGame: deleteGameById, raCfg: raCfgIO,
             log: m => console.log('[library]', m),
         });
-        // Paths that pointed inside the old home, now that the folder itself has moved.
-        romLib.migrateHomeInDb(db, configDir, raCfgIO, m => console.log('[home]', m));
         library.seedSystems();
         library.ensureFolders();
         // The BIOS folder becomes EmuLatte's RetroArch system directory, so what the user drops
@@ -981,7 +978,7 @@ function ensureOwnedRaCfg(force = false) {
         '# Seeded clean — only directory paths were imported from your host config; everything else is RetroArch defaults.',
         '# Tailor this from EmuLatte (Settings -> RetroArch). RetroArch is the engine; this is the config.',
         'config_save_on_exit = "true"',
-        ...Object.entries({ ...inputDefaults(), ...videoDefaults() }).map(([k, v]) => `${k} = "${v}"`),
+        ...Object.entries({ ...inputDefaults(), ...videoDefaults(), ...savestateDefaults() }).map(([k, v]) => `${k} = "${v}"`),
         ...Object.entries({ ...readHostPathKeys(), ...biosPin }).map(([k, v]) => `${k} = "${v}"`),
     ];
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
@@ -1015,6 +1012,11 @@ function detectVideoDriver() {
 const HW_RENDERED_SYSTEMS = new Set(['gc', 'wii', 'ps2', 'ps3', 'psp', 'vita', 'dc', '3ds', 'switch', 'saturn']);
 // The pad-native way into RetroArch's own menu mid-game, and back out of the game entirely.
 // Same enum for both: 0 none, 1 Down+Y+L+R, 2 L3+R3, 3 L1+R1+Start+Select, 4 Start+Select.
+// A save state is only worth offering if you can tell which one it is, so RetroArch is asked
+// to write its screenshot beside every one.
+function savestateDefaults() {
+    return { savestate_thumbnail_enable: 'true' };
+}
 function inputDefaults() {
     return {
         input_menu_toggle_gamepad_combo: '2',   // L3 + R3 opens the RetroArch menu
@@ -1087,7 +1089,7 @@ function repairOwnedRaCfg() {
         const d = coreInfoSearchDirs().find(hasCoreInfo); if (d) updates.libretro_info_path = d;
     }
     // Video and pad combos: only ever filled in when absent, so anything chosen on purpose stands.
-    for (const [k, v] of Object.entries({ ...videoDefaults(), ...inputDefaults() }))
+    for (const [k, v] of Object.entries({ ...videoDefaults(), ...inputDefaults(), ...savestateDefaults() }))
         if (cur[k] == null || cur[k] === '') updates[k] = v;
     if (library) {
         updates.system_directory = library.biosRoot();     // always ours
@@ -1298,16 +1300,16 @@ const gameWithSystem = (gameId) => db.prepare(`
  * resolution, the ScummVM safety net, the RetroArch config overrides and the last-played
  * write: correct on the day it was written and wrong by the next release.
  */
-function playGame(gameId) {
-    if (!db) return { ok: false, error: 'DB not ready' };
-    const game = gameWithSystem(gameId);
-    if (!game) return { ok: false, error: 'Game not found' };
-
-    ensureScummvmTarget(game.rom_path);   // safety net for already-imported ScummVM games with an empty .scummvm
-
-    // A missing ROM and a missing core are the two ways a launch fails before it starts, and
-    // both used to end as a RetroArch window that flashed and vanished with nothing said. Name
-    // which it is, and hand the renderer what it needs to offer the fix.
+/*
+ * Everything that makes a launch impossible before it starts, in one place.
+ *
+ * A missing ROM and a missing core both used to end as a RetroArch window that flashed and
+ * vanished with nothing said. Named here instead, with what the renderer needs to offer the
+ * fix. Shared by playGame and launch-game-ex so resuming a save cannot skip the checks that
+ * starting fresh performs.
+ */
+function launchPreflight(game) {
+    ensureScummvmTarget(game.rom_path);   // safety net for ScummVM games with an empty .scummvm
     if (game.rom_path && !fs.existsSync(game.rom_path)) {
         return { ok: false, missingRom: true, romPath: game.rom_path,
                  error: `The file for this game is not there any more:\n${game.rom_path}` };
@@ -1318,6 +1320,16 @@ function playGame(gameId) {
         return { ok: false, needCore: base, coreName: prettyCoreName(base),
                  error: `${game.title || 'This game'} needs the ${prettyCoreName(base)} core, which is not installed.` };
     }
+    return null;
+}
+
+function playGame(gameId) {
+    if (!db) return { ok: false, error: 'DB not ready' };
+    const game = gameWithSystem(gameId);
+    if (!game) return { ok: false, error: 'Game not found' };
+
+    const stop = launchPreflight(game);
+    if (stop) return stop;
 
     const cmd = buildLaunchCommand(game);
     if (!cmd) return { ok: false, error: 'No launch command configured. Set a Launch Template in System Manager, or a Launch Override on this ROM.' };
@@ -1456,10 +1468,16 @@ ipcMain.handle('launch-game-ex', (_, gameId, opts = {}) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     const game = gameWithSystem(gameId);
     if (!game) return { ok: false, error: 'Game not found' };
+    const stop = launchPreflight(game);
+    if (stop) return stop;
     let cmd = baseLaunchCommand(game);
     if (!cmd) return { ok: false, error: 'No launch command configured.' };
     if (/retroarch/i.test(cmd)) {
-        const extra = opts.fresh ? { savestate_auto_load: 'false' } : {};
+        // Start Fresh has to override auto-resume, and picking the auto save has to override it
+        // being off, or the choice the user just made is silently ignored either way.
+        const extra = opts.fresh ? { savestate_auto_load: 'false' }
+                    : opts.slot === 'auto' ? { savestate_auto_load: 'true' }
+                    : {};
         cmd += ` --config "${launchConfigFile(game, extra)}"${shaderArg(game)}`;
         if (opts.slot != null && opts.slot !== 'auto') cmd += ` --entryslot ${Number(opts.slot)}`;
     }
