@@ -287,6 +287,31 @@ chip, a Check for Updates button that opens the releases page (there is no in-ap
 as the sibling app), and "Pick a section on the left." Cleanup is pinned to the foot of the
 rail and jumps to the card that does the work rather than being a second implementation of it.
 
+## The scraper credentials
+
+Every scrape failed with "0 scraped, 48 failed" and no reason. The bundled developer
+credentials were the obvious suspect and were **fine**: `assets/ss_dev.dat` is packaged,
+decodes with the key in `ss-dev.js`, and fetches live data from `ssinfraInfos.php` on its own.
+The user account was the empty half, and three things conspired to hide that.
+
+**Test Credentials validated but never saved.** It called the API, said "Connected as ...", and
+stopped there. Only the Save button persisted anything, so someone who tested successfully and
+closed the window had an account that looked configured and was not. Test now writes `ss_user`
+and `ss_pass` on success, because credentials that have just proved they work are exactly the
+ones the user believes are stored.
+
+⚠️ **Save wrote every credential field unconditionally, including blank ones.** Settings can be
+reopened by routes that do not populate the form (coming back from the theme picker, and from
+the RetroArch settings modal), so Themes → back → Save silently erased every API key in the
+app. Saving is now gated on `_settingsPopulated`, every route that reopens Settings goes
+through `loadSettingsCredentials()`, and the field list lives in one place so loading and
+saving cannot drift apart.
+
+**A failed scrape never said why.** 48 identical failures are one problem, not 48, and the
+summary now names the first real error and calls out a rejected login specifically.
+`ssApiCall` marks `authFailed` on 401/403 or an "Erreur de login" body, which is a different
+thing from a game that simply is not in the database.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

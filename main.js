@@ -2032,7 +2032,15 @@ async function ssApiCall(endpoint, params) {
     const text = body.toString('utf8');
     // ScreenScraper explains a refusal in the body ("Erreur de login", quota messages). A bare
     // status code hid which of those it was.
-    if (status !== 200) throw new Error(`HTTP ${status}${text.trim() ? ': ' + text.trim().slice(0, 160) : ''}`);
+    if (status !== 200) {
+        // ⚠️ A rejected login is not a missing game, and the difference decides where the
+        // user looks. ScreenScraper answers 403 with "Erreur de login : Verifier les
+        // identifiants utilisateurs" for a bad or empty account, which used to arrive in the
+        // interface as one more anonymous "failed" among dozens.
+        const err = new Error(`HTTP ${status}${text.trim() ? ': ' + text.trim().slice(0, 160) : ''}`);
+        if (status === 401 || status === 403 || /erreur de login|identifiants/i.test(text)) err.authFailed = true;
+        throw err;
+    }
     try { return JSON.parse(text); }
     catch { throw new Error(text.slice(0, 120) || 'Invalid JSON from ScreenScraper'); }
 }
@@ -2099,7 +2107,7 @@ async function scrapeGameById(gameId, ssUser, ssPass, win, metaOnly = false, sea
         catch (e) {
             // ScreenScraper returns HTTP 404 ("Rom/Iso/Dossier non trouvée") when nothing matches — soft "not found" so the UI can offer a name refine.
             if (/HTTP 404/.test(e.message)) return { ok: false, notFound: true, error: 'Not found on ScreenScraper — try refining the name.' };
-            return { ok: false, error: `API error: ${e.message}` };
+            return { ok: false, authFailed: !!e.authFailed, error: `API error: ${e.message}` };
         }
         jeu = apiResult.response?.jeu;
         if (!jeu) return { ok: false, notFound: true, error: apiResult.response?.msg || 'Not found on ScreenScraper — try refining the name.' };
@@ -2158,7 +2166,7 @@ ipcMain.handle('scrape-game', async (event, gameId, metaOnly = false, searchName
     if (!db) return { ok: false, error: 'DB not ready' };
     const ssUser = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_user')?.value;
     const ssPass = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_pass')?.value;
-    if (!ssUser || !ssPass) return { ok: false, error: 'ScreenScraper credentials not set. Go to Settings.' };
+    if (!ssUser || !ssPass) return { ok: false, authFailed: true, error: 'No ScreenScraper account saved. Settings \u203a Scrapers, enter it and press Test Credentials.' };
     return scrapeGameById(gameId, ssUser, ssPass, BrowserWindow.fromWebContents(event.sender), metaOnly, searchName);
 });
 
@@ -2166,7 +2174,7 @@ ipcMain.handle('scrape-batch', async (event, gameIds) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     const ssUser = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_user')?.value;
     const ssPass = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_pass')?.value;
-    if (!ssUser || !ssPass) return { ok: false, error: 'ScreenScraper credentials not set. Go to Settings.' };
+    if (!ssUser || !ssPass) return { ok: false, authFailed: true, error: 'No ScreenScraper account saved. Settings \u203a Scrapers, enter it and press Test Credentials.' };
 
     batchScrapeCancel = false;
     const win   = BrowserWindow.fromWebContents(event.sender);

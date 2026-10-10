@@ -3284,15 +3284,7 @@ function wireUI() {
 
     // Settings
     document.getElementById('btn-open-settings').addEventListener('click', async () => {
-        document.getElementById('settings-ss-user').value          = await window.api.getSetting('ss_user')           || '';
-        document.getElementById('settings-ss-pass').value          = await window.api.getSetting('ss_pass')           || '';
-        document.getElementById('settings-ra-user').value          = await window.api.getSetting('ra_user')           || '';
-        document.getElementById('settings-ra-key').value           = await window.api.getSetting('ra_api_key')        || '';
-        document.getElementById('settings-igdb-client-id').value   = await window.api.getSetting('igdb_client_id')    || '';
-        document.getElementById('settings-igdb-client-secret').value = await window.api.getSetting('igdb_client_secret') || '';
-        document.getElementById('settings-tgdb-key').value         = await window.api.getSetting('tgdb_api_key')      || '';
-        document.getElementById('settings-sgdb-key').value         = await window.api.getSetting('sgdb_api_key')      || '';
-        document.getElementById('settings-moby-key').value         = await window.api.getSetting('moby_api_key')      || '';
+        await loadSettingsCredentials();
         const z = await window.api.getSetting('zoom') || '1.0';
         document.querySelectorAll('.zoom-btn').forEach(b => b.classList.toggle('active', b.dataset.val === z));
         document.getElementById('settings-search').value = '';
@@ -3935,7 +3927,7 @@ function wireUI() {
 
     // RetroArch full settings menu
     document.getElementById('btn-ra-settings').addEventListener('click', openRaSettings);
-    const closeRaSettings = () => { closeModal('modal-ra-settings'); openModal('modal-settings'); };   // return to the Settings hub it came from
+    const closeRaSettings = async () => { closeModal('modal-ra-settings'); await loadSettingsCredentials(); openModal('modal-settings'); };   // return to the Settings hub it came from
     document.getElementById('btn-ra-set-close').addEventListener('click', closeRaSettings);
     document.getElementById('btn-ra-set-save').addEventListener('click', async () => {
         await window.api.raConfigSet(_raChanges);
@@ -4129,8 +4121,14 @@ function wireUI() {
         btn.textContent = 'Test Credentials';
         btn.disabled = false;
         if (result.ok) {
+            // ⚠️ Saved here, not only by the Save button. Credentials that have just proved
+            // they work are the ones the user believes are stored: "I entered them and it said
+            // connected". Leaving them unsaved until a separate button is pressed is how an
+            // account ends up blank while every scrape fails with no explanation.
+            await window.api.setSetting('ss_user', user);
+            await window.api.setSetting('ss_pass', pass);
             const quota = result.maxRequestsPerDay ? `, ${result.requestsToday || 0} of ${result.maxRequestsPerDay} requests used today` : '';
-            statusEl.textContent = `✓ Connected as ${result.username}${quota}`;
+            statusEl.textContent = `✓ Connected as ${result.username}${quota}. Saved.`;
             statusEl.style.color = 'var(--accent)';
         } else {
             statusEl.textContent = `✗ ${result.error}`;
@@ -4240,15 +4238,15 @@ function wireUI() {
         const z = zBtn ? zBtn.dataset.val : '1.0';
         await window.api.setSetting('zoom', z);
         window.api.setZoom(parseFloat(z));
-        await window.api.setSetting('ss_user',             document.getElementById('settings-ss-user').value.trim());
-        await window.api.setSetting('ss_pass',             document.getElementById('settings-ss-pass').value.trim());
-        await window.api.setSetting('ra_user',             document.getElementById('settings-ra-user').value.trim());
-        await window.api.setSetting('ra_api_key',          document.getElementById('settings-ra-key').value.trim());
-        await window.api.setSetting('igdb_client_id',      document.getElementById('settings-igdb-client-id').value.trim());
-        await window.api.setSetting('igdb_client_secret',  document.getElementById('settings-igdb-client-secret').value.trim());
-        await window.api.setSetting('tgdb_api_key',        document.getElementById('settings-tgdb-key').value.trim());
-        await window.api.setSetting('sgdb_api_key',        document.getElementById('settings-sgdb-key').value.trim());
-        await window.api.setSetting('moby_api_key',        document.getElementById('settings-moby-key').value.trim());
+        // ⚠️ Only when the form was actually filled from storage. Settings can be reopened by
+        // routes that do not populate it (coming back from the theme picker, for one), and this
+        // handler used to write every field unconditionally: one Save on a blank form wiped
+        // every API key the user had, silently, and every scrape afterwards failed with no
+        // reason given. A field that was never loaded is not an instruction to erase anything.
+        if (_settingsPopulated) {
+            for (const [key, id] of CREDENTIAL_FIELDS)
+                await window.api.setSetting(key, document.getElementById(id).value.trim());
+        }
         closeModal('modal-settings');
     });
     document.getElementById('btn-settings-open-data-dir').addEventListener('click', async () => {
@@ -4539,8 +4537,9 @@ function wireUI() {
         openModal('modal-themes');
     });
     document.getElementById('btn-close-themes').addEventListener('click', () => closeModal('modal-themes'));
-    document.getElementById('btn-theme-back').addEventListener('click', () => {
+    document.getElementById('btn-theme-back').addEventListener('click', async () => {
         closeModal('modal-themes');
+        await loadSettingsCredentials();   // reopening without this is what made Save destructive
         openModal('modal-settings');
     });
 
@@ -5276,7 +5275,13 @@ async function runScrapeWorker() {
         updateScrapeCount();
 
         const result = await item.scraperFn(item.id);
-        if (!result?.ok) scrapeStats.failed++;
+        if (!result?.ok) {
+            scrapeStats.failed++;
+            // Keep the first real reason. A run of 48 failures with one cause is one problem,
+            // and "48 failed" on its own sent the last one looking in the wrong place.
+            if (!scrapeStats.reason && result?.error) scrapeStats.reason = String(result.error);
+            if (result?.authFailed) scrapeStats.authFailed = true;
+        }
         else if (result.session) updateRateInfo(result.session);
         scrapeStats.done++;
         updateScrapeCount();
@@ -5285,7 +5290,7 @@ async function runScrapeWorker() {
         if (item.isSS && scrapeQueue.length && !scrapeCancelled) await new Promise(r => setTimeout(r, 1500));
     }
 
-    const { done, failed } = scrapeStats;
+    const { done, failed, reason, authFailed } = scrapeStats;
     const cancelled = scrapeCancelled;
     scrapeQueue   = [];
     scrapeStats   = { done: 0, failed: 0, total: 0 };
@@ -5299,9 +5304,14 @@ async function runScrapeWorker() {
     }
 
     const verb = cancelled ? 'Stopped' : 'Done';
-    const msg  = failed
-        ? `${verb}. ${done - failed} scraped, ${failed} failed.`
-        : `${verb}. ${done} ROM${done !== 1 ? 's' : ''} scraped.`;
+    let msg;
+    if (!failed) msg = `${verb}. ${done} ROM${done !== 1 ? 's' : ''} scraped.`;
+    else if (authFailed || (done - failed === 0 && failed > 2))
+        // Everything failed, or the scraper said the login was rejected: one cause, named.
+        msg = `${verb}. Nothing scraped, ${failed} failed. ${authFailed
+            ? 'The scraper rejected the login. Check the account in Settings \u203a Scrapers and press Test Credentials.'
+            : (reason || 'Same error every time, so this is one problem rather than 48.')}`;
+    else msg = `${verb}. ${done - failed} scraped, ${failed} failed.${reason ? ` First error: ${reason}` : ''}`;
     showLaunchToast(msg, null);
 }
 
@@ -5437,6 +5447,27 @@ async function paintSettingsHome() {
     el.innerHTML = `<span style="width:8px; height:8px; background:var(--accent); display:inline-block;"></span>Version ${escHtml(v || '?')}`;
     const st = document.getElementById('cp-home-update-status');
     if (st) st.textContent = '';
+}
+
+// Every credential the Settings form owns, in one list, so saving and loading cannot drift.
+const CREDENTIAL_FIELDS = [
+    ['ss_user',            'settings-ss-user'],
+    ['ss_pass',            'settings-ss-pass'],
+    ['ra_user',            'settings-ra-user'],
+    ['ra_api_key',         'settings-ra-key'],
+    ['igdb_client_id',     'settings-igdb-client-id'],
+    ['igdb_client_secret', 'settings-igdb-client-secret'],
+    ['tgdb_api_key',       'settings-tgdb-key'],
+    ['sgdb_api_key',       'settings-sgdb-key'],
+    ['moby_api_key',       'settings-moby-key'],
+];
+let _settingsPopulated = false;
+async function loadSettingsCredentials() {
+    for (const [key, id] of CREDENTIAL_FIELDS) {
+        const el = document.getElementById(id);
+        if (el) el.value = (await window.api.getSetting(key)) || '';
+    }
+    _settingsPopulated = true;
 }
 
 async function renderLibraryPane() {
