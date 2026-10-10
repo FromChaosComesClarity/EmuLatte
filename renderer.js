@@ -4661,6 +4661,39 @@ function wireUI() {
     document.getElementById('btn-welcome-add-menu')?.addEventListener('click', () => toggleMenuEntries('wlc-menu-status'));
     document.getElementById('btn-settings-add-menu')?.addEventListener('click', () => toggleMenuEntries('settings-menu-status'));
     document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
+    // ── Moving the library onto a drive, or adopting one that is already there ──
+    const libStatus = (msg, bad) => {
+        const el = document.getElementById('library-data-status');
+        el.textContent = msg; el.style.color = bad ? '#ef5350' : 'var(--accent)';
+    };
+    document.getElementById('btn-library-move').addEventListener('click', async () => {
+        const go = await showConfirm(
+            'EmuLatte will copy the database, the artwork, the trailers and the manuals to the folder you pick, then use them from there.\n\n'
+            + 'The copies here are renamed rather than deleted, so nothing is thrown away, and EmuLatte restarts when it is done.\n\n'
+            + 'Your ROMS and BIOS folders are not touched.',
+            'Choose a folder', false, 'Move the library');
+        if (!go) return;
+        libStatus('Copying\u2026', false);
+        const r = await window.api.moveLibraryTo();
+        if (r?.canceled) { libStatus('', false); return; }
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus(`Copied ${r.copied} item${r.copied !== 1 ? 's' : ''} to ${r.target}. Restarting\u2026`, false);
+    });
+    document.getElementById('btn-library-use').addEventListener('click', async () => {
+        const r = await window.api.useLibraryAt();
+        if (r?.canceled) return;
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus(`Using the library at ${r.target}. Restarting\u2026`, false);
+    });
+    document.getElementById('btn-library-home').addEventListener('click', async () => {
+        const go = await showConfirm(
+            'EmuLatte will go back to the library folder beside it. Nothing on the drive is deleted, and you can point at it again later.',
+            'Bring it back', false, 'Library location');
+        if (!go) return;
+        const r = await window.api.libraryBackHome();
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus('Going back to the local library. Restarting\u2026', false);
+    });
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
     document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
@@ -5525,8 +5558,28 @@ async function loadSettingsCredentials() {
     _settingsPopulated = true;
 }
 
+// Where the library is kept, and the three ways to change it.
+async function renderLibraryLocation() {
+    let r = null;
+    try { r = await window.api.libraryLocation(); } catch {}
+    if (!r?.ok) return;
+    const pathEl = document.getElementById('library-data-path');
+    const noteEl = document.getElementById('library-data-note');
+    const mb = (r.bytes / 1048576).toFixed(0);
+    pathEl.textContent = r.dir;
+    document.getElementById('btn-library-home').style.display = r.external ? '' : 'none';
+    if (r.unreachable) {
+        noteEl.innerHTML = `<span style="color:#ef5350;">The library you chose is on <b>${escHtml(r.wanted)}</b>, which is not connected. EmuLatte is using the folder beside it instead, so what you see here is not that library. Plug the drive in and restart.</span>`;
+    } else if (r.external) {
+        noteEl.innerHTML = `<span style="color:var(--accent);">Kept on a drive, ${mb} MB. Point another computer's EmuLatte at this same folder and it has this library.</span>`;
+    } else {
+        noteEl.innerHTML = `<span style="color:var(--text_dim);">Beside EmuLatte, ${mb} MB.</span>`;
+    }
+}
+
 async function renderLibraryPane() {
     renderPlayReadiness();
+    renderLibraryLocation();
     let rep = null;
     try { rep = await window.api.libraryFolders(); } catch {}
     if (!rep?.ok) return;

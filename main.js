@@ -41,7 +41,38 @@ if (process.env.APPIMAGE) {
 // EmuLatte's own folder, beside its own binary. Clarity's GameManagerConfig is no part of
 // this any more: the two apps share a parent folder and nothing else. ROMS and BIOS live in
 // here too, so the whole install is one folder you can copy to another machine.
-const configDir    = path.join(baseDir, 'Emulatte_Stuff');
+const localHome = path.join(baseDir, 'Emulatte_Stuff');
+
+/*
+ * Where the library actually lives, which need not be beside the binary.
+ *
+ * A library can be put on an external drive and the same drive used from another machine, so
+ * the artwork and the database are carried rather than re-scraped. That location cannot be a
+ * setting, because settings live IN the database: something outside it has to say where it
+ * is. So a one-line pointer file sits in the folder beside the binary, and each machine has
+ * its own, which is what lets two machines share one drive.
+ *
+ * ⚠️ A pointer at a drive that is not plugged in must never quietly become a different
+ * library. It falls back to the local folder and says so, loudly, rather than looking like
+ * the library has emptied itself.
+ */
+const LOCATION_FILE = 'data-location.txt';
+function resolveDataDir() {
+    const pointer = path.join(localHome, LOCATION_FILE);
+    let wanted = '';
+    try { wanted = fs.readFileSync(pointer, 'utf8').trim(); } catch {}
+    if (!wanted) return { dir: localHome, external: false, pointer, wanted: '' };
+    let ok = false;
+    try { ok = fs.statSync(wanted).isDirectory(); } catch {}
+    return ok
+        ? { dir: wanted, external: true, pointer, wanted }
+        : { dir: localHome, external: false, pointer, wanted, unreachable: true };
+}
+const dataHome = resolveDataDir();
+if (dataHome.external) console.log('[library] using the library on', dataHome.dir);
+if (dataHome.unreachable) console.log('[library] ⚠ the library at', dataHome.wanted, 'is not reachable; falling back to', localHome);
+
+const configDir    = dataHome.dir;
 const imagesDir    = path.join(configDir, 'images');
 const trailersDir  = path.join(configDir, 'videos');
 const manualsDir   = path.join(configDir, 'manuals');
@@ -4145,6 +4176,131 @@ ipcMain.handle('menu-entries-present', () => {
     const dir = appsDir();
     const present = ['emulatte', 'emulatte-couch'].filter(id => { try { return fs.existsSync(path.join(dir, `${id}.desktop`)); } catch { return false; } });
     return { ok: true, present, dir };
+});
+
+// ── THE LIBRARY ON A DRIVE ────────────────────────────────────────────────────
+// Everything that IS the library as opposed to the content it describes: the database, the
+// scraped artwork, the trailers, the manuals, the generated playlists and the RetroArch
+// configuration. ROMS, BIOS and the shader pack are deliberately not here. They have their
+// own roots, they are large, and they are replaceable.
+const LIBRARY_PARTS = ['emulatte.db', 'images', 'videos', 'manuals', 'playlists', 'retroarch', 'retroarch_overrides'];
+const looksLikeLibrary = dir => { try { return fs.existsSync(path.join(dir, 'emulatte.db')); } catch { return false; } };
+const dirBytes = (dir) => {
+    let n = 0;
+    (function walk(d) {
+        let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const e of es) {
+            const f = path.join(d, e.name);
+            if (e.isDirectory()) walk(f);
+            else { try { n += fs.statSync(f).size; } catch {} }
+        }
+    })(dir);
+    return n;
+};
+function writePointer(target) {
+    fs.mkdirSync(localHome, { recursive: true });
+    const file = path.join(localHome, LOCATION_FILE);
+    if (target) fs.writeFileSync(file, target + '\n', 'utf8');
+    else { try { fs.unlinkSync(file); } catch {} }
+}
+// Flush and let go of the database before its file is copied or left behind.
+function releaseDb() {
+    try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+    try { db?.close(); } catch {}
+    db = null;
+}
+const relaunchSoon = () => setTimeout(() => { app.relaunch(); app.exit(0); }, 700);
+
+ipcMain.handle('library-location', () => ({
+    ok: true,
+    dir: configDir,
+    localHome,
+    external: dataHome.external,
+    unreachable: !!dataHome.unreachable,
+    wanted: dataHome.wanted || '',
+    bytes: dirBytes(configDir) - dirBytes(path.join(configDir, 'ROMS')) - dirBytes(path.join(configDir, 'BIOS')) - dirBytes(path.join(configDir, 'shaders')),
+}));
+
+// Copy the library onto a drive and start using it from there.
+ipcMain.handle('move-library-to', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: 'Choose where to keep the library',
+        properties: ['openDirectory', 'createDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const target = res.filePaths[0];
+    const inside = p => path.resolve(p).startsWith(path.resolve(configDir) + path.sep);
+    if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is where the library already is.' };
+    if (inside(target)) return { ok: false, error: 'Pick a folder outside the current library, not one inside it.' };
+    if (looksLikeLibrary(target)) return { ok: false, error: 'There is already a library in that folder. Use "Use a library on a drive" to adopt it instead, which will not overwrite it.' };
+    try { fs.mkdirSync(target, { recursive: true }); fs.accessSync(target, fs.constants.W_OK); }
+    catch { return { ok: false, error: 'That folder cannot be written to.' }; }
+
+    // ⚠️ Pin the ROMS and BIOS folders to where they are NOW, before the move.
+    // Both default to "inside the library folder", so moving the library would silently drag
+    // them to the drive: the next scan would read an empty ROMS folder there while the real
+    // collection sat untouched on this machine. The user asked to move the artwork and the
+    // metadata, not their ROMs.
+    try {
+        if (library) {
+            if (!library.setting('roms_root')) library.setRomsRoot(library.romsRoot());
+            if (!library.setting('bios_root')) library.setBiosRoot(library.biosRoot());
+        }
+    } catch {}
+
+    releaseDb();
+    const stamp = dateStamp();
+    const copied = [];
+    try {
+        for (const part of LIBRARY_PARTS) {
+            const from = path.join(configDir, part);
+            if (!fs.existsSync(from)) continue;
+            fs.cpSync(from, path.join(target, part), { recursive: true });
+            copied.push(part);
+        }
+    } catch (e) { relaunchSoon(); return { ok: false, error: `Copy failed: ${e.message}. Nothing was removed; EmuLatte will restart where it was.` }; }
+
+    // ⚠️ Verified before anything is stood down. A half-copied library that the pointer is
+    // already aimed at would be worse than no move at all.
+    if (!looksLikeLibrary(target)) { relaunchSoon(); return { ok: false, error: 'The copy finished but no database arrived. Nothing was removed.' }; }
+
+    // The originals are renamed rather than deleted, and rather than left in place: left as
+    // they were, an unplugged drive would silently show a stale library that looks real.
+    let setAside = 0;
+    for (const part of copied) {
+        const from = path.join(configDir, part);
+        try { fs.renameSync(from, path.join(configDir, `${part}.moved-${stamp}`)); setAside++; } catch {}
+    }
+    writePointer(target);
+    relaunchSoon();
+    return { ok: true, target, copied: copied.length, setAside, restarting: true };
+});
+
+// Point at a library that is already on a drive, written by this or another machine.
+ipcMain.handle('use-library-at', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: 'Choose the library folder on the drive',
+        properties: ['openDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const target = res.filePaths[0];
+    if (!looksLikeLibrary(target)) return { ok: false, error: 'No emulatte.db in that folder, so it is not an EmuLatte library. Pick the folder that holds it.' };
+    if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is the library already in use.' };
+    releaseDb();
+    writePointer(target);
+    relaunchSoon();
+    return { ok: true, target, restarting: true };
+});
+
+// Stop using the drive and go back to the folder beside the binary.
+ipcMain.handle('library-back-home', () => {
+    if (!dataHome.external) return { ok: false, error: 'The library is already beside EmuLatte.' };
+    releaseDb();
+    writePointer('');
+    relaunchSoon();
+    return { ok: true, target: localHome, restarting: true };
 });
 
 ipcMain.handle('get-basedir',    () => baseDir);

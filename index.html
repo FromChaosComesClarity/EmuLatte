@@ -1331,6 +1331,21 @@
               <button id="btn-download-shaders" style="width:100%; margin-top:8px; display:none;">Download the shader pack</button>
               <div id="play-ready-progress" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
             </div>
+            <div class="tool-card" data-search="library location external drive usb move transfer portable share between computers artwork metadata">
+              <div class="tool-card-title">Where the library is kept</div>
+              <div class="hint" style="margin-top:0;">The database, every piece of scraped artwork, trailers and manuals. Put it on an external drive and another computer can use the same library by pointing at the same folder, instead of scraping it all again. Your ROMS and BIOS folders are separate and stay where they are.</div>
+              <div class="form-row" style="margin-top:10px;">
+                <label>Library folder</label>
+                <code id="library-data-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
+              </div>
+              <div id="library-data-note" style="font-size:11px; margin-top:6px; min-height:14px;"></div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                <button id="btn-library-move" style="flex:1 1 170px;">Move It To A Drive&hellip;</button>
+                <button id="btn-library-use" style="flex:1 1 170px;">Use A Library On A Drive&hellip;</button>
+                <button id="btn-library-home" style="flex:1 1 150px; display:none;">Bring It Back Here</button>
+              </div>
+              <div id="library-data-status" style="font-size:11px; color:var(--text_dim); margin-top:8px; min-height:14px;"></div>
+            </div>
             <div class="tool-card" data-search="library rescan scan roms folder rom directory add games refresh">
               <div class="tool-card-title">Your ROMS folder</div>
               <div class="hint" style="margin-top:0;">EmuLatte's library <b>is</b> this folder. There is one sub-folder per system; drop ROMs in and they are in the library the next time EmuLatte opens. Sub-folders inside a system folder are read too, and a multi-disc set is grouped into one entry.</div>

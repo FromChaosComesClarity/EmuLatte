@@ -383,6 +383,42 @@ reachable from Cleanup at the foot of the Settings rail. It compares every file 
 `images/`, `videos/` and `manuals/` against what the database references, reports the count and
 the megabytes, and deletes only after a confirmation.
 
+## Keeping the library on a drive
+
+The database, the scraped artwork, the trailers and the manuals can live on an external drive,
+and another machine can use the same library by pointing at the same folder rather than
+scraping it all over again. **Settings ▸ Library ▸ Where the library is kept**: move it to a
+drive, use a library already on one, or bring it back.
+
+⚠️ The location cannot be a setting, because settings live **in** the database. Something
+outside it has to say where it is, so a one-line `data-location.txt` sits in the
+`Emulatte_Stuff` folder beside the binary. Each machine has its own, which is exactly what
+lets two machines share one drive.
+
+⚠️ A pointer at a drive that is not plugged in must never quietly become a different library.
+It falls back to the local folder and says so in red, and the local copies are **renamed**
+during a move rather than left in place, so the fallback is visibly empty instead of looking
+like a real but mysteriously stale library.
+
+⚠️ `roms_root` and `bios_root` default to "inside the library folder", so a move would have
+silently dragged them to the drive: the next scan would read an empty ROMS folder there while
+the real collection sat untouched on the machine. Both are pinned to their current locations
+before the move. The request was to move the artwork and the metadata, not the ROMs.
+
+A library adopted on a second machine carries the first machine's `roms_root`, which will not
+exist there. The scan skips a folder that is not there rather than emptying anything, and the
+Library pane shows the path in red until it is pointed somewhere real.
+
+Nothing is deleted anywhere: a move renames the originals aside, and coming home leaves the
+drive's copy exactly as it was.
+
+### Verified end to end
+
+Machine A starts locally, moves its library to a drive (5 parts copied, 5 set aside,
+ROMS/BIOS/shaders untouched), restarts onto the drive; a fresh machine B adopts the same
+folder and sees the games; the drive is unplugged and A falls back with the warning rather
+than starting something new; A comes home and the drive's copy is untouched.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply
