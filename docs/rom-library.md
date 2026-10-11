@@ -419,6 +419,60 @@ ROMS/BIOS/shaders untouched), restarts onto the drive; a fresh machine B adopts 
 folder and sees the games; the drive is unplugged and A falls back with the warning rather
 than starting something new; A comes home and the drive's copy is untouched.
 
+## Quitting, and taking the emulator with it
+
+**Ctrl+Q** quits EmuLatte and closes any emulator it started, bound per window through
+`before-input-event` rather than as a global accelerator, which would take Ctrl+Q away from
+every other app on the desktop. The same action is in Settings ▸ General and in Couch Mode's
+menu, where there is usually no keyboard.
+
+It asks first whenever work would be lost. `busyJobs` is a register of things in flight fed
+from both processes: downloads wrap themselves in `whileBusy`, and the scrape queue, which
+lives in the renderer where main cannot see it, reports itself through `set-busy`. The prompt
+names what is running, defaults to **Cancel**, and cancelling changes nothing.
+
+⚠️ The cleanup lives in `will-quit`, not in a signal handler. Chromium takes SIGTERM and turns
+it into an ordinary quit: measured, a terminated EmuLatte fires `before-quit`, `will-quit` and
+`quit` while `process.on('SIGTERM')` never runs at all, which is why terminating it used to
+leave the emulator orphaned on the desktop.
+
+⚠️ `quitMode` defaults to **hard**, and only closing the window softens it. The other way
+round looked right and was wrong, for the same reason: a signal would have read as a soft quit
+and orphaned the game. A window close is the one path that deliberately leaves a game running,
+because spawning detached is what lets somebody shut the library and keep playing.
+
+⚠️ The tracked PID is `bash -c`, not the emulator. The spawn is detached, so bash leads its own
+process group and `kill(-pid)` reaches both; signalling the pid alone would kill the wrapper
+and leave RetroArch running with nothing watching it.
+
+Verified: Ctrl+Q fires while plain `q` and Ctrl+W do not; SIGTERM closes the emulator and logs
+it; a window close leaves the game playing; and the prompt names a scrape, a download, or a
+game and a scrape together, with Cancel leaving everything alive.
+
+## The app-menu icon
+
+⚠️ Packaged assets are read through `__dirname`, **not** `process.resourcesPath`. In an
+AppImage the assets live inside `app.asar`, which `__dirname` resolves into;
+`resourcesPath/assets` holds only the `extraResources` (the `bin` folder). The menu installer
+looked there, found nothing, skipped the copy, and wrote a desktop entry with **no `Icon=`
+line at all**, so the launcher showed a generic one. `assets/systems.json` and
+`assets/bios_db.json` were already read the right way; this was the odd one out.
+
+The icon installs into the hicolor theme as
+`~/.local/share/icons/hicolor/scalable/apps/emulatte.svg` and the entry says `Icon=emulatte`,
+a themed name rather than an absolute path: that is what launchers resolve, and it keeps
+working when the AppImage moves. An absolute-path copy beside the binary remains the fallback
+where no theme folder can be written.
+
+`healMenuEntries()` repairs entries written before this worked. It only touches the two files
+EmuLatte created, only when they exist, and only when they have no `Icon=` line, so a machine
+that never added EmuLatte to its menu gets nothing written and a hand-edited icon is left
+alone.
+
+Verified against the real AppImage: it logged `gave the app-menu entries their icon back`,
+both entries gained `Icon=emulatte`, and a GTK icon lookup for `emulatte` resolves to the
+installed SVG.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

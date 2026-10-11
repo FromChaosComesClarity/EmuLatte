@@ -4660,6 +4660,7 @@ function wireUI() {
     document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);
     document.getElementById('btn-welcome-add-menu')?.addEventListener('click', () => toggleMenuEntries('wlc-menu-status'));
     document.getElementById('btn-settings-add-menu')?.addEventListener('click', () => toggleMenuEntries('settings-menu-status'));
+    document.getElementById('btn-settings-quit')?.addEventListener('click', () => window.api.quitEverything());
     document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
     // ── Moving the library onto a drive, or adopting one that is already there ──
     const libStatus = (msg, bad) => {
@@ -5354,6 +5355,8 @@ function enqueueScrape(systemId, source) {
 async function runScrapeWorker() {
     scrapeRunning   = true;
     scrapeCancelled = false;
+    // Main cannot see this queue, so it is told: quitting mid-scrape should ask first.
+    window.api.setBusy('scrape', 'A scrape is running.');
     showScrapePanel(true);
 
     while (scrapeQueue.length && !scrapeCancelled) {
@@ -5378,6 +5381,7 @@ async function runScrapeWorker() {
         if (item.isSS && scrapeQueue.length && !scrapeCancelled) await new Promise(r => setTimeout(r, 1500));
     }
 
+    window.api.setBusy('scrape', '');          // the queue is finished; quitting costs nothing now
     const { done, failed, reason, authFailed } = scrapeStats;
     const cancelled = scrapeCancelled;
     scrapeQueue   = [];
