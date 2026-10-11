@@ -26,9 +26,7 @@ const omarchyTheme = require('./omarchy-theme');
 const desktopDescriptor = require('./desktop-descriptor');
 // The library layer: folder names, the disc-aware scanner, seeding, BIOS. See rom-library.js.
 const romLib = require('./rom-library');
-const {
-    extOf, stripExt, discReferencedFiles, scanFolderEntries, commonAncestor,
-} = romLib;
+const { extOf, stripExt, discReferencedFiles } = romLib;
 
 let baseDir;
 if (process.env.APPIMAGE) {
@@ -596,7 +594,6 @@ function insertGame(data) {
     ensureScummvmTarget(data.rom_path);   // make ScummVM games launchable automatically (fill empty .scummvm)
     return r.lastInsertRowid;
 }
-ipcMain.handle('add-game', (_, data) => insertGame(data));
 
 ipcMain.handle('update-game', (_, id, data) => {
     if (!db) return false;
@@ -3614,16 +3611,9 @@ ipcMain.handle('select-file', async (_, filters) => {
     return canceled ? null : filePaths[0];
 });
 
-ipcMain.handle('select-directory', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-    return canceled ? null : filePaths[0];
-});
-
 // ── FOLDER SCANNING & THE LIBRARY SCAN ────────────────────────────────────────
 // The disc-aware scanner, the folder names and the scan itself live in rom-library.js. What
 // stays here is the IPC surface and the one place that decides when a scan happens.
-ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => scanFolderEntries(folderPath, extensions));
-
 // Read every system's folder and make the library match it: new files become games, rows whose
 // file has gone are dropped. The BIOS folder is filed at the same time, since both are "what is
 // on disk right now".
@@ -3709,10 +3699,6 @@ ipcMain.handle('restore-default-systems', () => {
 
 // Write a .m3u playlist (one disc path per line, absolute) into EmuLatte's own data
 // dir so it works even when the ROM folder is read-only (e.g. an external SSD).
-ipcMain.handle('create-m3u', (_, { title, discs }) => {
-    try { return { ok: true, path: library.createM3u(title, discs) }; }
-    catch (e) { return { ok: false, error: e.message }; }
-});
 
 // ── REPAIR DISC REFERENCES ────────────────────────────────────────────────────
 // Disc index files (.cue/.gdi/.toc) name their track files (.bin/.raw/.iso). When a ROM set is
@@ -3801,141 +3787,6 @@ ipcMain.handle('repair-disc-refs-system', (_, systemId) => {
     const disc = games.filter(g => g.rom_path && DISC_INDEX_RE.test(g.rom_path));
     if (!disc.length) return { ok: true, notDisc: true, discFiles: 0, filesFixed: 0, refsFixed: 0, unresolved: [] };
     return summarizeRepairs(disc.map(g => repairDiscFile(g.rom_path)));
-});
-
-// ── ROM LOCATIONS (relocate a moved ROM library) ──────────────────────────────
-// When the ROM drive changes mount point, every rom_path in the library goes dead at once. The
-// library is still perfectly good — art, favourites and play history are all keyed to those rows —
-// so re-scanning is the wrong tool: it re-imports the same files as bare duplicates, into whichever
-// system happens to be selected. This rewrites the path prefix in place instead, leaving every row
-// (and its metadata) exactly where it is.
-//
-// A "location" is the deepest folder shared by a group of games. We stop the ancestor walk before
-// it gets so shallow that one entry would cover the whole drive, so the user is offered meaningful
-// roots to re-point rather than a single "/".
-const RELOCATABLE_CFG_KEYS = ['system_directory', 'rgui_browser_directory', 'cheat_database_path',
-                              'core_options_path', 'savefile_directory', 'savestate_directory'];
-
-function romLocationGroups() {
-    const rows = db.prepare("SELECT id, rom_path FROM games WHERE rom_path IS NOT NULL AND rom_path <> ''").all();
-    const byDir = new Map();
-    for (const r of rows) {
-        const d = path.dirname(r.rom_path);
-        if (!byDir.has(d)) byDir.set(d, []);
-        byDir.get(d).push(r);
-    }
-    // Group folders under their common ancestor, but never above 2 path segments (so "/run/media"
-    // or "/home" can't swallow everything into one meaningless bucket).
-    const roots = new Map();
-    for (const dir of byDir.keys()) {
-        const segs = dir.split(path.sep).filter(Boolean);
-        const root = segs.length <= 3 ? dir : path.sep + segs.slice(0, 3).join(path.sep);
-        if (!roots.has(root)) roots.set(root, []);
-        roots.get(root).push(dir);
-    }
-    const out = [];
-    for (const [root, dirs] of roots) {
-        const anc = dirs.length === 1 ? dirs[0] : (commonAncestor(dirs) || root);
-        const prefix = (anc.split(path.sep).filter(Boolean).length >= 2) ? anc : root;
-        const games = dirs.flatMap(d => byDir.get(d));
-        let ok = 0;
-        for (const g of games) if (fs.existsSync(g.rom_path)) ok++;
-        out.push({ prefix, games: games.length, ok, missing: games.length - ok, exists: fs.existsSync(prefix) });
-    }
-    return out.sort((a, b) => b.missing - a.missing || b.games - a.games);
-}
-
-ipcMain.handle('rom-locations', () => {
-    if (!db) return { ok: false, error: 'DB not ready' };
-    return { ok: true, locations: romLocationGroups() };
-});
-
-// Dry run: how many rows would change, and how many would actually resolve on disk afterwards.
-ipcMain.handle('rom-relocate-preview', (_, oldPrefix, newPrefix) => {
-    if (!db) return { ok: false, error: 'DB not ready' };
-    if (!oldPrefix || !newPrefix) return { ok: false, error: 'Both the old and new folder are required.' };
-    if (oldPrefix === newPrefix) return { ok: false, error: 'The new folder is the same as the old one.' };
-    const rows = db.prepare('SELECT id, rom_path FROM games WHERE rom_path LIKE ?').all(oldPrefix + '%');
-    let resolves = 0;
-    const examples = [], unresolved = [];
-    for (const r of rows) {
-        const np = newPrefix + r.rom_path.slice(oldPrefix.length);
-        if (fs.existsSync(np)) { resolves++; if (examples.length < 3) examples.push({ from: r.rom_path, to: np }); }
-        else if (unresolved.length < 8) unresolved.push(np);
-    }
-    // The same dead prefix usually hides in the owned RetroArch config and in generated .m3u files.
-    const cfg = ownedRaCfgPath();
-    const cfgKeys = [];
-    if (fs.existsSync(cfg)) {
-        const parsed = parseRaCfg(cfg);
-        for (const k of RELOCATABLE_CFG_KEYS) {
-            if (parsed[k] && parsed[k].startsWith(oldPrefix)) cfgKeys.push(k);
-        }
-    }
-    let m3u = 0;
-    for (const f of safeReaddir(path.join(configDir, 'playlists'))) {
-        if (!/\.m3u$/i.test(f)) continue;
-        try {
-            if (fs.readFileSync(path.join(configDir, 'playlists', f), 'utf8').includes(oldPrefix)) m3u++;
-        } catch {}
-    }
-    return { ok: true, rows: rows.length, resolves, missing: rows.length - resolves, examples, unresolved, cfgKeys, m3u };
-});
-
-ipcMain.handle('rom-relocate-apply', (_, oldPrefix, newPrefix, opts) => {
-    if (!db) return { ok: false, error: 'DB not ready' };
-    if (!oldPrefix || !newPrefix || oldPrefix === newPrefix) return { ok: false, error: 'Nothing to do.' };
-    const o = opts || {};
-    let backup = null;
-    try {
-        // dateStamp() is day-resolution, so never clobber an earlier relocate from the same day.
-        backup = path.join(configDir, `emulatte.db.bak-relocate-${dateStamp()}`);
-        for (let i = 2; fs.existsSync(backup); i++) backup = path.join(configDir, `emulatte.db.bak-relocate-${dateStamp()}-${i}`);
-        db.pragma('wal_checkpoint(TRUNCATE)');   // flush WAL so the copied .db is self-contained
-        fs.copyFileSync(dbPath, backup);
-    } catch (e) { return { ok: false, error: 'Could not back up the database: ' + e.message }; }
-
-    let rows = 0;
-    try {
-        const upd = db.prepare('UPDATE games SET rom_path = ? || substr(rom_path, ?) WHERE rom_path LIKE ?');
-        const run = db.transaction(() => {
-            rows = upd.run(newPrefix, oldPrefix.length + 1, oldPrefix + '%').changes;
-        });
-        run();
-    } catch (e) { return { ok: false, error: e.message, backup }; }
-
-    // .m3u playlists carry absolute disc paths, so they die with the same prefix.
-    let m3u = 0;
-    if (o.playlists !== false) {
-        const pdir = path.join(configDir, 'playlists');
-        for (const f of safeReaddir(pdir)) {
-            if (!/\.m3u$/i.test(f)) continue;
-            const fp = path.join(pdir, f);
-            try {
-                const txt = fs.readFileSync(fp, 'utf8');
-                if (!txt.includes(oldPrefix)) continue;
-                const bak = fp + '.bak';
-                if (!fs.existsSync(bak)) fs.copyFileSync(fp, bak);
-                fs.writeFileSync(fp, txt.split(oldPrefix).join(newPrefix), 'utf8');
-                m3u++;
-            } catch {}
-        }
-    }
-
-    let cfgKeys = 0;
-    if (o.raConfig !== false) {
-        try {
-            const cfg = ensureOwnedRaCfg();
-            const parsed = parseRaCfg(cfg);
-            const updates = {};
-            for (const k of RELOCATABLE_CFG_KEYS) {
-                if (parsed[k] && parsed[k].startsWith(oldPrefix)) updates[k] = newPrefix + parsed[k].slice(oldPrefix.length);
-            }
-            if (Object.keys(updates).length) { writeRaCfgKeys(cfg, updates); cfgKeys = Object.keys(updates).length; }
-        } catch {}
-    }
-
-    return { ok: true, rows, m3u, cfgKeys, backup };
 });
 
 // ── IMAGE MANAGEMENT ──────────────────────────────────────────────────────────

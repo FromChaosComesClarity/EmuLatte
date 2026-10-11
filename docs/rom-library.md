@@ -548,6 +548,32 @@ of its own games keeps that work. `opts.overwrite` replaces instead. `import-met
 also accepts a whole `Emulatte_Stuff` folder rather than a bundle, reading the scraped rows
 straight out of the other library's database; it opens that database read-only.
 
+## What the folder model made redundant
+
+Four pieces of UI predate the folder model and contradicted it, so they are gone rather than
+left to rot:
+
+- **Add ROM** (left rail and the system hero) added a single file by path. Dropping the file in
+  the system's folder does the same thing and leaves the library and the disk agreeing.
+- **Scan ROM Folder** (left rail and the system hero) imported an arbitrary folder into a
+  chosen system. That is what `scan()` now does for every system at once, with the extensions,
+  disc grouping and adoption rules applied, instead of whatever the user typed in an
+  extensions box. Its `confirmBulkImport` guard went with it: the guard existed only to warn
+  that importing a moved collection produced metadata-less duplicates, which adoption
+  prevents outright.
+- **ROM Locations / Re-point ROM Folder** rewrote a path prefix across the library when a drive
+  changed mount point. Adoption already does this, better: a row whose file has gone is
+  re-pointed the moment a file with the same system and filename turns up, keeping its art,
+  favourites and play history, with no prefix for the user to get right. The card also told
+  users not to rescan because it "re-imports the same ROMs as blank duplicates", which stopped
+  being true the day adoption landed.
+- **`select-directory`** was the xdg-desktop-portal folder chooser. Every caller now uses the
+  in-app browser (`list-dirs`), which is what works when the portal does not.
+
+The IPC surface left with them: `add-game`, `scan-rom-folder`, `create-m3u`, `select-directory`,
+`rom-locations`, `rom-relocate-preview`, `rom-relocate-apply`. `insertGame` and
+`library.createM3u` stay, because the scanner calls both.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('api', {
 
     // Games
     getGames:        ()         => ipcRenderer.invoke('get-games'),
-    addGame:         (data)     => ipcRenderer.invoke('add-game', data),
     updateGame:      (id, data) => ipcRenderer.invoke('update-game', id, data),
     deleteGame:      (id)       => ipcRenderer.invoke('delete-game', id),
     setGameFlag:     (id, f, v) => ipcRenderer.invoke('set-game-flag', id, f, v),
@@ -39,9 +38,6 @@ contextBridge.exposeInMainWorld('api', {
 
     // File / folder pickers
     selectFile:      (filters) => ipcRenderer.invoke('select-file', filters),
-    selectDirectory: ()        => ipcRenderer.invoke('select-directory'),
-    scanRomFolder:   (p, exts) => ipcRenderer.invoke('scan-rom-folder', p, exts),
-    createM3u:       (payload) => ipcRenderer.invoke('create-m3u', payload),
 
     // ── The library is the ROMS folder ──
     scanLibrary:         (opts)  => ipcRenderer.invoke('scan-library', opts),
@@ -66,9 +62,6 @@ contextBridge.exposeInMainWorld('api', {
     repairDiscRefsSystem: (id) => ipcRenderer.invoke('repair-disc-refs-system', id),
 
     // ROM locations (re-point the library after the ROM folder/drive moves)
-    romLocations:        ()            => ipcRenderer.invoke('rom-locations'),
-    romRelocatePreview:  (from, to)    => ipcRenderer.invoke('rom-relocate-preview', from, to),
-    romRelocateApply:    (from, to, o) => ipcRenderer.invoke('rom-relocate-apply', from, to, o),
 
     // RetroArch launch settings (override editor)
     getRaOverride: (scope, refId) => ipcRenderer.invoke('get-ra-override', scope, refId),

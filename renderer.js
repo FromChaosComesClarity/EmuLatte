@@ -22,7 +22,6 @@ let allSystemPresets     = [];
 let currentPlaylistGames = [];
 let retroarchVariant     = 'none';
 let _activePanelSection  = null; // 'systems' | 'playlists' | 'search' | null
-let _scanEntries         = []; // structured results of the last folder scan
 let _manualKept          = false; // whether the current game has a manual saved offline
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
@@ -1275,10 +1274,8 @@ function renderSystemFilters() {
 function populateSystemSelects() {
     const opts = `<option value="">— Select System —</option>` +
         allSystems.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
-    ['add-rom-system', 'scan-system-select', 'edit-system'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = opts;
-    });
+    const el = document.getElementById('edit-system');
+    if (el) el.innerHTML = opts;
 }
 
 function renderPlaylistFilters() {
@@ -1891,13 +1888,6 @@ function _openDialog(body, okLabel, isDanger, showCancel, title) {
 function showAlert(body, title)                                          { return _openDialog(body, 'OK', false, false, title); }
 function showConfirm(body, okLabel = 'Confirm', isDanger = false, title) { return _openDialog(body, okLabel, isDanger, true, title); }
 
-function openAddRomModal(presetSystemId = null) {
-    document.getElementById('add-rom-path').value  = '';
-    document.getElementById('add-rom-title').value = '';
-    const sys = document.getElementById('add-rom-system');
-    sys.value = presetSystemId !== null ? String(presetSystemId) : '';
-    openModal('modal-add-rom');
-}
 
 function populateCoreOverrideSelect(game, showAll = false) {
     const sel  = document.getElementById('edit-core-override');
@@ -3299,23 +3289,6 @@ function wireUI() {
         document.getElementById(id)?.addEventListener('click', closePanel);
     });
 
-    // Add ROM button
-    document.getElementById('btn-add-rom').addEventListener('click', () => openAddRomModal());
-
-    // Scan folder button
-    document.getElementById('btn-scan-folder').addEventListener('click', () => openModal('modal-scan-folder'));
-
-    // Hero scan button (system-scoped)
-    document.getElementById('btn-hero-scan').addEventListener('click', () => {
-        openModal('modal-scan-folder');
-        const sel = document.getElementById('scan-system-select');
-        if (sel && currentFilter !== 'all' && currentFilter !== 'favs' && currentFilter !== 'want' && currentFilter !== 'recent') {
-            sel.value = String(currentFilter);
-            const sys = allSystems.find(s => s.id === Number(currentFilter));
-            if (sys) document.getElementById('scan-extensions').value = sys.extensions || '';
-        }
-    });
-
     // Hero scrape all (system-scoped) — opens source picker
     document.getElementById('btn-hero-scrape-all').addEventListener('click', () => {
         // Intentionally unguarded: picking a source while a scrape runs enqueues into it.
@@ -3324,13 +3297,6 @@ function wireUI() {
         _scraperPickerMode = 'batch';
         document.getElementById('scraper-picker-status').textContent = '';
         openModal('modal-scraper-picker');
-    });
-
-    // Hero add ROM button (system-scoped)
-    document.getElementById('btn-hero-add-rom').addEventListener('click', () => {
-        const presetId = (currentFilter !== 'all' && currentFilter !== 'favs' && currentFilter !== 'want' && currentFilter !== 'recent')
-            ? Number(currentFilter) : null;
-        openAddRomModal(presetId);
     });
 
     // Systems manager is reached from Settings → Systems (btn-settings-manage-systems)
@@ -3361,7 +3327,6 @@ function wireUI() {
         coresEl.textContent = allCores.length ? `${allCores.length} core${allCores.length !== 1 ? 's' : ''} scanned.` : '';
         document.getElementById('ra-config-status').textContent = '';
         refreshRaConfigInfo();
-        loadRomLocations();
         await loadCouchSettings();
         openModal('modal-settings');
     });
@@ -3523,90 +3488,6 @@ function wireUI() {
         const text = document.getElementById('dl-progress-text');
         if (fill) fill.style.width = `${pct}%`;
         if (text) text.textContent  = `${Math.floor(pct)}%`;
-    });
-
-    // ── MODAL: ADD ROM ───────────────────────────────────────────────────────
-    document.getElementById('btn-add-rom-browse').addEventListener('click', async () => {
-        const p = await window.api.selectFile();
-        if (!p) return;
-        document.getElementById('add-rom-path').value = p;
-        if (!document.getElementById('add-rom-title').value) {
-            const base = p.split('/').pop().replace(/\.[^.]+$/, '');
-            document.getElementById('add-rom-title').value = base;
-        }
-    });
-    document.getElementById('btn-add-rom-cancel').addEventListener('click', () => closeModal('modal-add-rom'));
-    document.getElementById('btn-add-rom-confirm').addEventListener('click', async () => {
-        const romPath  = document.getElementById('add-rom-path').value.trim();
-        const title    = document.getElementById('add-rom-title').value.trim();
-        const systemId = document.getElementById('add-rom-system').value;
-        if (!romPath || !title) { showAlert('ROM path and title are required.', 'Add ROM'); return; }
-        await window.api.addGame({ system_id: systemId || null, title, rom_path: romPath });
-        closeModal('modal-add-rom');
-        await loadGames();
-    });
-
-    // ── MODAL: SCAN FOLDER ───────────────────────────────────────────────────
-    document.getElementById('btn-scan-browse').addEventListener('click', async () => {
-        const p = await window.api.selectDirectory();
-        if (p) document.getElementById('scan-folder-path').value = p;
-    });
-    document.getElementById('scan-system-select').addEventListener('change', () => {
-        const id = document.getElementById('scan-system-select').value;
-        const sys = allSystems.find(s => s.id === Number(id));
-        if (sys) document.getElementById('scan-extensions').value = sys.extensions || '';
-    });
-    document.getElementById('btn-scan-run').addEventListener('click', async () => {
-        const folder = document.getElementById('scan-folder-path').value.trim();
-        const exts   = document.getElementById('scan-extensions').value.trim();
-        if (!folder) { showAlert('Please select a folder first.', 'Scan Folder'); return; }
-        _scanEntries = await window.api.scanRomFolder(folder, exts);
-        const resultsWrap = document.getElementById('scan-results-wrap');
-        const resultsList = document.getElementById('scan-results-list');
-        document.getElementById('scan-results-count').textContent = _scanEntries.length;
-        const sysOpts = `<option value="">— Skip —</option>` +
-            allSystems.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
-        const presetId = document.getElementById('scan-system-select').value;
-        resultsList.innerHTML = _scanEntries.map((e, i) => {
-            const badge = e.kind === 'multidisc'
-                ? `<span class="disc-badge" title="${e.discCount} discs — imported as one game via a generated .m3u playlist">${e.discCount} DISCS</span>`
-                : (e.kind === 'playlist' ? `<span class="disc-badge" title="Multi-disc playlist">M3U</span>` : '');
-            return `<div class="scan-result-item">
-                <span class="rom-name" title="${escHtml(e.path)}">${escHtml(e.title)}${badge}</span>
-                <select class="scan-item-system" data-idx="${i}">
-                    ${sysOpts.replace(`value="${presetId}"`, `value="${presetId}" selected`)}
-                </select>
-            </div>`;
-        }).join('') || `<div style="text-align:center; padding:20px; color:var(--text_dim);">No ROMs found with those extensions.</div>`;
-        resultsWrap.style.display = _scanEntries.length ? 'block' : 'none';
-        if (!_scanEntries.length) showAlert('No ROMs found with those extensions.', 'Scan Folder');
-    });
-    document.getElementById('btn-scan-cancel').addEventListener('click', () => {
-        closeModal('modal-scan-folder');
-        document.getElementById('scan-results-wrap').style.display = 'none';
-        document.getElementById('scan-folder-path').value = '';
-    });
-    document.getElementById('btn-scan-import').addEventListener('click', async () => {
-        const items = document.querySelectorAll('.scan-item-system');
-        if (!await confirmBulkImport(items)) return;
-        let count = 0;
-        for (const sel of items) {
-            if (!sel.value) continue;
-            const entry = _scanEntries[Number(sel.dataset.idx)];
-            if (!entry) continue;
-            let romPath = entry.path;
-            if (entry.kind === 'multidisc') {
-                const r = await window.api.createM3u({ title: entry.title, discs: entry.discs });
-                if (r?.ok) romPath = r.path;   // fall back to disc 1 if the .m3u can't be written
-            }
-            await window.api.addGame({ system_id: sel.value, title: entry.title, rom_path: romPath });
-            count++;
-        }
-        closeModal('modal-scan-folder');
-        document.getElementById('scan-results-wrap').style.display = 'none';
-        document.getElementById('scan-folder-path').value = '';
-        await loadGames();
-        if (count) showAlert(`${count} ROM${count !== 1 ? 's' : ''} imported.`, 'Scan Folder');
     });
 
     // ── MODAL: EDIT GAME ─────────────────────────────────────────────────────
@@ -4355,17 +4236,6 @@ function wireUI() {
         status.style.color = 'var(--accent)';
         status.textContent = res.ok ? `Deleted ${res.count} file${res.count !== 1 ? 's' : ''}, freed ${(res.bytes / 1048576).toFixed(1)} MB.` : (res.error || 'Failed.');
     });
-
-    // ── DATA: ROM LOCATIONS ──────────────────────────────────────────────────
-    document.getElementById('btn-relocate-close').addEventListener('click', () => closeModal('modal-rom-relocate'));
-    document.getElementById('btn-relocate-browse').addEventListener('click', async () => {
-        const dir = await window.api.selectDirectory();
-        if (!dir) return;
-        document.getElementById('relocate-new').value = dir;
-        refreshRelocatePreview();
-    });
-    document.getElementById('relocate-new').addEventListener('input', refreshRelocatePreview);
-    document.getElementById('btn-relocate-apply').addEventListener('click', applyRelocate);
 
     // ── DATA: DUPLICATE FINDER ───────────────────────────────────────────────
     document.getElementById('btn-find-duplicates').addEventListener('click', openDuplicatesModal);
@@ -5229,146 +5099,6 @@ function findDuplicateGroups() {
         groups.push(arr);
     }
     return groups.sort((a, b) => (a[0].title || '').localeCompare(b[0].title || ''));
-}
-// Guard for the folder-scan importer. Importing a whole drive into one system is how a moved ROM
-// drive gets "recovered" the wrong way: every game comes back as a metadata-less duplicate under the
-// new path, filed under whichever system was selected. If most of what's about to be imported is a
-// filename we already have somewhere else, say so and point at Re-point instead.
-async function confirmBulkImport(items) {
-    const picked = [...items].filter(sel => sel.value);
-    if (picked.length < 25) return true;
-
-    const baseOf = p => (p || '').split('/').pop().toLowerCase();
-    const known = new Map();   // basename -> dir of the copy already in the library
-    for (const g of allGames) {
-        if (g.rom_path) known.set(baseOf(g.rom_path), g.rom_path.slice(0, g.rom_path.lastIndexOf('/')));
-    }
-    let dupes = 0;
-    for (const sel of picked) {
-        const e = _scanEntries[Number(sel.dataset.idx)];
-        if (!e?.path) continue;
-        const dir = known.get(baseOf(e.path));
-        if (dir !== undefined && dir !== e.path.slice(0, e.path.lastIndexOf('/'))) dupes++;
-    }
-    const sysIds = new Set(picked.map(s => String(s.value)));
-    const sysName = sysIds.size === 1
-        ? (allSystems.find(s => String(s.id) === [...sysIds][0])?.name || 'one system')
-        : null;
-
-    if (dupes > picked.length / 2) {
-        return showConfirm(
-            `${dupes} of these ${picked.length} ROMs are already in your library from a different folder.\n\n`
-            + `If your ROM drive moved, importing them again creates blank duplicates — the copies you already have keep the art, favourites and play history.\n\n`
-            + `Close this and use Settings → Data → ROM Locations → Re-point instead.`,
-            'Import Anyway', true, 'Possible Duplicate Import');
-    }
-    if (sysName) {
-        return showConfirm(
-            `Import ${picked.length} ROMs into ${sysName}?\n\nThat is a lot for one system — check the folder and system are right.`,
-            'Import', false, 'Large Import');
-    }
-    return true;
-}
-
-// ── ROM LOCATIONS ────────────────────────────────────────────────────────────
-// One row per folder the library points at, so a moved drive is obvious at a glance: the row that
-// went missing is the one to re-point.
-let relocateFrom = null;
-
-async function loadRomLocations() {
-    const box = document.getElementById('rom-locations-list');
-    if (!box) return;
-    box.innerHTML = '<div class="hint">Checking…</div>';
-    const res = await window.api.romLocations();
-    if (!res.ok || !res.locations.length) {
-        box.innerHTML = '<div class="hint">No ROM folders in the library yet.</div>';
-        return;
-    }
-    box.innerHTML = '';
-    for (const loc of res.locations) {
-        const broken = loc.missing > 0;
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); border-radius:8px;';
-        const info = document.createElement('div');
-        info.style.cssText = 'flex:1; min-width:0;';
-        const p = document.createElement('div');
-        p.style.cssText = 'font-size:12px; word-break:break-all;' + (broken ? ' color:#ef5350;' : '');
-        p.textContent = loc.prefix;
-        const sub = document.createElement('div');
-        sub.style.cssText = 'font-size:11px; color:var(--text_dim); margin-top:2px;';
-        sub.textContent = broken
-            ? `${loc.missing} of ${loc.games} game${loc.games !== 1 ? 's' : ''} not found here`
-            : `${loc.games} game${loc.games !== 1 ? 's' : ''} — all found`;
-        info.append(p, sub);
-        const btn = document.createElement('button');
-        btn.textContent = broken ? 'Re-point…' : 'Move…';
-        if (broken) { btn.style.background = 'var(--accent)'; btn.style.color = 'var(--bg)'; btn.style.fontWeight = '900'; }
-        btn.addEventListener('click', () => openRelocateModal(loc.prefix));
-        row.append(info, btn);
-        box.appendChild(row);
-    }
-}
-
-function openRelocateModal(prefix) {
-    relocateFrom = prefix;
-    document.getElementById('relocate-old').value = prefix;
-    document.getElementById('relocate-new').value = '';
-    document.getElementById('relocate-preview').innerHTML = '';
-    document.getElementById('btn-relocate-apply').disabled = true;
-    openModal('modal-rom-relocate');
-}
-
-async function refreshRelocatePreview() {
-    const to = document.getElementById('relocate-new').value.trim();
-    const out = document.getElementById('relocate-preview');
-    const applyBtn = document.getElementById('btn-relocate-apply');
-    applyBtn.disabled = true;
-    if (!to || !relocateFrom) { out.innerHTML = ''; return; }
-    const res = await window.api.romRelocatePreview(relocateFrom, to);
-    if (!res.ok) {
-        out.innerHTML = `<span style="color:#ef5350;">${res.error}</span>`;
-        return;
-    }
-    const lines = [];
-    lines.push(`<b>${res.rows}</b> game${res.rows !== 1 ? 's' : ''} would be re-pointed.`);
-    if (res.rows) {
-        const colour = res.resolves === res.rows ? 'var(--accent)' : (res.resolves ? '#e6a23c' : '#ef5350');
-        lines.push(`<span style="color:${colour};"><b>${res.resolves}</b> of ${res.rows} would be found on disk afterwards.</span>`);
-    }
-    if (res.missing) {
-        lines.push(`<span style="color:var(--text_dim);">Not found at the new folder, e.g.:<br>${
-            res.unresolved.slice(0, 3).map(u => `<code style="font-size:10px;">${u}</code>`).join('<br>')}</span>`);
-    }
-    if (res.cfgKeys.length) lines.push(`<span style="color:var(--text_dim);">Also updates ${res.cfgKeys.length} RetroArch path setting${res.cfgKeys.length !== 1 ? 's' : ''} (${res.cfgKeys.join(', ')}).</span>`);
-    if (res.m3u)           lines.push(`<span style="color:var(--text_dim);">Also updates ${res.m3u} multi-disc playlist${res.m3u !== 1 ? 's' : ''}.</span>`);
-    out.innerHTML = lines.join('<br>');
-    applyBtn.disabled = res.rows === 0;
-}
-
-async function applyRelocate() {
-    const to = document.getElementById('relocate-new').value.trim();
-    if (!to || !relocateFrom) return;
-    const res0 = await window.api.romRelocatePreview(relocateFrom, to);
-    if (!res0.ok) { showAlert(res0.error, 'Re-point ROM Folder'); return; }
-    const warn = res0.missing
-        ? `\n\n${res0.missing} of ${res0.rows} would NOT be found at the new folder. You can re-point again afterwards.`
-        : '';
-    if (!await showConfirm(
-        `Re-point ${res0.rows} game${res0.rows !== 1 ? 's' : ''} to:\n${to}${warn}\n\nThe database is backed up first.`,
-        'Re-point', false, 'Re-point ROM Folder')) return;
-
-    const btn = document.getElementById('btn-relocate-apply');
-    btn.disabled = true; btn.textContent = 'Re-pointing…';
-    const res = await window.api.romRelocateApply(relocateFrom, to, {});
-    btn.textContent = 'Re-point Library';
-    if (!res.ok) { btn.disabled = false; showAlert(res.error || 'Failed.', 'Re-point ROM Folder'); return; }
-    await loadGames();
-    closeModal('modal-rom-relocate');
-    loadRomLocations();
-    renderCurrentView();
-    const extra = [res.cfgKeys ? `${res.cfgKeys} RetroArch path${res.cfgKeys !== 1 ? 's' : ''}` : null,
-                   res.m3u ? `${res.m3u} playlist${res.m3u !== 1 ? 's' : ''}` : null].filter(Boolean);
-    showLaunchToast(`Re-pointed ${res.rows} game${res.rows !== 1 ? 's' : ''}${extra.length ? ' + ' + extra.join(' + ') : ''}.`, null);
 }
 
 function openDuplicatesModal() {

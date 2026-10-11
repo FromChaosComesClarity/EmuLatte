@@ -8,7 +8,7 @@
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
     @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
     @font-face { font-family: 'PressStart2P'; src: url('assets/fonts/PressStart2P.ttf') format('truetype'); }
-    /* Era faces for the "Systems" themes — each retro-OS theme names one and applyTheme() puts it in --ui-font. */
+    /* Era faces for the "Systems" themes: each retro-OS theme names one and applyTheme() puts it in --ui-font. */
     @font-face { font-family: 'PxPlus IBM VGA8';  src: url('assets/fonts/PxPlusIBMVGA8.ttf')  format('truetype'); }
     @font-face { font-family: 'C64 Pro Mono';     src: url('assets/fonts/C64ProMono.ttf')     format('truetype'); }
     @font-face { font-family: 'Chicago';          src: url('assets/fonts/ChicagoFLF.ttf')     format('truetype'); }
@@ -43,7 +43,7 @@
 
     #app-container { display: flex; flex: 1; width: 100%; height: 100%; overflow: hidden; position: relative; }
 
-    /* visibility:hidden (not just opacity:0) so a closed overlay is fully removed from hit-testing —
+    /* visibility:hidden (not just opacity:0) so a closed overlay is fully removed from hit-testing.
        pointer-events:none alone can leave a backdrop-filtered layer still catching clicks in Chromium.
        The delayed visibility transition keeps the fade-out animation intact. */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s, visibility 0s 0.2s; }
@@ -66,7 +66,7 @@
     /* Uniform card slot: every cover lives in the same portrait (5:7) box so ALL cards are the same
        height. Standard portrait covers fill it (cover). Odd-shaped covers (landscape/square/jewel/
        natural) get the `.special` treatment: the art is centered & fully contained (never stretched
-       or cropped) over a blurred, scaled copy of itself — a soft backdrop in the cover's own
+       or cropped) over a blurred, scaled copy of itself, a soft backdrop in the cover's own
        predominant colors. */
     .gallery-cover-wrap { position: relative; width: 100%; aspect-ratio: 5 / 7; overflow: hidden;
         border-radius: var(--radius-md); background: #111; display: flex; align-items: center; justify-content: center; }
@@ -242,7 +242,7 @@
     /* Float the Play button at the panel's bottom-right, always visible (like Clarity).
        The panel's transform makes position:fixed resolve relative to the panel, so it pins to
        the corner and never scrolls with the content. */
-    /* Floating Play button — lives OUTSIDE the scrolling panel (a fixed layer above it) so it
+    /* Floating Play button: lives OUTSIDE the scrolling panel (a fixed layer above it) so it
        stays put while the gamepage scrolls. Positioned to the panel's bottom-right via viewport math. */
     #btn-gamepage-launch { display: none; position: fixed; z-index: 82; margin: 0;
       right: calc((100vw - min(1100px, 94vw)) / 2 + 28px); bottom: calc(5vh + 28px); }
@@ -333,7 +333,7 @@
     .ra-chip.star { padding: 6px 9px; }
     .ra-chip .stari { color: #ffcf6b; }
     .ra-simple-row input[type="text"], .ra-simple-row input[type="password"] { margin-top: 6px; }
-    /* the curated Express pane duplicates keys searchable in other hub panes — hide it while searching */
+    /* the curated Express pane duplicates keys searchable in other hub panes, so hide it while searching */
     #settings-content.searching .cp-pane[data-pane="express"] { display: none; }
     /* Express: "More…" aspect dropdown + shader preset chips with favourite star */
     .exp-more { margin-left: 6px; font-size: 11px; padding: 6px 8px; vertical-align: middle; width: auto; }
@@ -381,7 +381,7 @@
     .core-all-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px; color: var(--text_dim); margin-top: 6px; }
     .core-all-toggle input { width: auto; margin: 0; }
 
-    /* Save-state manager — retro console "BIOS / memory card" look on the app's theme colour,
+    /* Save-state manager: retro console "BIOS / memory card" look on the app's theme colour,
        with a true 8-bit font (Press Start 2P) and pixelated artwork. */
     #modal-save-manager .sm-box { position: relative; width: min(1000px, 95vw); height: 88vh; background: var(--bg); border: 3px solid var(--border_solid); border-radius: var(--radius-md); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 70px rgba(0,0,0,0.9); font-family: 'PressStart2P', monospace; }
     #modal-save-manager .sm-box::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0; background-image: repeating-linear-gradient(to bottom, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px); }
@@ -403,7 +403,7 @@
     #modal-save-manager .sm-card.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent), 0 0 14px rgba(212,163,115,0.5); }
     /* images positioned absolutely so they can't drive the card height (the grid row sets it) */
     #modal-save-manager .sm-card img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
-    /* border-box so the padding insets the image instead of enlarging it — object-fit:contain then
+    /* border-box so the padding insets the image instead of enlarging it: object-fit:contain then
        always fits any logo (any size/shape), dynamically scaled & centered, clear of the name bar */
     #modal-save-manager .sm-card img.logo { object-fit: contain; box-sizing: border-box; padding: 16px 24px 30px; image-rendering: auto; }
     /* blurred copy of the cover fills the blank space behind a logo (same trick as the gallery) */
@@ -431,7 +431,7 @@
         image-rendering: auto; filter: blur(12px) brightness(1.5) saturate(1.3); mix-blend-mode: screen;
         opacity: 0.55; pointer-events: none; }
 
-    /* CRT (TV consoles + arcade): curved tube — scanlines, bloom, glass sheen, edge vignette. */
+    /* CRT (TV consoles + arcade): curved tube with scanlines, bloom, glass sheen and edge vignette. */
     #modal-slideshow .crt-screen.crt .slideshow-img { filter: saturate(1.15) contrast(1.05); }
     #modal-slideshow .crt-screen.crt::before { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; mix-blend-mode: screen;
         background: radial-gradient(120% 75% at 50% -12%, rgba(255,255,255,0.16), rgba(255,255,255,0) 46%); }
@@ -597,14 +597,8 @@
         </button>
         <div class="rail-sep"></div>
         <!-- Actions -->
-        <button class="rail-btn" id="btn-add-rom" title="Add ROM">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-        </button>
         <button class="rail-btn" id="btn-rescan-library" title="Rescan Library: read the ROMS folder again">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.56"/></svg>
-        </button>
-        <button class="rail-btn" id="btn-scan-folder" title="Scan ROM Folder">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         </button>
         <div class="rail-sep"></div>
         <!-- Manage -->
@@ -681,10 +675,6 @@
 
           <!-- System hero buttons (shown per active system filter) -->
           <div id="system-hero-btns" style="display:none; position:absolute; bottom:20px; left:20px; z-index:10; flex-direction:row; gap:8px; align-items:center;">
-            <button id="btn-hero-scan" class="btn-hero btn-hero-sq" title="Scan ROM folder for this system">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.56"/></svg>
-            </button>
-            <button id="btn-hero-add-rom" class="btn-hero">+ ADD ROM</button>
             <button id="btn-hero-scrape-all" class="btn-hero" title="Scrape all ROMs in this system from ScreenScraper.fr">SCRAPE ALL</button>
           </div>
         </div>
@@ -743,7 +733,7 @@
               <button id="btn-gamepage-trailer" class="btn-hero btn-hero-sq" style="display:none;" title="Watch trailer" aria-label="Watch trailer"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></button>
               <button id="btn-gamepage-manual" class="btn-hero btn-hero-sq" title="View game manual" aria-label="View game manual"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></button>
               <button id="btn-gamepage-saves" class="btn-hero btn-hero-sq" title="Save states" aria-label="Save states"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg></button>
-              <button id="btn-gamepage-ra" class="btn-hero btn-hero-sq" title="RetroArch launch settings — configure for this game" aria-label="RetroArch launch settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="5" y="4" width="2" height="2"/><rect x="17" y="4" width="2" height="2"/><rect x="7" y="6" width="2" height="2"/><rect x="15" y="6" width="2" height="2"/><rect x="5" y="8" width="14" height="2"/><rect x="3" y="10" width="4" height="2"/><rect x="9" y="10" width="6" height="2"/><rect x="17" y="10" width="4" height="2"/><rect x="1" y="12" width="22" height="2"/><rect x="1" y="14" width="2" height="2"/><rect x="5" y="14" width="14" height="2"/><rect x="21" y="14" width="2" height="2"/><rect x="1" y="16" width="2" height="2"/><rect x="5" y="16" width="2" height="2"/><rect x="17" y="16" width="2" height="2"/><rect x="21" y="16" width="2" height="2"/><rect x="7" y="18" width="4" height="2"/><rect x="13" y="18" width="4" height="2"/></svg></button>
+              <button id="btn-gamepage-ra" class="btn-hero btn-hero-sq" title="RetroArch launch settings: configure for this game" aria-label="RetroArch launch settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="5" y="4" width="2" height="2"/><rect x="17" y="4" width="2" height="2"/><rect x="7" y="6" width="2" height="2"/><rect x="15" y="6" width="2" height="2"/><rect x="5" y="8" width="14" height="2"/><rect x="3" y="10" width="4" height="2"/><rect x="9" y="10" width="6" height="2"/><rect x="17" y="10" width="4" height="2"/><rect x="1" y="12" width="22" height="2"/><rect x="1" y="14" width="2" height="2"/><rect x="5" y="14" width="14" height="2"/><rect x="21" y="14" width="2" height="2"/><rect x="1" y="16" width="2" height="2"/><rect x="5" y="16" width="2" height="2"/><rect x="17" y="16" width="2" height="2"/><rect x="21" y="16" width="2" height="2"/><rect x="7" y="18" width="4" height="2"/><rect x="13" y="18" width="4" height="2"/></svg></button>
               <button id="btn-gamepage-edit" class="btn-hero btn-hero-sq" title="Edit details" aria-label="Edit details"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
               <button id="btn-gamepage-remove" class="btn-hero btn-hero-sq danger" title="Remove from library (does not delete the ROM file)" aria-label="Remove from library"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
             </div>
@@ -824,75 +814,6 @@
     .ach-card .ach-pts  { font-size:9px; color:var(--accent); margin-top:1px; font-weight:700; }
     .ach-card .ach-lock { opacity:0.35; font-size:13px; margin-top:2px; }
   </style>
-
-  <!-- ── MODAL: ADD ROM ─────────────────────────────────────────────────────── -->
-  <div id="modal-add-rom" class="modal-overlay">
-    <div class="modal-box">
-      <div class="modal-hdr">
-        <div class="modal-title">Add ROM</div>
-        <div class="modal-hdr-btns">
-          <button id="btn-add-rom-confirm" class="btn-modal-save-x">Add ROM</button>
-          <button id="btn-add-rom-cancel" class="btn-modal-x">✕</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label>ROM File</label>
-        <div class="row">
-          <input type="text" id="add-rom-path" placeholder="Select ROM file..." style="flex:1;" readonly>
-          <button id="btn-add-rom-browse" style="flex-shrink:0; white-space:nowrap;">Browse</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label>Title</label>
-        <input type="text" id="add-rom-title" placeholder="Game title">
-      </div>
-      <div class="form-row">
-        <label>System</label>
-        <select id="add-rom-system">
-          <option value="">— Select System —</option>
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── MODAL: SCAN FOLDER ─────────────────────────────────────────────────── -->
-  <div id="modal-scan-folder" class="modal-overlay">
-    <div class="modal-wrapper">
-    <div class="modal-box wide tall">
-      <div class="modal-hdr">
-        <div class="modal-title">Scan ROM Folder</div>
-      </div>
-      <div class="form-row">
-        <label>System</label>
-        <select id="scan-system-select">
-          <option value="">— Select System —</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label>Folder</label>
-        <div class="row">
-          <input type="text" id="scan-folder-path" placeholder="Select folder..." style="flex:1;" readonly>
-          <button id="btn-scan-browse" style="flex-shrink:0; white-space:nowrap;">Browse</button>
-        </div>
-      </div>
-      <div class="form-row">
-        <label>Extensions (comma-separated, leave empty for all)</label>
-        <input type="text" id="scan-extensions" placeholder="e.g. sfc, smc, bin">
-      </div>
-      <button id="btn-scan-run" class="primary" style="width:100%;">Scan Folder</button>
-      <div id="scan-results-wrap" style="display:none;">
-        <div style="font-size:12px; color:var(--text_dim); margin-bottom:8px;"><span id="scan-results-count">0</span> games found — assign a system to each and click Import</div>
-        <div id="scan-results-list"></div>
-        <div class="row" style="justify-content:flex-end; margin-top:10px;">
-          <button id="btn-scan-import" class="primary">Import Selected</button>
-        </div>
-      </div>
-    </div>
-    <div class="modal-float-btns">
-      <button id="btn-scan-cancel" class="btn-modal-x">✕</button>
-    </div>
-    </div>
-  </div>
 
   <!-- ── MODAL: EDIT GAME ───────────────────────────────────────────────────── -->
   <div id="modal-edit-game" class="modal-overlay">
@@ -1002,7 +923,7 @@
 
           <div class="form-row">
             <label>Launch Override</label>
-            <input type="text" id="edit-launch-override" placeholder="Leave empty to use system template — e.g. retroarch -L /path/to/core.so {rom}">
+            <input type="text" id="edit-launch-override" placeholder="Leave empty to use system template, e.g. retroarch -L /path/to/core.so {rom}">
             <div class="hint">Variables: {rom} {core} {emulator}</div>
           </div>
 
@@ -1029,7 +950,7 @@
           <div class="form-row">
             <label>RetroArch Launch Settings</label>
             <button id="btn-ra-override-game" type="button" style="font-size:11px; padding:5px 12px;">CONFIGURE FOR THIS GAME</button>
-            <div class="hint">Per-game monitor, shader, fullscreen &amp; custom config — overrides the system &amp; global settings for this game only.</div>
+            <div class="hint">Per-game monitor, shader, fullscreen &amp; custom config: overrides the system &amp; global settings for this game only.</div>
           </div>
 
           <div class="form-row">
@@ -1091,7 +1012,7 @@
           <button class="preset-template-btn" data-tpl="flatpak run {emulator} {rom}" style="font-size:10px; padding:4px 10px; background:rgba(0,0,0,0.3); border:1px solid var(--border_solid); color:var(--text_dim); border-radius:4px; cursor:pointer; text-transform:none; letter-spacing:0; white-space:nowrap;">Standalone (Flatpak)</button>
         </div>
         <input type="text" id="edit-system-template" placeholder="e.g. retroarch -L {core} {rom}">
-        <div class="hint">Variables: {rom} {core} {emulator} — click a preset above to fill</div>
+        <div class="hint">Variables: {rom} {core} {emulator}. Click a preset above to fill</div>
       </div>
       <div class="form-row">
         <label>Default Core</label>
@@ -1330,7 +1251,7 @@
               <div class="form-row">
                 <label>Target Screen</label>
                 <select id="couch-display-sel"><option value="0">Current screen</option></select>
-                <div class="hint">Which display couch mode opens on (Windows / macOS / X11). On <b>Wayland</b> apps can't pick the output — leave this on <b>Current screen</b> and drag EmuLatte onto your TV/CRT first, then Go Fullscreen.</div>
+                <div class="hint">Which display couch mode opens on (Windows / macOS / X11). On <b>Wayland</b> apps can't pick the output, so leave this on <b>Current screen</b> and drag EmuLatte onto your TV/CRT first, then Go Fullscreen.</div>
               </div>
               <div class="form-row">
                 <label>Display Density (CRT / TV)</label>
@@ -1440,7 +1361,7 @@
             <div class="tool-card" data-search="systems manage console platform add edit bios core disc repair">
               <div class="tool-card-title">Systems</div>
               <button id="btn-settings-manage-systems" style="width:100%;">Manage Systems</button>
-              <div class="hint">Add, edit and configure consoles — default cores, BIOS, disc-reference repair and per-system RetroArch settings.</div>
+              <div class="hint">Add, edit and configure consoles: default cores, BIOS, disc-reference repair and per-system RetroArch settings.</div>
             </div>
             <div class="tool-card" data-search="emulators scan install assign system">
               <div class="tool-card-title">Emulators</div>
@@ -1453,14 +1374,14 @@
             <div class="cp-pane-title">RetroArch &amp; Saves</div>
             <div class="tool-card" data-search="retroarch config configuration cfg own engine manage file location import export reset paths tune menu">
               <div class="tool-card-title">RetroArch Configuration</div>
-              <div class="hint" style="margin-top:0;">EmuLatte runs RetroArch on its <b>own</b> config — your host <code>retroarch.cfg</code> is never read or written. Seeded clean (only folder paths imported); tailor it here or in RetroArch itself.</div>
+              <div class="hint" style="margin-top:0;">EmuLatte runs RetroArch on its <b>own</b> config: your host <code>retroarch.cfg</code> is never read or written. Seeded clean (only folder paths imported); tailor it here or in RetroArch itself.</div>
               <div id="ra-config-info" style="font-size:11px; color:var(--text_dim); margin:4px 0; word-break:break-all;"></div>
               <button id="btn-ra-settings" style="width:100%; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">⚙ Edit RetroArch Settings</button>
               <div class="row" style="margin-top:4px;">
                 <button id="btn-ra-configure" style="flex:1;">Configure in RetroArch</button>
                 <button id="btn-ra-reimport-paths" style="flex:1;">Re-import Paths</button>
               </div>
-              <div class="hint">“Configure in RetroArch” opens RetroArch’s own menu on this config (changes save back here). “Re-import Paths” re-points cores/BIOS/saves to this machine — use it after restoring on another computer.</div>
+              <div class="hint">“Configure in RetroArch” opens RetroArch’s own menu on this config (changes save back here). “Re-import Paths” re-points cores/BIOS/saves to this machine. Use it after restoring on another computer.</div>
               <div class="row" style="margin-top:8px;">
                 <button id="btn-ra-cfg-import" style="flex:1;">Import .cfg…</button>
                 <button id="btn-ra-cfg-export" style="flex:1;">Export…</button>
@@ -1499,7 +1420,7 @@
 
           <section class="cp-pane" data-pane="express">
             <div class="cp-pane-title">Express RetroArch <span id="express-saved" class="express-saved"></span></div>
-            <div class="ra-pane-hint">The essentials, in plain language — changes apply instantly. ★ marks the recommended pick. For everything else, use <b>RetroArch → ⚙ Edit RetroArch Settings</b>.</div>
+            <div class="ra-pane-hint">The essentials, in plain language. Changes apply instantly. ★ marks the recommended pick. For everything else, use <b>RetroArch → ⚙ Edit RetroArch Settings</b>.</div>
             <div id="settings-express"></div>
           </section>
 
@@ -1511,7 +1432,7 @@
               <div class="form-row"><label>Password</label><input type="password" id="settings-ss-pass" placeholder="Your ScreenScraper password"></div>
               <button id="btn-test-ss" style="width:100%;">Test Credentials</button>
               <div id="settings-ss-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Register free at screenscraper.fr — used for metadata &amp; artwork scraping.</div>
+              <div class="hint">Register free at screenscraper.fr, used for metadata &amp; artwork scraping.</div>
             </div>
             <div class="tool-card" data-search="retroachievements ra achievements unlock account api key">
               <div class="tool-card-title">RetroAchievements</div>
@@ -1519,7 +1440,7 @@
               <div class="form-row"><label>API Key</label><input type="password" id="settings-ra-key" placeholder="From retroachievements.org/settings"></div>
               <button id="btn-test-ra" style="width:100%;">Test Credentials</button>
               <div id="settings-ra-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Free account at retroachievements.org — API key in your profile settings.</div>
+              <div class="hint">Free account at retroachievements.org. The API key is in your profile settings.</div>
             </div>
             <div class="tool-card" style="flex-direction:row; align-items:center; justify-content:space-between; gap:12px;" data-search="clarity sync import credentials igdb steamgriddb">
               <div>
@@ -1535,28 +1456,28 @@
               <div class="form-row"><label>Client Secret</label><input type="password" id="settings-igdb-client-secret" placeholder="Twitch / IGDB Client Secret"></div>
               <button id="btn-test-igdb" style="width:100%;">Test Credentials</button>
               <div id="settings-igdb-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Register at api.igdb.com — metadata &amp; artwork scraper.</div>
+              <div class="hint">Register at api.igdb.com, a metadata &amp; artwork scraper.</div>
             </div>
             <div class="tool-card" data-search="thegamesdb tgdb retro boxart metadata api key">
               <div class="tool-card-title">TheGamesDB</div>
               <div class="form-row"><label>API Key</label><input type="password" id="settings-tgdb-key" placeholder="Your TheGamesDB API key"></div>
               <button id="btn-test-tgdb" style="width:100%;">Test Key</button>
               <div id="settings-tgdb-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Free key at thegamesdb.net — metadata &amp; artwork scraper, good for retro consoles.</div>
+              <div class="hint">Free key at thegamesdb.net. A metadata &amp; artwork scraper, good for retro consoles.</div>
             </div>
             <div class="tool-card" data-search="steamgriddb sgdb art covers heroes logos api key">
               <div class="tool-card-title">SteamGridDB</div>
               <div class="form-row"><label>API Key</label><input type="password" id="settings-sgdb-key" placeholder="Your SteamGridDB API key"></div>
               <button id="btn-test-sgdb" style="width:100%;">Test Key</button>
               <div id="settings-sgdb-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Free key at steamgriddb.com — artwork only (covers, heroes, logos).</div>
+              <div class="hint">Free key at steamgriddb.com. Artwork only (covers, heroes, logos).</div>
             </div>
             <div class="tool-card" data-search="mobygames moby games metadata boxart covers screenshots api key retro">
               <div class="tool-card-title">MobyGames</div>
               <div class="form-row"><label>API Key</label><input type="password" id="settings-moby-key" placeholder="Your MobyGames API key"></div>
               <button id="btn-test-moby" style="width:100%;">Test Key</button>
               <div id="settings-moby-status" style="font-size:11px; color:var(--text_dim); margin-top:4px;"></div>
-              <div class="hint">Request a key at mobygames.com (approval required) — metadata + boxart. Great retro coverage. 360 req/hr.</div>
+              <div class="hint">Request a key at mobygames.com (approval required). Metadata + boxart. Great retro coverage. 360 req/hr.</div>
             </div>
           </section>
 
@@ -1583,12 +1504,7 @@
               <div class="hint" style="margin-top:4px;">Emulatte_Stuff plus Clarity's GameManagerConfig (Clarity + Couch Mode + Clock) + save states, as one archive of both apps. Your ROMS and BIOS folders are left out on purpose; see the manual, section 22.</div>
               <button id="btn-restore-backup" style="width:100%; margin-top:10px;">Restore from Backup…</button>
               <div id="backup-status" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
-              <div class="hint">Restore overwrites the current data and restarts EmuLatte. ROM paths &amp; RetroArch folders are machine-specific — use “Re-import Paths” after restoring on another computer.</div>
-            </div>
-            <div class="tool-card" data-search="rom location path folder moved drive mount relocate re-point redirect missing broken external ssd usb">
-              <div class="tool-card-title">ROM Locations</div>
-              <div id="rom-locations-list" style="display:flex; flex-direction:column; gap:8px;"></div>
-              <div class="hint">If your ROM folder or drive moved, re-point the library here — your art, favourites and play history are kept. Don’t re-scan for that: it re-imports the same ROMs as blank duplicates.</div>
+              <div class="hint">Restore overwrites the current data and restarts EmuLatte. On another computer, press <b>Rescan Library</b> afterwards and the games are matched back to your own ROMS folder by name. RetroArch’s own folders are machine-specific too: use “Re-import Paths” in the RetroArch pane for those.</div>
             </div>
             <div class="tool-card" data-search="library maintenance duplicate duplicates orphan unused images videos clean disk space remove">
               <div class="tool-card-title">Library Maintenance</div>
@@ -1716,7 +1632,7 @@
           </section>
           <section class="cp-pane" data-rapane="audio"><div class="cp-pane-title">Audio</div><div id="ra-pane-audio"></div></section>
           <section class="cp-pane" data-rapane="input"><div class="cp-pane-title">Input</div><div id="ra-pane-input"></div></section>
-          <section class="cp-pane" data-rapane="controls"><div class="cp-pane-title">Controls — Input Remaps</div>
+          <section class="cp-pane" data-rapane="controls"><div class="cp-pane-title">Controls: Input Remaps</div>
             <div class="ra-pane-hint">Pre-defined control maps you can install per system as a ready-to-go base, then fine-tune. Basic pad mapping still comes from RetroArch’s controller autoconfig.</div>
             <div id="ra-template-list" style="margin-bottom:14px;"></div>
             <div class="cp-pane-title" style="margin-top:6px;">Installed Remap Files</div>
@@ -1747,7 +1663,7 @@
           <section class="cp-pane" data-rapane="user"><div class="cp-pane-title">User &amp; Accounts</div><div id="ra-pane-user"></div></section>
           <section class="cp-pane" data-rapane="filebrowser"><div class="cp-pane-title">File Browser</div><div id="ra-pane-filebrowser"></div></section>
           <section class="cp-pane" data-rapane="directory"><div class="cp-pane-title">Directories</div><div class="ra-pane-hint">Where RetroArch reads cores, BIOS, saves and more. Use “Re-import Paths” to reset these to this machine.</div><div id="ra-pane-directory"></div></section>
-          <section class="cp-pane" data-rapane="all"><div class="cp-pane-title">All Settings</div><div class="ra-pane-hint">Every key in EmuLatte’s RetroArch config — search to filter. Changes apply on the next launch.</div><div id="ra-pane-all"></div></section>
+          <section class="cp-pane" data-rapane="all"><div class="cp-pane-title">All Settings</div><div class="ra-pane-hint">Every key in EmuLatte’s RetroArch config. Search to filter. Changes apply on the next launch.</div><div id="ra-pane-all"></div></section>
         </div>
       </div>
     </div>
@@ -1816,7 +1732,7 @@
     <div class="modal-wrapper">
     <div class="modal-box wide tall">
       <div class="modal-hdr">
-        <div class="modal-title">Add System — Choose a Preset</div>
+        <div class="modal-title">Add System: Choose a Preset</div>
       </div>
       <input type="text" id="preset-search" placeholder="Search systems…">
       <div id="preset-list" style="display:flex; flex-direction:column; gap:5px; max-height:420px; overflow-y:auto; margin-top:4px;"></div>
@@ -1835,7 +1751,7 @@
     <div class="modal-wrapper">
     <div class="modal-box wide tall">
       <div class="modal-hdr">
-        <div class="modal-title">Download Cores <span style="font-size:11px; color:var(--text_dim); font-weight:400;">— from RetroArch buildbot</span></div>
+        <div class="modal-title">Download Cores <span style="font-size:11px; color:var(--text_dim); font-weight:400;">(from RetroArch buildbot)</span></div>
       </div>
       <div id="core-dl-rec"></div>
       <input type="text" id="core-dl-search" placeholder="Search cores…">
@@ -1855,7 +1771,7 @@
       <div class="modal-hdr">
         <div class="modal-title">Duplicate Games</div>
       </div>
-      <div class="ra-pane-hint">Same title on the same system. The most complete copy is kept by default — tick the ones to remove. ROM files are never deleted.</div>
+      <div class="ra-pane-hint">Same title on the same system. The most complete copy is kept by default. Tick the ones to remove. ROM files are never deleted.</div>
       <div id="dup-list" style="max-height:440px; overflow-y:auto; margin-top:6px; display:flex; flex-direction:column; gap:14px;"></div>
       <div class="row" style="margin-top:12px;">
         <button id="btn-dup-remove" class="danger" style="flex:1; font-weight:900;">Remove Selected</button>
@@ -1863,32 +1779,6 @@
     </div>
     <div class="modal-float-btns">
       <button id="btn-duplicates-close" class="btn-modal-x">✕</button>
-    </div>
-    </div>
-  </div>
-
-  <!-- ── MODAL: RELOCATE ROMS ──────────────────────────────────────────────── -->
-  <div id="modal-rom-relocate" class="modal-overlay">
-    <div class="modal-wrapper">
-    <div class="modal-box wide">
-      <div class="modal-hdr">
-        <div class="modal-title">Re-point ROM Folder</div>
-      </div>
-      <div class="ra-pane-hint">Rewrites where the library looks for these ROMs. Nothing is re-imported and no game is removed — art, favourites and play history stay exactly as they are.</div>
-      <label style="margin-top:10px;">Current folder</label>
-      <input id="relocate-old" type="text" readonly style="width:100%; opacity:.75;">
-      <label style="margin-top:10px;">New folder</label>
-      <div class="row">
-        <input id="relocate-new" type="text" placeholder="Choose where these ROMs live now…" style="flex:1;">
-        <button id="btn-relocate-browse">Browse…</button>
-      </div>
-      <div id="relocate-preview" style="margin-top:12px; font-size:12px; line-height:1.7;"></div>
-      <div class="row" style="margin-top:12px;">
-        <button id="btn-relocate-apply" style="flex:1; font-weight:900;" disabled>Re-point Library</button>
-      </div>
-    </div>
-    <div class="modal-float-btns">
-      <button id="btn-relocate-close" class="btn-modal-x">✕</button>
     </div>
     </div>
   </div>
@@ -1902,7 +1792,7 @@
       </div>
       <div class="ra-shader-crumbs" id="exp-shader-crumbs"></div>
       <div class="ra-shader-browser" id="exp-shader-browser" style="max-height:420px; overflow-y:auto;"></div>
-      <div class="ra-pane-hint" style="margin-top:8px;">Current: <span id="exp-shader-current">(none)</span> — click a preset to use it, ★ to favourite it for quick access.</div>
+      <div class="ra-pane-hint" style="margin-top:8px;">Current: <span id="exp-shader-current">(none)</span>. Click a preset to use it, ★ to favourite it for quick access.</div>
     </div>
     <div class="modal-float-btns">
       <button id="btn-express-shaders-close" class="btn-modal-x">✕</button>
@@ -2047,7 +1937,7 @@
       <div class="form-row" style="margin-bottom:8px;">
         <label>Search name</label>
         <input type="text" id="refine-scrape-name" placeholder="e.g. Mario Strikers Charged">
-        <div class="hint">Drop region tags, revisions and filename junk — just the game's title works best.</div>
+        <div class="hint">Drop region tags, revisions and filename junk. Just the game's title works best.</div>
       </div>
       <div class="row" style="margin-top:6px;">
         <button id="btn-refine-scrape-go" style="flex:1; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Search Again</button>
@@ -2177,7 +2067,7 @@
           <div class="form-row">
             <label>Monitor</label>
             <select id="ra-ovr-monitor"></select>
-            <div class="hint">Which display RetroArch opens on — pick your CRT here. A specific monitor forces <b>exclusive fullscreen</b> on it (required for the index to apply, especially on Wayland). If the index lands on the wrong screen, try the adjacent number.</div>
+            <div class="hint">Which display RetroArch opens on. Pick your CRT here. A specific monitor forces <b>exclusive fullscreen</b> on it (required for the index to apply, especially on Wayland). If the index lands on the wrong screen, try the adjacent number.</div>
           </div>
           <div class="form-row">
             <label>Fullscreen</label>
@@ -2224,7 +2114,7 @@
           </div>
           <div class="form-row">
             <label>Custom config lines</label>
-            <textarea id="ra-ovr-custom" rows="5" placeholder='key = "value"   — one RetroArch setting per line' style="width:100%; font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+            <textarea id="ra-ovr-custom" rows="5" placeholder='key = "value"   (one RetroArch setting per line)' style="width:100%; font-family:monospace; font-size:12px; resize:vertical;"></textarea>
             <div class="hint">Advanced: appended verbatim, e.g. <code>crt_switch_resolution = "3"</code>. These layer over your host config and never modify it.</div>
           </div>
         </div>
@@ -2328,7 +2218,7 @@
         <input type="checkbox" id="manual-keep-chk" style="margin:3px 0 0;">
         <span style="flex:1;">
           <span style="display:block; font-size:12px; font-weight:900; color:var(--text_main); letter-spacing:0.5px;">Keep a copy for offline viewing</span>
-          <span style="display:block; font-size:11px; color:var(--text_dim); line-height:1.5; margin-top:3px;">Manuals are PDFs and can be large. Leave this off to read it once — it’s cached and discarded when you close the viewer.</span>
+          <span style="display:block; font-size:11px; color:var(--text_dim); line-height:1.5; margin-top:3px;">Manuals are PDFs and can be large. Leave this off to read it once. It’s cached and discarded when you close the viewer.</span>
         </span>
       </label>
 
