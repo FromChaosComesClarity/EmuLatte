@@ -449,6 +449,30 @@ Verified: Ctrl+Q fires while plain `q` and Ctrl+W do not; SIGTERM closes the emu
 it; a window close leaves the game playing; and the prompt names a scrape, a download, or a
 game and a scrape together, with Cancel leaving everything alive.
 
+## The app-menu icon
+
+⚠️ Packaged assets are read through `__dirname`, **not** `process.resourcesPath`. In an
+AppImage the assets live inside `app.asar`, which `__dirname` resolves into;
+`resourcesPath/assets` holds only the `extraResources` (the `bin` folder). The menu installer
+looked there, found nothing, skipped the copy, and wrote a desktop entry with **no `Icon=`
+line at all**, so the launcher showed a generic one. `assets/systems.json` and
+`assets/bios_db.json` were already read the right way; this was the odd one out.
+
+The icon installs into the hicolor theme as
+`~/.local/share/icons/hicolor/scalable/apps/emulatte.svg` and the entry says `Icon=emulatte`,
+a themed name rather than an absolute path: that is what launchers resolve, and it keeps
+working when the AppImage moves. An absolute-path copy beside the binary remains the fallback
+where no theme folder can be written.
+
+`healMenuEntries()` repairs entries written before this worked. It only touches the two files
+EmuLatte created, only when they exist, and only when they have no `Icon=` line, so a machine
+that never added EmuLatte to its menu gets nothing written and a hand-edited icon is left
+alone.
+
+Verified against the real AppImage: it logged `gave the app-menu entries their icon back`,
+both entries gained `Icon=emulatte`, and a GTK icon lookup for `emulatte` resolves to the
+installed SVG.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

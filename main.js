@@ -371,6 +371,8 @@ app.whenReady().then(() => {
             library.importOldBios(library.setting('bios_import_from'), { retry: true });   // the drive was away last time
         }
 
+        healMenuEntries();   // entries written before the icon could be found
+
         // Ready to play without being asked: find the cores this machine has, and make sure the
         // config EmuLatte hands RetroArch can actually see them.
         repairOwnedRaCfg();
@@ -4265,6 +4267,41 @@ function launcherContent(entry) {
     if (entry.wmClass) lines.push(`StartupWMClass=${entry.wmClass}`);
     return lines.join('\n') + '\n';
 }
+/*
+ * Put EmuLatte's icon where a launcher will find it, and answer with the name to use.
+ *
+ * ⚠️ The source is read through __dirname, NOT process.resourcesPath. In a packaged build the
+ * assets live inside app.asar, which __dirname resolves into; resourcesPath/assets holds only
+ * the extraResources (the bin folder). Looking there found nothing, the copy was skipped, and
+ * the entry was written with no Icon line at all, which is why the menu showed a generic one.
+ *
+ * ⚠️ Installed into the hicolor theme under a plain name rather than referenced by absolute
+ * path. A themed name is what every launcher resolves, and it keeps working when the AppImage
+ * is moved. The absolute path stays as the fallback for a machine with no icon theme.
+ */
+const ICON_NAME = 'emulatte';
+function installIcon() {
+    const src = path.join(__dirname, 'assets', 'icons', 'EmuLatte.svg');
+    let data = null;
+    try { data = fs.readFileSync(src); } catch { return ''; }
+    const themed = path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', 'scalable', 'apps', `${ICON_NAME}.svg`);
+    try {
+        fs.mkdirSync(path.dirname(themed), { recursive: true });
+        fs.writeFileSync(themed, data);
+        // Best effort: most launchers read scalable/apps directly, but a cache makes it instant.
+        try { spawn('gtk-update-icon-cache', ['-q', '-t', '-f', path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor')], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+        return ICON_NAME;
+    } catch {}
+    // No theme folder to write to: fall back to a copy beside the binary, by absolute path.
+    try {
+        const dir = path.join(baseDir, 'icons');
+        fs.mkdirSync(dir, { recursive: true });
+        const out = path.join(dir, 'EmuLatte.svg');
+        fs.writeFileSync(out, data);
+        return out;
+    } catch { return ''; }
+}
+
 function writeLauncher(dir, entry) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${entry.id}.desktop`);
@@ -4281,19 +4318,14 @@ function selfLaunchTarget() {
     if (app.isPackaged) return { exec: process.execPath, args: [] };
     return { exec: process.execPath, args: [__dirname] };     // dev: Electron needs the app folder
 }
-ipcMain.handle('install-to-menu', () => {
+ipcMain.handle('install-to-menu', () => installMenuEntries());
+function installMenuEntries() {
     try {
         const dir = appsDir();
         const { exec, args } = selfLaunchTarget();
         if (!exec || !fs.existsSync(exec)) return { ok: false, error: 'Could not work out which file to launch.' };
         try { fs.chmodSync(exec, '755'); } catch {}
-        const iconsDir = path.join(baseDir, 'icons');
-        let icon = '';
-        try {
-            fs.mkdirSync(iconsDir, { recursive: true });
-            const src = path.join(baseAssetPath, 'assets', 'icons', 'EmuLatte.svg');
-            if (fs.existsSync(src)) { icon = path.join(iconsDir, 'EmuLatte.svg'); fs.copyFileSync(src, icon); }
-        } catch {}
+        const icon = installIcon();
         const made = [];
         writeLauncher(dir, {
             id: 'emulatte', name: 'EmuLatte',
@@ -4314,7 +4346,28 @@ ipcMain.handle('install-to-menu', () => {
         try { spawn('update-desktop-database', [dir], { detached: true, stdio: 'ignore' }).unref(); } catch {}
         return { ok: true, installed: made, dir };
     } catch (err) { return { ok: false, error: err.message }; }
-});
+}
+
+/*
+ * Repair entries this app wrote before it could find its own icon.
+ *
+ * Only ever touches the two files EmuLatte created, only when they exist, and only when they
+ * have no Icon line to lose. Someone who never added EmuLatte to their menu gets nothing
+ * written, and an entry a user has edited to point at their own icon is left alone.
+ */
+function healMenuEntries() {
+    try {
+        const dir = appsDir();
+        const files = ['emulatte', 'emulatte-couch']
+            .map(id => path.join(dir, `${id}.desktop`))
+            .filter(f => { try { return fs.existsSync(f); } catch { return false; } });
+        if (!files.length) return;
+        const iconless = files.some(f => !/^Icon=/m.test(fs.readFileSync(f, 'utf8')));
+        if (!iconless) return;
+        const r = installMenuEntries();
+        if (r.ok) console.log('[menu] gave the app-menu entries their icon back');
+    } catch {}
+}
 ipcMain.handle('remove-from-menu', () => {
     const dir = appsDir(); let n = 0;
     for (const id of ['emulatte', 'emulatte-couch']) {
