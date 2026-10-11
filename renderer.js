@@ -4734,6 +4734,47 @@ function wireUI() {
         if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
         libStatus('Going back to the local library. Restarting\u2026', false);
     });
+    window.api.onImportProgress(info => {
+        const el = document.getElementById('import-status');
+        if (!el || !info) return;
+        el.style.color = 'var(--text_dim)';
+        el.textContent = info.phase === 'reading' ? 'Reading the other library\u2026'
+            : info.phase === 'exporting' ? `Gathering what has been scraped\u2026 ${info.done} of ${info.total}`
+            : `Matching games\u2026 ${info.done} of ${info.total}`;
+    });
+    document.getElementById('btn-export-meta').addEventListener('click', async () => {
+        const dir = await pickFolder('Where should the bundle go?', null,
+            'A USB stick, or anywhere you can carry it from. Only the games you have actually scraped go in it.');
+        if (!dir) return;
+        const el = document.getElementById('import-status');
+        const btn = document.getElementById('btn-export-meta');
+        btn.disabled = true; el.style.color = 'var(--text_dim)'; el.textContent = 'Gathering\u2026';
+        const r = await window.api.exportMetadataTo(dir);
+        btn.disabled = false;
+        if (!r?.ok) { el.style.color = '#ef5350'; el.textContent = r?.error || 'That did not work.'; return; }
+        el.style.color = 'var(--accent)';
+        el.textContent = r.games
+            ? `Exported ${r.games} scraped game${r.games !== 1 ? 's' : ''} and ${r.art} artwork file${r.art !== 1 ? 's' : ''} to ${r.dir}. The other ${r.scanned - r.games} games had nothing scraped, so they were left out.`
+            : `Nothing to export: none of your ${r.scanned} games have been scraped yet.`;
+    });
+    document.getElementById('btn-import-meta').addEventListener('click', async () => {
+        const dir = await pickFolder('Where is the artwork coming from?', null,
+            'An EmuLatte_Artwork bundle, or the whole Emulatte_Stuff folder from the other computer.');
+        if (!dir) return;
+        const el = document.getElementById('import-status');
+        const btn = document.getElementById('btn-import-meta');
+        btn.disabled = true;
+        el.style.color = 'var(--text_dim)'; el.textContent = 'Opening\u2026';
+        const overwrite = document.getElementById('chk-import-overwrite').checked;
+        const r = await window.api.importMetadataFrom(dir, { overwrite });
+        btn.disabled = false;
+        if (!r?.ok) { el.style.color = '#ef5350'; el.textContent = r?.error || 'That did not work.'; return; }
+        el.style.color = 'var(--accent)';
+        el.textContent = r.matched
+            ? `Matched ${r.matched} of your ${r.myGames} games against ${r.sourceGames} there. Updated ${r.updated}, copied ${r.art} artwork file${r.art !== 1 ? 's' : ''}.`
+            : `No games matched. Those ${r.sourceGames} games have different filenames or sit under different systems, so there was nothing to copy across.`;
+        await loadGames();
+    });
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
     document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
