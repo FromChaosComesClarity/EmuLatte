@@ -4467,6 +4467,179 @@ ipcMain.handle('list-dirs', (_, dir) => {
     };
 });
 
+/*
+ * Bring the artwork and metadata from another EmuLatte library into this one.
+ *
+ * Scraping a big collection twice is a waste of a day and of ScreenScraper's quota. The games
+ * are the same files; only the paths differ between machines. So rows are matched on **the
+ * system plus the ROM's filename**, the same key the scanner uses to recognise a game that has
+ * moved, and the scraped fields are filled in from the other library.
+ *
+ * ⚠️ rom_path is never touched. The point is to keep this machine's own paths and borrow only
+ * what was scraped. Nothing in the source library is written to either.
+ */
+const SCRAPED_FIELDS = ['description', 'year', 'developer', 'publisher', 'genre', 'players',
+                        'rating', 'screenscraper_id', 'ra_game_id', 'igdb_trailer'];
+const ART_FIELDS = { cover: 'covers', hero: 'heroes', logo: 'logos', screenshot: 'screenshots' };
+
+// A game is worth carrying only if something was actually scraped onto it.
+const isScraped = (g) => SCRAPED_FIELDS.some(f => g[f] !== null && g[f] !== undefined && g[f] !== '')
+                      || Object.keys(ART_FIELDS).some(f => g[f]);
+
+/*
+ * Write a bundle holding the scraped games and nothing else.
+ *
+ * ⚠️ Not a copy of the library. A collection can be tens of thousands of rows of which a few
+ * hundred have been scraped, and the rest is this machine's ROM paths, which are useless
+ * anywhere else. The bundle is a list keyed by system and filename, plus the art those rows
+ * point at: small enough for a USB stick, and portable because it names no paths at all.
+ */
+ipcMain.handle('export-metadata-to', async (event, dir) => {
+    if (!db) return { ok: false, error: 'DB not ready' };
+    if (!dir) return { ok: false, canceled: true };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const tell = (phase, done, total) => {
+        try { if (win && !win.isDestroyed()) win.webContents.send('import-progress', { phase, done, total }); } catch {}
+    };
+    try {
+        const out = path.join(dir, 'EmuLatte_Artwork');
+        fs.mkdirSync(out, { recursive: true });
+        const sys = new Map(db.prepare('SELECT id, short_name FROM systems').all().map(r => [r.id, r.short_name]));
+        const all = db.prepare(`SELECT id, system_id, rom_path, ${[...SCRAPED_FIELDS, ...Object.keys(ART_FIELDS)].join(', ')} FROM games`).all();
+        const games = [];
+        let art = 0, n = 0;
+        for (const g of all) {
+            n++;
+            if (n % 500 === 0) tell('exporting', n, all.length);
+            if (!g.rom_path || !sys.get(g.system_id) || !isScraped(g)) continue;
+            const rec = { system: sys.get(g.system_id), file: path.basename(g.rom_path) };
+            for (const f of SCRAPED_FIELDS) if (g[f] !== null && g[f] !== '') rec[f] = g[f];
+            for (const [f, kind] of Object.entries(ART_FIELDS)) {
+                if (!g[f]) continue;
+                const names = [];
+                for (const one of String(g[f]).split('|').filter(Boolean)) {
+                    const base = path.basename(one);
+                    const to = path.join(out, 'images', kind, base);
+                    try {
+                        if (!fs.existsSync(one)) continue;
+                        fs.mkdirSync(path.dirname(to), { recursive: true });
+                        if (!fs.existsSync(to)) fs.copyFileSync(one, to);
+                        names.push(base); art++;
+                    } catch {}
+                }
+                if (names.length) rec[f] = names.join('|');
+            }
+            games.push(rec);
+        }
+        fs.writeFileSync(path.join(out, 'metadata.json'),
+            JSON.stringify({ app: 'EmuLatte', kind: 'artwork-bundle', created: Date.now(), games }, null, 1), 'utf8');
+        tell('exporting', all.length, all.length);
+        return { ok: true, dir: out, games: games.length, art, scanned: all.length };
+    } catch (e) { return { ok: false, error: e.message }; }
+});
+
+ipcMain.handle('import-metadata-from', async (event, dir, opts = {}) => {
+    if (!db) return { ok: false, error: 'DB not ready' };
+    if (!dir) return { ok: false, canceled: true };
+    if (path.resolve(dir) === path.resolve(configDir)) return { ok: false, error: 'That is this library.' };
+    // Either an exported bundle or a whole Emulatte_Stuff folder; a bundle is the small one.
+    const bundleFile = fs.existsSync(path.join(dir, 'metadata.json')) ? path.join(dir, 'metadata.json')
+                     : fs.existsSync(path.join(dir, 'EmuLatte_Artwork', 'metadata.json')) ? path.join(dir, 'EmuLatte_Artwork', 'metadata.json')
+                     : null;
+    const srcDb = path.join(dir, 'emulatte.db');
+    if (!bundleFile && !fs.existsSync(srcDb))
+        return { ok: false, error: 'That folder holds neither an exported artwork bundle nor an EmuLatte library.' };
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const tell = (phase, done, total, detail) => {
+        try { if (win && !win.isDestroyed()) win.webContents.send('import-progress', { phase, done, total, detail }); } catch {}
+    };
+
+    let src = null, srcImages;
+    const key = (shortName, file) => `${shortName}::${path.basename(String(file || '')).toLowerCase()}`;
+    const byKey = new Map();
+    try {
+        tell('reading', 0, 0, '');
+        if (bundleFile) {
+            srcImages = path.join(path.dirname(bundleFile), 'images');
+            const data = JSON.parse(fs.readFileSync(bundleFile, 'utf8'));
+            for (const r of (data.games || [])) {
+                if (r.system && r.file) byKey.set(key(r.system, r.file), r);
+            }
+        } else {
+            srcImages = path.join(dir, 'images');
+            src = new Database(srcDb, { readonly: true, timeout: 4000 });
+            const srcSystems = new Map(src.prepare('SELECT id, short_name FROM systems').all().map(r => [r.id, r.short_name]));
+            const have = new Set(src.prepare('PRAGMA table_info(games)').all().map(r => r.name));
+            const cols = ['id', 'system_id', 'rom_path', ...SCRAPED_FIELDS, ...Object.keys(ART_FIELDS)]
+                .filter(c => have.has(c) || ['id', 'system_id', 'rom_path'].includes(c));
+            for (const r of src.prepare(`SELECT ${cols.join(', ')} FROM games`).all()) {
+                const sn = srcSystems.get(r.system_id);
+                // ⚠️ Only rows with something on them. A huge library is mostly blank rows whose
+                // only content is the other machine's paths, and indexing those is pure cost.
+                if (!sn || !r.rom_path || !isScraped(r)) continue;
+                byKey.set(key(sn, r.rom_path), r);
+            }
+        }
+
+        const mySystems = new Map(db.prepare('SELECT id, short_name FROM systems').all().map(r => [r.id, r.short_name]));
+        const mine = db.prepare('SELECT id, system_id, rom_path, ' + [...SCRAPED_FIELDS, ...Object.keys(ART_FIELDS)].join(', ') + ' FROM games').all();
+
+        // Art lives beside the source database, whatever absolute path its rows happen to hold.
+        const copyArt = (stored, kind) => {
+            if (!stored) return '';
+            const outs = [];
+            for (const one of String(stored).split('|').filter(Boolean)) {
+                const base = path.basename(one);
+                const from = path.join(srcImages, ART_FIELDS[kind], base);
+                if (!fs.existsSync(from)) continue;
+                const to = path.join(imagesDir, ART_FIELDS[kind], base);
+                try {
+                    fs.mkdirSync(path.dirname(to), { recursive: true });
+                    if (!fs.existsSync(to)) fs.copyFileSync(from, to);
+                    outs.push(to);
+                } catch {}
+            }
+            return outs.join('|');
+        };
+
+        const upd = db.prepare(`UPDATE games SET ${[...SCRAPED_FIELDS, ...Object.keys(ART_FIELDS)].map(f => `${f}=@${f}`).join(', ')} WHERE id=@id`);
+        let matched = 0, updated = 0, art = 0, n = 0;
+        const fillOnlyEmpty = opts.overwrite !== true;
+
+        for (const g of mine) {
+            n++;
+            if (n % 200 === 0) tell('matching', n, mine.length, '');
+            const sn = mySystems.get(g.system_id);
+            if (!sn || !g.rom_path) continue;
+            const hit = byKey.get(key(sn, g.rom_path));
+            if (!hit) continue;
+            matched++;
+            const row = { id: g.id };
+            let touched = false;
+            for (const f of SCRAPED_FIELDS) {
+                const mineHas = g[f] !== null && g[f] !== undefined && g[f] !== '';
+                row[f] = (fillOnlyEmpty && mineHas) ? g[f] : (hit[f] ?? g[f] ?? null);
+                if (row[f] !== g[f]) touched = true;
+            }
+            for (const f of Object.keys(ART_FIELDS)) {
+                const mineHas = g[f] !== null && g[f] !== undefined && g[f] !== '';
+                if (fillOnlyEmpty && mineHas) { row[f] = g[f]; continue; }
+                const copied = copyArt(hit[f], f);
+                row[f] = copied || g[f] || null;
+                if (copied) { art += copied.split('|').length; touched = true; }
+            }
+            if (touched) { upd.run(row); updated++; }
+        }
+        tell('matching', mine.length, mine.length, '');
+        return { ok: true, source: dir, sourceGames: byKey.size, myGames: mine.length, matched, updated, art };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    } finally {
+        try { src.close(); } catch {}
+    }
+});
+
 ipcMain.handle('library-location', () => ({
     ok: true,
     dir: configDir,

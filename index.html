@@ -1383,6 +1383,18 @@
               </div>
               <div id="library-data-status" style="font-size:11px; color:var(--text_dim); margin-top:8px; min-height:14px;"></div>
             </div>
+            <div class="tool-card" data-search="import metadata artwork another computer machine scraped copy merge second pc">
+              <div class="tool-card-title">Bring artwork over from another computer</div>
+              <div class="hint" style="margin-top:0;">Already scraped this collection somewhere else? Point EmuLatte at that machine's library folder and it copies the artwork and the scraped details onto the games here, matching them by system and filename. Your ROM paths are untouched, and nothing in the other library is changed.</div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                <button id="btn-export-meta" style="flex:1 1 200px;">Export My Artwork&hellip;</button>
+                <button id="btn-import-meta" style="flex:1 1 200px;">Import Artwork&hellip;</button>
+              </div>
+              <label style="display:flex; align-items:center; gap:7px; margin-top:8px; font-size:11px; color:var(--text_dim); cursor:pointer;">
+                <input type="checkbox" id="chk-import-overwrite"> Replace details I already have (off: only fill in what is missing)
+              </label>
+              <div id="import-status" style="font-size:11px; color:var(--text_dim); margin-top:8px; min-height:14px; line-height:1.5;"></div>
+            </div>
             <div class="tool-card" data-search="library rescan scan roms folder rom directory add games refresh">
               <div class="tool-card-title">Your ROMS folder</div>
               <div class="hint" style="margin-top:0;">EmuLatte's library <b>is</b> this folder. There is one sub-folder per system; drop ROMs in and they are in the library the next time EmuLatte opens. Sub-folders inside a system folder are read too, and a multi-disc set is grouped into one entry.</div>

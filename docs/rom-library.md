@@ -507,6 +507,47 @@ handing the loop back between them, and reports `preparing` / `copying` / `check
 progress window. The safety is unchanged: the copy is verified before the originals are
 renamed aside, and the ROMS and BIOS roots are still pinned before the move.
 
+## Carrying artwork between machines
+
+The same collection scraped on two computers is the same work done twice, so a library can
+hand its scraped half to another one. `export-metadata-to` writes an `EmuLatte_Artwork`
+folder: `metadata.json` plus the cover, hero, logo and screenshot files belonging to the games
+listed in it.
+
+### Only the scraped games
+
+`isScraped(g)` is true when any of `SCRAPED_FIELDS` holds a non-empty value or any of the four
+art fields is set. A thirty-thousand game library where a few hundred have been scraped
+produces a bundle of a few megabytes, which is the difference between something you can carry
+on a stick and something you cannot. The result reports `scanned` alongside `games` so the
+count is visible.
+
+### No path survives the trip
+
+This is the whole design. An entry names a system and a bare filename:
+
+```json
+{ "system": "nes", "file": "1942.zip", "year": "1986", "cover": "g2_cover.jpg" }
+```
+
+The key is `${system_short_name}::${basename(rom_path).toLowerCase()}`, which is the same key
+`scan()` already uses to adopt a ROM that has moved between folders. `rom_path` is never
+exported and never written on import, so the receiving library keeps pointing at its own
+files no matter how differently they are arranged. Art filenames in the bundle are rewritten
+to the destination's own naming as they are copied; nothing references the sender's layout.
+
+Verified against a 32,829-game library duplicated with entirely different ROM paths
+(`/mnt/otherpc/roms/...` on the sender): 500 scraped games exported, all 500 matched on the
+receiver, 1,000 art files copied, 0 rom_paths altered, and 0 absolute paths anywhere in the
+bundle.
+
+### Fill, do not clobber
+
+Import defaults to writing only into fields that are empty, so a library that has scraped some
+of its own games keeps that work. `opts.overwrite` replaces instead. `import-metadata-from`
+also accepts a whole `Emulatte_Stuff` folder rather than a bundle, reading the scraped rows
+straight out of the other library's database; it opens that database read-only.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply
