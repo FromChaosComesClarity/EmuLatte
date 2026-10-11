@@ -4667,21 +4667,60 @@ function wireUI() {
         const el = document.getElementById('library-data-status');
         el.textContent = msg; el.style.color = bad ? '#ef5350' : 'var(--accent)';
     };
+    document.getElementById('btn-fp-cancel').addEventListener('click', () => fpFinish(null));
+    document.getElementById('btn-fp-pick').addEventListener('click', () => fpFinish(_fpPath));
+    document.getElementById('btn-fp-up').addEventListener('click', async () => {
+        const r = await window.api.listDirs(_fpPath);
+        if (r?.ok && r.parent) fpGo(r.parent);
+    });
+    document.getElementById('btn-mv-close').addEventListener('click', () => closeModal('modal-move'));
+    window.api.onLibraryMoveProgress(info => {
+        if (!info) return;
+        const phase = { preparing: 'Preparing', copying: 'Copying', checking: 'Checking the copy' }[info.phase] || 'Working';
+        document.getElementById('mv-phase').textContent = phase;
+        document.getElementById('mv-detail').textContent = info.detail || '';
+        const bar = document.getElementById('mv-bar');
+        bar.style.width = info.total ? `${Math.round((info.done / info.total) * 100)}%` : '';
+    });
+
     document.getElementById('btn-library-move').addEventListener('click', async () => {
         const go = await showConfirm(
-            'EmuLatte will copy the database, the artwork, the trailers and the manuals to the folder you pick, then use them from there.\n\n'
+            'EmuLatte will copy the database, the artwork, the trailers and the manuals to a folder you pick, then use them from there.\n\n'
             + 'The copies here are renamed rather than deleted, so nothing is thrown away, and EmuLatte restarts when it is done.\n\n'
             + 'Your ROMS and BIOS folders are not touched.',
             'Choose a folder', false, 'Move the library');
         if (!go) return;
-        libStatus('Copying\u2026', false);
-        const r = await window.api.moveLibraryTo();
-        if (r?.canceled) { libStatus('', false); return; }
-        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
-        libStatus(`Copied ${r.copied} item${r.copied !== 1 ? 's' : ''} to ${r.target}. Restarting\u2026`, false);
+        const target = await pickFolder('Where should the library live?', null,
+            'Pick an empty folder on the drive. EmuLatte will create what it needs inside it.');
+        if (!target) return;
+        document.getElementById('mv-result').style.display = 'none';
+        document.getElementById('btn-mv-close').style.display = 'none';
+        document.getElementById('mv-phase').textContent = 'Preparing\u2026';
+        document.getElementById('mv-detail').textContent = '';
+        document.getElementById('mv-bar').style.width = '0%';
+        openModal('modal-move');
+        const r = await window.api.moveLibraryTo(target);
+        const out = document.getElementById('mv-result');
+        document.getElementById('mv-bar').style.width = '100%';
+        if (r?.canceled) { closeModal('modal-move'); return; }
+        if (!r?.ok) {
+            document.getElementById('mv-phase').textContent = 'It did not work';
+            out.textContent = r?.error || 'That did not work.';
+            out.style.color = '#ef5350';
+        } else {
+            document.getElementById('mv-phase').textContent = 'Done';
+            out.textContent = `Copied ${r.copied} item${r.copied !== 1 ? 's' : ''} to ${r.target}. EmuLatte is restarting.`;
+            out.style.color = 'var(--accent)';
+        }
+        out.style.display = '';
+        document.getElementById('btn-mv-close').style.display = '';
+        libStatus(r?.ok ? 'Restarting\u2026' : (r?.error || ''), !r?.ok);
     });
     document.getElementById('btn-library-use').addEventListener('click', async () => {
-        const r = await window.api.useLibraryAt();
+        const target = await pickFolder('Which library should EmuLatte use?', null,
+            'Pick the folder that holds emulatte.db, written by this or another computer.');
+        if (!target) return;
+        const r = await window.api.useLibraryAt(target);
         if (r?.canceled) return;
         if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
         libStatus(`Using the library at ${r.target}. Restarting\u2026`, false);
@@ -4698,14 +4737,18 @@ function wireUI() {
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
     document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
-        const r = await window.api.setLibraryRoot('roms');
+        const dir = await pickFolder('Where are your ROMs?', null, 'Pick the folder that holds your system folders.');
+        if (!dir) return;
+        const r = await window.api.setLibraryRoot('roms', dir);
         if (r?.canceled) return;
         if (!r?.ok) { showAlert(r?.error || 'That folder could not be used.', 'ROMS folder'); return; }
         await applyScanResult(r.scan, { quiet: false });
         renderLibraryPane();
     });
     document.getElementById('btn-library-set-bios').addEventListener('click', async () => {
-        const r = await window.api.setLibraryRoot('bios');
+        const dir = await pickFolder('Where are your BIOS files?', null, 'Pick the folder EmuLatte should use for BIOS and firmware.');
+        if (!dir) return;
+        const r = await window.api.setLibraryRoot('bios', dir);
         if (r?.canceled) return;
         renderLibraryPane();
     });
@@ -4743,7 +4786,9 @@ function wireUI() {
     document.getElementById('btn-welcome-done')?.addEventListener('click', dismissWelcome);
     document.getElementById('btn-welcome-open-roms')?.addEventListener('click', () => window.api.openLibraryFolder('roms'));
     document.getElementById('btn-welcome-set-roms')?.addEventListener('click', async () => {
-        const r = await window.api.setLibraryRoot('roms');
+        const dir = await pickFolder('Where are your ROMs?', null, 'Pick the folder that holds your system folders.');
+        if (!dir) return;
+        const r = await window.api.setLibraryRoot('roms', dir);
         if (r?.canceled) return;
         showWelcomeRomsPath();
         if (r?.ok) await applyScanResult(r.scan, { quiet: false });
@@ -5560,6 +5605,45 @@ async function loadSettingsCredentials() {
         if (el) el.value = (await window.api.getSetting(key)) || '';
     }
     _settingsPopulated = true;
+}
+
+/*
+ * EmuLatte's own folder browser.
+ *
+ * ⚠️ Deliberately not the desktop's file chooser. That is a portal call served by a separate
+ * GTK process which can fall over, and a feature whose whole job is to be trustworthy with
+ * somebody's library should not inherit another process's crashes. Resolves to a path, or
+ * null if cancelled.
+ */
+let _fpResolve = null, _fpPath = null;
+function pickFolder(title, startAt, note) {
+    document.getElementById('fp-title').textContent = title;
+    document.getElementById('fp-note').textContent = note || '';
+    openModal('modal-folder');
+    fpGo(startAt || null);
+    return new Promise(res => { _fpResolve = res; });
+}
+async function fpGo(dir) {
+    let r = null;
+    try { r = await window.api.listDirs(dir); } catch {}
+    if (!r?.ok) { document.getElementById('fp-note').textContent = r?.error || 'That folder cannot be read.'; return; }
+    _fpPath = r.path;
+    document.getElementById('fp-path').textContent = r.path + (r.writable ? '' : '   (read only)');
+    document.getElementById('btn-fp-up').disabled = !r.parent;
+    document.getElementById('fp-places').innerHTML = r.places.map(pl =>
+        `<button class="fp-place" data-path="${escHtml(pl.path)}" style="font-size:10px; padding:4px 9px;">${escHtml(pl.name)}</button>`).join('');
+    document.getElementById('fp-places').querySelectorAll('.fp-place')
+        .forEach(b => b.addEventListener('click', () => fpGo(b.dataset.path)));
+    const list = document.getElementById('fp-list');
+    list.innerHTML = r.dirs.map(d =>
+        `<button class="fp-dir" data-path="${escHtml(d.path)}" style="display:block; width:100%; text-align:left; font-size:11px; padding:6px 10px; background:transparent; border:0; border-bottom:1px solid var(--border); color:var(--text_sec);">${escHtml(d.name)}</button>`).join('')
+        || '<div style="padding:10px; font-size:11px; color:var(--text_dim);">No folders in here.</div>';
+    list.querySelectorAll('.fp-dir').forEach(b => b.addEventListener('click', () => fpGo(b.dataset.path)));
+}
+function fpFinish(val) {
+    closeModal('modal-folder');
+    const f = _fpResolve; _fpResolve = null;
+    if (f) f(val);
 }
 
 // Where the library is kept, and the three ways to change it.
