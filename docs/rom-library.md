@@ -473,6 +473,40 @@ Verified against the real AppImage: it logged `gave the app-menu entries their i
 both entries gained `Icon=emulatte`, and a GTK icon lookup for `emulatte` resolves to the
 installed SVG.
 
+## Why moving the library kept failing
+
+Two faults, both certain, found by evidence rather than by reading.
+
+⚠️ **`app.relaunch()` is wrong for an AppImage.** `process.execPath` points inside the
+ephemeral FUSE mount, `/tmp/.mount_XXXXXX/emulatte_electron_build`, which is torn down the
+moment the process exits. A plain `app.relaunch()` therefore asks the system to run a file
+that no longer exists: EmuLatte closes and never comes back, which from outside is
+indistinguishable from a crash, and it is deterministic rather than environmental, which is
+why it happened on two machines. `relaunchApp()` relaunches by `$APPIMAGE`, the real file on
+disk. Restore from Backup had the same latent fault and is fixed with it.
+
+⚠️ **The desktop's folder chooser is another process.** On Wayland it is an xdg-desktop-portal
+call served by GTK, and on this machine Nautilus dumped core minutes before EmuLatte did. A
+feature whose job is to be careful with somebody's library should not inherit a dependency it
+cannot see fail, so `list-dirs` plus an in-app browser replaced it for the library, ROMS and
+BIOS pickers.
+
+### What the evidence actually said
+
+Worth recording, because the obvious suspect was wrong. The move was reproduced twice against
+the real 32,829-game database, once by calling the IPC and once by driving the whole UI, and
+it **succeeded both times**. What pointed elsewhere was the database: `roms_root` was still
+unset on the failed machine, and that is written before a single byte is copied, so the
+failure was upstream of the copy. The core dumps were no help, Electron ships stripped.
+
+### Copying without freezing
+
+`fs.cpSync` blocks the main process from the first byte to the last, so nothing could be
+drawn and any sizeable library looked like a hang. `copyTreeWithProgress` awaits each file,
+handing the loop back between them, and reports `preparing` / `copying` / `checking` to a
+progress window. The safety is unchanged: the copy is verified before the originals are
+renamed aside, and the ROMS and BIOS roots are still pinned before the move.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

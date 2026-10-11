@@ -9,6 +9,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const os = require('os');
 const https = require('https');
 const zlib = require('zlib');
@@ -2066,7 +2067,7 @@ ipcMain.handle('restore-backup', async () => {
         result = { ok: true, configFiles: cfgN, saveFiles: saveN };
     } catch (e) { result = { ok: false, error: e.message }; }
     // DB is closed either way → relaunch so EmuLatte reopens the restored data cleanly.
-    if (result.ok) setTimeout(() => { app.relaunch(); app.exit(0); }, 900);
+    if (result.ok) setTimeout(relaunchApp, 900);   // same AppImage trap as relaunchSoon
     return result;
 });
 
@@ -3684,16 +3685,9 @@ ipcMain.handle('open-library-folder', (_, which) => {
 });
 // Point EmuLatte at a collection that already exists somewhere else (an external drive, a NAS
 // mount) instead of moving it. The folders are created there and the library is re-read at once.
-ipcMain.handle('set-library-root', async (event, which) => {
+ipcMain.handle('set-library-root', async (_, which, dir) => {
     if (!library) return { ok: false, error: 'DB not ready' };
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const res = await dialog.showOpenDialog(win, {
-        title: which === 'bios' ? 'Choose the BIOS folder' : 'Choose the ROMS folder',
-        properties: ['openDirectory', 'createDirectory'],
-        defaultPath: which === 'bios' ? library.biosRoot() : library.romsRoot(),
-    });
-    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
-    const dir = res.filePaths[0];
+    if (!dir) return { ok: false, canceled: true };
     if (which === 'bios') { library.setBiosRoot(dir); library.pinBiosDir(); }
     else { library.setRomsRoot(dir); library.ensureFolders(); }
     return { ok: true, path: dir, scan: runLibraryScan({}) };
@@ -4413,7 +4407,65 @@ function releaseDb() {
     try { db?.close(); } catch {}
     db = null;
 }
-const relaunchSoon = () => setTimeout(() => { app.relaunch(); app.exit(0); }, 700);
+/*
+ * Restart EmuLatte.
+ *
+ * ⚠️ An AppImage must be relaunched by its OWN path, never by process.execPath.
+ * execPath points inside the ephemeral FUSE mount (/tmp/.mount_XXXXXX/...), which is torn
+ * down the moment the process exits, so a plain app.relaunch() spawns a file that no longer
+ * exists: EmuLatte closes and never comes back, which from the outside is indistinguishable
+ * from a crash. $APPIMAGE is the real file on disk and survives the exit.
+ */
+function relaunchApp() {
+    const self = process.env.APPIMAGE;
+    if (self && fs.existsSync(self)) app.relaunch({ execPath: self, args: [] });
+    else app.relaunch();
+    app.exit(0);
+}
+const relaunchSoon = () => setTimeout(relaunchApp, 700);
+
+/*
+ * Browse folders inside EmuLatte instead of opening the desktop's file chooser.
+ *
+ * ⚠️ The chooser is a portal call, which on Wayland is served by a separate process (GTK, via
+ * xdg-desktop-portal) that can and does fall over: Nautilus dumped core on this machine
+ * minutes before EmuLatte did. A library move that depends on it inherits every one of its
+ * failures, and for a feature whose whole job is to be trustworthy with somebody's data, that
+ * is the wrong dependency. This lists directories with readdir and nothing else.
+ */
+ipcMain.handle('list-dirs', (_, dir) => {
+    const here = dir && path.isAbsolute(dir) ? dir : os.homedir();
+    const out = [];
+    try {
+        for (const e of fs.readdirSync(here, { withFileTypes: true })) {
+            if (e.name.startsWith('.')) continue;
+            let isDir = e.isDirectory();
+            if (!isDir && e.isSymbolicLink()) {                      // a symlinked folder is a folder
+                try { isDir = fs.statSync(path.join(here, e.name)).isDirectory(); } catch {}
+            }
+            if (isDir) out.push({ name: e.name, path: path.join(here, e.name) });
+        }
+    } catch (e) { return { ok: false, error: e.message, path: here }; }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    let writable = false;
+    try { fs.accessSync(here, fs.constants.W_OK); writable = true; } catch {}
+    // Somewhere to start: home, and whatever is mounted right now.
+    const places = [{ name: 'Home', path: os.homedir() }];
+    for (const root of ['/run/media/' + os.userInfo().username, '/media/' + os.userInfo().username, '/mnt', '/run/media']) {
+        try {
+            for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+                if (e.isDirectory() || e.isSymbolicLink()) places.push({ name: e.name, path: path.join(root, e.name) });
+            }
+        } catch {}
+    }
+    return {
+        ok: true, path: here,
+        parent: path.dirname(here) === here ? null : path.dirname(here),
+        dirs: out, writable,
+        isLibrary: looksLikeLibrary(here),
+        places: places.filter((p, i, a) => a.findIndex(x => x.path === p.path) === i).slice(0, 12),
+    };
+});
 
 ipcMain.handle('library-location', () => ({
     ok: true,
@@ -4425,15 +4477,46 @@ ipcMain.handle('library-location', () => ({
     bytes: dirBytes(configDir) - dirBytes(path.join(configDir, 'ROMS')) - dirBytes(path.join(configDir, 'BIOS')) - dirBytes(path.join(configDir, 'shaders')),
 }));
 
-// Copy the library onto a drive and start using it from there.
-ipcMain.handle('move-library-to', async (event) => {
+// Every file under a folder, so a copy can be counted before it starts.
+function listFilesUnder(dir, base = dir, acc = []) {
+    let es = [];
+    try { es = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+    for (const e of es) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) listFilesUnder(full, base, acc);
+        else acc.push(path.relative(base, full));
+    }
+    return acc;
+}
+/*
+ * Copy a tree one file at a time, reporting as it goes.
+ *
+ * ⚠️ Not fs.cpSync. That blocks the main process from first byte to last, so the window
+ * freezes, nothing can be drawn, and a copy of any size looks exactly like a hang. Awaiting
+ * each file hands the loop back between them, which is what lets the progress actually paint.
+ */
+async function copyTreeWithProgress(from, to, say) {
+    const files = listFilesUnder(from);
+    let n = 0;
+    for (const rel of files) {
+        const src = path.join(from, rel), dst = path.join(to, rel);
+        await fsp.mkdir(path.dirname(dst), { recursive: true });
+        await fsp.copyFile(src, dst);
+        n++;
+        if (n % 20 === 0 || n === files.length) say(n, files.length, rel);
+    }
+    if (!files.length) await fsp.mkdir(to, { recursive: true });
+    return files.length;
+}
+
+// Copy the library onto a drive and start using it from there. The folder comes from
+// EmuLatte's own browser, not the desktop's file chooser.
+ipcMain.handle('move-library-to', async (event, target) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    const res = await dialog.showOpenDialog(win, {
-        title: 'Choose where to keep the library',
-        properties: ['openDirectory', 'createDirectory'],
-    });
-    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
-    const target = res.filePaths[0];
+    if (!target) return { ok: false, canceled: true };
+    const tell = (phase, done, total, detail) => {
+        try { if (win && !win.isDestroyed()) win.webContents.send('library-move-progress', { phase, done, total, detail }); } catch {}
+    };
     const inside = p => path.resolve(p).startsWith(path.resolve(configDir) + path.sep);
     if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is where the library already is.' };
     if (inside(target)) return { ok: false, error: 'Pick a folder outside the current library, not one inside it.' };
@@ -4453,6 +4536,7 @@ ipcMain.handle('move-library-to', async (event) => {
         }
     } catch {}
 
+    tell('preparing', 0, 0, '');
     releaseDb();
     const stamp = dateStamp();
     const copied = [];
@@ -4460,10 +4544,18 @@ ipcMain.handle('move-library-to', async (event) => {
         for (const part of LIBRARY_PARTS) {
             const from = path.join(configDir, part);
             if (!fs.existsSync(from)) continue;
-            fs.cpSync(from, path.join(target, part), { recursive: true });
+            const dest = path.join(target, part);
+            if (fs.statSync(from).isDirectory()) {
+                await copyTreeWithProgress(from, dest, (d, t, rel) => tell('copying', d, t, `${part}/${rel}`));
+            } else {
+                await fsp.mkdir(path.dirname(dest), { recursive: true });
+                await fsp.copyFile(from, dest);
+                tell('copying', 1, 1, part);
+            }
             copied.push(part);
         }
     } catch (e) { relaunchSoon(); return { ok: false, error: `Copy failed: ${e.message}. Nothing was removed; EmuLatte will restart where it was.` }; }
+    tell('checking', 0, 0, '');
 
     // ⚠️ Verified before anything is stood down. A half-copied library that the pointer is
     // already aimed at would be worse than no move at all.
@@ -4482,14 +4574,8 @@ ipcMain.handle('move-library-to', async (event) => {
 });
 
 // Point at a library that is already on a drive, written by this or another machine.
-ipcMain.handle('use-library-at', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const res = await dialog.showOpenDialog(win, {
-        title: 'Choose the library folder on the drive',
-        properties: ['openDirectory'],
-    });
-    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
-    const target = res.filePaths[0];
+ipcMain.handle('use-library-at', async (_, target) => {
+    if (!target) return { ok: false, canceled: true };
     if (!looksLikeLibrary(target)) return { ok: false, error: 'No emulatte.db in that folder, so it is not an EmuLatte library. Pick the folder that holds it.' };
     if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is the library already in use.' };
     releaseDb();
