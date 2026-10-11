@@ -116,6 +116,7 @@ function createWindow() {
         }
     });
     win.setMenu(null);
+    bindQuitShortcut(win);
     mainWin = win;
     win.on('closed', () => { if (mainWin === win) mainWin = null; });
     if (shouldStartCouch()) enterCouch(win); else { couchMode = false; win.loadFile('index.html'); }
@@ -386,7 +387,11 @@ app.whenReady().then(() => {
     if (pendingPlayId) { const id = pendingPlayId; pendingPlayId = null; playGame(id); }
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => {
+    // Closing the window is not "stop everything": a game started from here goes on playing.
+    if (!shuttingDown) quitMode = 'soft';
+    if (process.platform !== 'darwin') app.quit();
+});
 
 // ── WINDOW CONTROLS ──────────────────────────────────────────────────────────
 ipcMain.on('window-minimize', e => BrowserWindow.fromWebContents(e.sender)?.minimize());
@@ -466,6 +471,7 @@ ipcMain.handle('open-user-manual', event => {
         webPreferences: { contextIsolation: true, nodeIntegration: false },
     });
     userManualWin.setMenu(null);
+    bindQuitShortcut(userManualWin);
     userManualWin.loadFile('usermanual.html');
     userManualWin.on('closed', () => { userManualWin = null; });
     return { ok: true };
@@ -777,18 +783,159 @@ function emulatorEnv() {
     return env;
 }
 
+/*
+ * Every emulator this session started, so a deliberate quit can take them with it.
+ *
+ * ⚠️ The PID here is `bash -c`, not the emulator: the real process is its child. Because the
+ * spawn is `detached`, bash leads its own process GROUP, so signalling -pid reaches the whole
+ * group, bash and emulator together. Signalling the pid alone would kill the wrapper and
+ * leave RetroArch running with nothing watching it.
+ */
+const liveEmulators = new Set();
+const anyGameRunning = () => liveEmulators.size > 0;
+
+/*
+ * Work that would be thrown away by quitting: downloads here in main, and the scrape queue,
+ * which lives in the renderer and says so through set-busy. Quitting is allowed to end any of
+ * it, but never without being asked first.
+ */
+const busyJobs = new Map();
+let busySeq = 0;
+function markBusy(label) { const k = ++busySeq; busyJobs.set(k, label); return k; }
+function clearBusy(k) { busyJobs.delete(k); }
+async function whileBusy(label, fn) { const k = markBusy(label); try { return await fn(); } finally { clearBusy(k); } }
+ipcMain.handle('set-busy', (_, key, label) => {
+    // The renderer owns one slot per key, so a queue that ends without saying so cannot wedge
+    // the register: starting it again just replaces the entry.
+    const id = `r:${key}`;
+    if (label) busyJobs.set(id, label); else busyJobs.delete(id);
+    return { ok: true };
+});
+const busyList = () => [...busyJobs.values()];
+
 function launchEmulator(cmd) {
     const child = spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore', env: emulatorEnv() });
     child.on('error', () => {});
     child.unref();
+    if (child.pid) liveEmulators.add(child.pid);
     beginGameSession();
     let ended = false;
-    const done = () => { if (!ended) { ended = true; endGameSession(); } };
+    const done = () => {
+        if (ended) return;
+        ended = true;
+        if (child.pid) liveEmulators.delete(child.pid);
+        endGameSession();
+    };
     child.on('exit', done);
     child.on('close', done);
     learnAndRuleFor(child.pid);
     return child;
 }
+
+// Signal a detached child's whole process group, politely first.
+function signalGroup(pid, sig) {
+    try { process.kill(-pid, sig); return true; }
+    catch { try { process.kill(pid, sig); return true; } catch { return false; } }
+}
+
+/*
+ * Quit EmuLatte and everything it started.
+ *
+ * Closing the window deliberately leaves a running game alone: that is the point of spawning
+ * detached, so the library can be shut while something is being played. This is the other
+ * intention, said out loud: stop the lot. SIGTERM so an emulator can flush its saves, then
+ * SIGKILL for anything still standing, then quit.
+ */
+let shuttingDown = false;
+/*
+ * ⚠️ 'hard' is the DEFAULT, and only closing the window softens it.
+ *
+ * The other way round looked right and was wrong: Chromium eats SIGTERM and turns it into an
+ * ordinary quit without any signal handler running, so a terminated EmuLatte would have read
+ * as a soft quit and left the emulator orphaned. Anything that is not a window close, a
+ * signal, a logout, a relaunch, is a real shutdown.
+ */
+let quitMode = 'hard';
+
+// Kill every emulator this session started. Synchronous, because will-quit does not wait.
+function killEmulators() {
+    const running = [...liveEmulators];
+    for (const pid of running) signalGroup(pid, 'SIGTERM');
+    if (!running.length) return 0;
+    // A short spin rather than a timer: will-quit gives us no asynchronous time at all.
+    const until = Date.now() + 900;
+    while (Date.now() < until) {
+        let alive = false;
+        for (const pid of running) { try { process.kill(pid, 0); alive = true; } catch {} }
+        if (!alive) break;
+    }
+    for (const pid of running) { try { process.kill(pid, 0); signalGroup(pid, 'SIGKILL'); } catch {} }
+    return running.length;
+}
+
+async function shutdownEverything({ ask = false, from = 'request' } = {}) {
+    if (shuttingDown) return;
+    const games = liveEmulators.size;
+    const jobs = busyList();
+
+    if (ask && (games || jobs.length)) {
+        const lines = [];
+        if (games) lines.push(games === 1 ? 'A game is running.' : `${games} games are running.`);
+        for (const j of jobs) lines.push(j);
+        const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Quit anyway', 'Cancel'],
+            defaultId: 1,          // the safe one, because this ends work in progress
+            cancelId: 1,
+            title: 'Quit EmuLatte',
+            message: 'Something is still going.',
+            detail: `${lines.join('\n')}\n\nQuitting now ends it. A game is closed and anything it has not saved is lost; a scrape or download stops where it is.`,
+        });
+        if (response !== 0) return;
+    }
+
+    shuttingDown = true;
+    quitMode = 'hard';
+    console.log(`[quit] shutting down (${from}); games: ${games}, jobs: ${jobs.length}`);
+    app.quit();
+    setTimeout(() => app.exit(0), 2500);   // nothing may hold the quit open
+}
+
+/*
+ * ⚠️ The cleanup lives HERE, not in a signal handler.
+ *
+ * Electron does not let `process.on('SIGTERM')` run: Chromium takes the signal and turns it
+ * into an ordinary quit. Measured, a SIGTERM fires before-quit, will-quit and quit, and the
+ * signal handler never runs at all, which is why a terminated EmuLatte used to leave the
+ * emulator orphaned on the desktop.
+ *
+ * Closing the window is left alone deliberately: spawning detached is what lets somebody shut
+ * the library and keep playing, so that path marks itself soft and the game lives.
+ */
+app.on('will-quit', () => {
+    if (quitMode !== 'hard') return;
+    const n = killEmulators();
+    if (n) console.log(`[quit] closed ${n} emulator${n !== 1 ? 's' : ''}`);
+    try { omarchy.inhibitIdle(false, powerSaveBlocker); } catch {}
+    try { omarchy.setGamingPower(false); } catch {}
+    try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+});
+
+// Ctrl+Q on any of EmuLatte's windows. Bound per window rather than as a global accelerator:
+// a global one would take Ctrl+Q away from every other app on the desktop.
+function bindQuitShortcut(win) {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown') return;
+        const q = String(input.key || '').toLowerCase() === 'q';
+        if (q && input.control && !input.alt && !input.meta) {
+            event.preventDefault();
+            shutdownEverything({ ask: true, from: 'Ctrl+Q' });
+        }
+    });
+}
+
+ipcMain.handle('quit-everything', () => { shutdownEverything({ ask: true, from: 'menu' }); return { ok: true }; });
 
 /*
  * Find out what window class this emulator opens under, and rule it from now on.
@@ -1639,7 +1786,7 @@ async function fetchShaderPack(win) {
         return { ok: true, files: n, dir: target };
     } catch (err) { return { ok: false, error: err.message }; }
 }
-ipcMain.handle('download-shader-pack', async (e) => fetchShaderPack(BrowserWindow.fromWebContents(e.sender)));
+ipcMain.handle('download-shader-pack', async (e) => whileBusy('The shader pack is downloading.', () => fetchShaderPack(BrowserWindow.fromWebContents(e.sender))));
 
 // Copy EmuLatte's bundled curated presets into the shader root.
 //
@@ -2583,7 +2730,8 @@ ipcMain.handle('list-available-cores', async () => {
     catch (err) { return { ok: false, error: err.message }; }
 });
 // Download a single core (+ its .info) and install it where RetroArch/EmuLatte look for cores.
-ipcMain.handle('install-core', async (e, coreArg) => {
+ipcMain.handle('install-core', async (e, coreArg) => whileBusy('A core is downloading.', () => installCoreNow(e, coreArg)));
+async function installCoreNow(e, coreArg) {
     const win = BrowserWindow.fromWebContents(e.sender);
     let base = String(coreArg || '').split('/').pop().replace(/\.zip$/, '').replace(/\.so$/, '');   // accept name / name_libretro / .so / path
     if (!base) return { ok: false, error: 'No core specified' };
@@ -2615,7 +2763,7 @@ ipcMain.handle('install-core', async (e, coreArg) => {
         try { fs.unlinkSync(tmp); } catch {}
         return { ok: false, error: err.message };
     }
-});
+}
 
 // ── RETROACHIEVEMENTS ────────────────────────────────────────────────────────
 
@@ -3852,7 +4000,8 @@ ipcMain.handle('manual-status', (_, gameId) => {
 // Fetch a game's manual from ScreenScraper. keep=true stores it permanently; otherwise it's a
 // throwaway cache file the viewer deletes on close. Matches by ROM filename + CRC/size (same as
 // art/metadata scraping) and picks the region-preferred `manuel` media.
-ipcMain.handle('fetch-manual', async (event, gameId, keep) => {
+ipcMain.handle('fetch-manual', async (event, gameId, keep) => whileBusy('A game manual is downloading.', () => fetchManualNow(event, gameId, keep)));
+async function fetchManualNow(event, gameId, keep) {
     if (!db) return { ok: false, error: 'DB not ready' };
 
     const kp = keptManualPath(gameId);
@@ -3905,7 +4054,7 @@ ipcMain.handle('fetch-manual', async (event, gameId, keep) => {
         if (head.toString('latin1') !== '%PDF-') { fs.unlinkSync(dest); return { ok: false, error: 'ScreenScraper did not return a valid PDF for this game.' }; }
     } catch {}
     return { ok: true, path: dest, kept: !!keep };
-});
+}
 
 // Promote a cache-only manual to the permanent offline library (from the viewer's "Keep" button).
 ipcMain.handle('keep-manual', (_, gameId) => {
@@ -3977,6 +4126,7 @@ ipcMain.handle('open-manual-viewer', (event, opts = {}) => {
     });
     manualWin._cachePath = newCachePath;
     manualWin.setMenu(null);
+    bindQuitShortcut(manualWin);
     manualWin.loadFile('manual.html', { query: manualQuery(opts) });
     manualWin.on('closed', () => { discardManualCache(manualWin?._cachePath); manualWin = null; });
     return { ok: true };
@@ -4073,7 +4223,8 @@ ipcMain.handle('search-youtube', async (_, query) => {
     });
 });
 
-ipcMain.handle('download-trailer', (event, title, videoId) => {
+ipcMain.handle('download-trailer', (event, title, videoId) => whileBusy('A trailer is downloading.', () => downloadTrailerNow(event, title, videoId)));
+function downloadTrailerNow(event, title, videoId) {
     const filePath = trailerFilePath(title);
     const win = event.sender.getOwnerBrowserWindow();
     const args = ['--config-location', ytDlpConfigPath, '--ffmpeg-location', ffmpegPath,
@@ -4088,7 +4239,7 @@ ipcMain.handle('download-trailer', (event, title, videoId) => {
         });
         ytdlp.on('close', (code) => resolve(code === 0));
     });
-});
+}
 
 // ── MISC ──────────────────────────────────────────────────────────────────────
 // ── THE APP MENU ──────────────────────────────────────────────────────────────

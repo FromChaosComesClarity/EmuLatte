@@ -378,7 +378,7 @@ function overlayMove(dir) {
 }
 async function openMenu(hint) {
     menuOpen = true; menuMode = 'main';
-    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§LIBRARY', 'Rescan Library', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode'], hint);
+    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§LIBRARY', 'Rescan Library', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode', 'Quit EmuLatte'], hint);
 }
 
 // ── RESCAN FROM THE COUCH ────────────────────────────────────────────────────
@@ -670,6 +670,8 @@ async function overlayConfirm() {
         else if (raw === 'Manage Save States') openSaveMgr();
         else if (raw === 'Close Menu') closeMenu();
         else if (raw === 'Exit Couch Mode') exitCouch();
+        // Quits EmuLatte and any emulator it started, the same thing Ctrl+Q does on a keyboard.
+        else if (raw === 'Quit EmuLatte') window.api.quitEverything();
         return;
     }
     if (menuMode === 'playlists') {
