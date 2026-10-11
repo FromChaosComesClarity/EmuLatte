@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EmuLatte User Manual</title>
     <style>
-        /* Bundled locally (assets/fonts/) — no network dependency. Italic is synthesized. */
+        /* Bundled locally (assets/fonts/), so there is no network dependency. Italic is synthesized. */
         @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Regular.ttf') format('truetype'); font-weight: 400; }
         @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Bold.ttf') format('truetype'); font-weight: 700; }
         @font-face { font-family: 'Raleway'; src: url('assets/fonts/Raleway-Black.ttf') format('truetype'); font-weight: 900; }
@@ -180,7 +180,7 @@
             </div>
 
             <h2 id="man-1">1. What EmuLatte Is</h2>
-            <p>EmuLatte is a <strong>ROM library manager</strong>. It keeps your emulation collection organised across every system you care about &mdash; importing ROMs, scraping art and metadata, tracking achievements, downloading trailers, and launching each game exactly the way you configured it.</p>
+            <p>EmuLatte is a <strong>ROM library manager</strong>. It keeps your emulation collection organised across every system you care about: importing ROMs, scraping art and metadata, tracking achievements, downloading trailers, and launching each game exactly the way you configured it.</p>
             <p>It is not an emulator. It drives <strong>RetroArch</strong> (and any other emulator you point it at) and stays out of the way once a game is running.</p>
             <p>It ships with <strong>56 system presets</strong>, each carrying opinionated RetroArch core defaults so you are not starting from zero.</p>
 
@@ -202,7 +202,7 @@
                 <p><strong>Where you put the AppImage matters.</strong> EmuLatte keeps everything in a folder called <code>Emulatte_Stuff/</code> <em>next to the AppImage itself</em>: the library database, the artwork, and the <code>ROMS/</code> and <code>BIOS/</code> folders. Put the AppImage somewhere permanent before you start building a library. Moving it later means moving that folder with it.</p>
             </div>
 
-            <p>The first launch creates <code>Emulatte_Stuff/</code> for you, with a sub-folder in <code>ROMS/</code> for <em>every</em> system EmuLatte knows, all 56 of them, and an empty <code>BIOS/</code>. If you have run EmuLatte before, its old folder inside Clarity's <code>GameManagerConfig/</code> is moved into the new one automatically, once, with your whole library intact.</p>
+            <p>The first launch creates <code>Emulatte_Stuff/</code> for you, with a sub-folder in <code>ROMS/</code> for <em>every</em> system EmuLatte knows, all 56 of them, and an empty <code>BIOS/</code>. Nothing is carried over from an older EmuLatte automatically, deliberately so: dropping the AppImage next to someone else's Clarity install used to pull that machine's library in silently. To bring an old library forward, point <code>ROMS</code> at the collection you already have (section 4) and bring the artwork over as described in section 22.</p>
 
             <p>So the order of operations is short: <strong>drop ROMs into the folder for their system</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10). There is no step where you tell EmuLatte which systems you want. They are all there from the start, and the ones with nothing in them stay out of your way.</p>
 
@@ -246,7 +246,7 @@
             <p>If your ROMs are on an external drive or a NAS mount, do not move them. <strong>Settings &rarr; Library &rarr; Change&hellip;</strong> points EmuLatte's <code>ROMS</code> folder at where they already are, and the per-system folders are created there. Because the folder names match what ES-DE, Batocera, RetroBat and RetroPie use (section 3), a collection organised by one of those usually needs nothing beyond this one step.</p>
 
             <div class="tip-box">
-                <p><strong>A ROM somewhere unusual.</strong> <strong>Add ROM</strong> and <strong>Scan Folder</strong> on the left rail still exist, for a single file or a folder that sits outside your ROMS folder entirely. Games added that way are kept and never pruned, and their folder is checked for new siblings on every rescan too, but nothing outside your ROMS folder is ever removed from the library automatically.</p>
+                <p><strong>A ROM somewhere unusual.</strong> There is no separate "add this one file" step any more, because there does not need to be one. Put the file in the system's folder, or point a symlink at it from there, and press <strong>Rescan Library</strong>. If a whole collection lives elsewhere, use <strong>Change&hellip;</strong> above rather than copying anything.</p>
             </div>
 
             <div class="warn-box">
@@ -257,13 +257,13 @@
             <p>Multi-disc games are the usual sharp edge in any ROM collection. The system editor's <strong>disc-reference repair</strong> exists for exactly this: it fixes up <code>.m3u</code> and <code>.cue</code> files whose internal references point at paths that no longer exist, which is what normally breaks a disc-based game after you move or re-rip a collection.</p>
 
             <div class="tip-box">
-                <p><strong>Found duplicates?</strong> <strong>Settings &rarr; Data &rarr; Find Duplicate Games</strong> scans for repeated titles and lets you batch-remove the extras. It only ever removes library entries &mdash; your ROM files are never touched.</p>
+                <p><strong>Found duplicates?</strong> <strong>Settings &rarr; Data &rarr; Find Duplicate Games</strong> scans for repeated titles and lets you batch-remove the extras. It only ever removes library entries, and your ROM files are never touched.</p>
             </div>
 
             <h2 id="man-5">5. The Library &amp; Gallery Views</h2>
             <p>The main window is your library. The left rail switches between views and opens Settings; the collapsible side panel filters by system and playlist.</p>
             <p>The <strong>gallery</strong> is a cover wall. The <strong>list</strong> is denser and shows more metadata per row. Sort order is yours to choose and is remembered between sessions.</p>
-            <p>The <strong>search box</strong> filters by title as you type. It searches titles only &mdash; deliberately, so a search for "Mario" returns Mario games rather than every game whose description happens to mention him.</p>
+            <p>The <strong>search box</strong> filters by title as you type. It searches titles only, deliberately, so a search for "Mario" returns Mario games rather than every game whose description happens to mention him.</p>
 
             <div class="tip-box">
                 <p><strong>Favourites and Want to Play</strong> are two independent flags you can set from any game page. Both are filterable from the side panel, and both carry through to Couch Mode.</p>
@@ -284,24 +284,24 @@
                 <tr><td><span class="key">Save States</span></td><td>Browse, label, launch into and delete RetroArch save states</td></tr>
                 <tr><td><span class="key">RetroArch</span></td><td>Per-game launch settings and core override (section 13)</td></tr>
                 <tr><td><span class="key">Edit</span></td><td>Edit details by hand (section 7)</td></tr>
-                <tr><td><span class="key">Remove</span></td><td>Removes from the library &mdash; <em>never</em> deletes the ROM</td></tr>
+                <tr><td><span class="key">Remove</span></td><td>Removes from the library; <em>never</em> deletes the ROM</td></tr>
             </table>
             <p>Click any screenshot to open it full-size; arrow keys move through the set and <span class="key">Esc</span> closes it.</p>
 
             <h2 id="man-7">7. Editing Game Details</h2>
             <p>Scrapers are good, not infallible. The edit screen lets you correct anything by hand: title, description, developer, publisher, release date, genre, players, rating.</p>
-            <p>You can also replace any individual art asset &mdash; cover, hero, logo, screenshots &mdash; either by picking a different scraped candidate or by supplying your own local file. Hand-edited values are yours; a later scrape will not silently overwrite work you did deliberately.</p>
+            <p>You can also replace any individual art asset (cover, hero, logo, screenshots) either by picking a different scraped candidate or by supplying your own local file. Hand-edited values are yours; a later scrape will not silently overwrite work you did deliberately.</p>
 
             <h2 id="man-15">8. Playlists</h2>
             <p>Playlists are named collections that cut across systems. A game can be in as many as you like, and adding it to one does not remove it from anywhere else.</p>
-            <p>Create them from the side panel, add games from any game page, and filter the library by playlist from the sidebar. They carry through to Couch Mode, which is the real point &mdash; "Saturday Night Co-op" is a much better way to browse from a sofa than "Sega Genesis".</p>
+            <p>Create them from the side panel, add games from any game page, and filter the library by playlist from the sidebar. They carry through to Couch Mode, which is the real point. "Saturday Night Co-op" is a much better way to browse from a sofa than "Sega Genesis".</p>
 
             <h2 id="man-8">9. Art Scraping</h2>
             <p>EmuLatte pulls art from <strong>five</strong> sources, and they are genuinely good at different things. The scraper picker on the game page lets you choose per game, so you can take metadata from one and art from another.</p>
             <table class="controls-table">
                 <tr><th>Source</th><th>Gives you</th><th>Needs</th></tr>
                 <tr><td><strong>ScreenScraper.fr</strong></td><td>Full metadata plus artwork. The best all-round source for console ROMs, and the only one that also serves scanned game manuals.</td><td>Free account</td></tr>
-                <tr><td><strong>SteamGridDB</strong></td><td><em>Artwork only</em> &mdash; covers, heroes and logos. The best-looking modern art, and the place to go when you want a specific style.</td><td>Free API key</td></tr>
+                <tr><td><strong>SteamGridDB</strong></td><td><em>Artwork only</em>: covers, heroes and logos. The best-looking modern art, and the place to go when you want a specific style.</td><td>Free API key</td></tr>
                 <tr><td><strong>TheGamesDB</strong></td><td>Retro-focused metadata and boxart. Strong on older consoles.</td><td>Free API key</td></tr>
                 <tr><td><strong>IGDB</strong></td><td>Metadata and artwork via the Twitch API. Excellent, well-curated descriptions.</td><td>Client ID + Secret</td></tr>
                 <tr><td><strong>MobyGames</strong></td><td>Metadata plus boxart and screenshots. Excellent retro coverage. Rate-limited to 360 requests/hour.</td><td>Free API key (approval required)</td></tr>
@@ -314,18 +314,18 @@
 
             <h3>Art types</h3>
             <ul>
-                <li><strong>Cover</strong> &mdash; the boxart shown in the gallery wall</li>
-                <li><strong>Hero</strong> &mdash; the wide background image on the game page and in Couch Mode</li>
-                <li><strong>Logo</strong> &mdash; the transparent title treatment laid over the hero</li>
-                <li><strong>Screenshots</strong> &mdash; the in-game shots, also used by the Couch Mode screensaver</li>
+                <li><strong>Cover</strong>: the boxart shown in the gallery wall</li>
+                <li><strong>Hero</strong>: the wide background image on the game page and in Couch Mode</li>
+                <li><strong>Logo</strong>: the transparent title treatment laid over the hero</li>
+                <li><strong>Screenshots</strong>: the in-game shots, also used by the Couch Mode screensaver</li>
             </ul>
 
             <h2 id="man-9">10. Metadata Scraping</h2>
             <p>Metadata is everything that is not art: description, developer, publisher, release date, genre, player count, rating. It comes from the same picker and the same five sources.</p>
-            <p>If a scrape matches the wrong game &mdash; common with regional variants, revisions and anything called "Adventure" &mdash; use <strong>refine</strong> to search manually and pick the correct result. The system's platform identifier is passed to the scrapers, so results are already filtered to the right console before you even look.</p>
+            <p>If a scrape matches the wrong game, which is common with regional variants, revisions and anything called "Adventure", use <strong>refine</strong> to search manually and pick the correct result. The system's platform identifier is passed to the scrapers, so results are already filtered to the right console before you even look.</p>
 
             <div class="warn-box">
-                <p><strong>ScreenScraper enforces per-account rate limits.</strong> Scraping a very large collection in one sitting may pause partway through. This is the service protecting itself, not a fault in EmuLatte &mdash; wait, then continue.</p>
+                <p><strong>ScreenScraper enforces per-account rate limits.</strong> Scraping a very large collection in one sitting may pause partway through. This is the service protecting itself, not a fault in EmuLatte. Wait, then continue.</p>
             </div>
 
             <h2 id="man-10">11. Clarity Credential Import</h2>
@@ -344,11 +344,11 @@
 
             <p>RetroArch is auto-detected in both native and Flatpak installs. The <strong>Settings &rarr; RetroArch</strong> pane is where you manage all of it:</p>
             <ul>
-                <li><strong>Edit RetroArch Settings</strong> &mdash; the full settings tree (video, audio, input, latency, shaders, achievements and the rest) edited from inside EmuLatte.</li>
-                <li><strong>Configure in RetroArch</strong> &mdash; opens RetroArch's own menu running on EmuLatte's config. Changes you make there save back here.</li>
-                <li><strong>Re-import Paths</strong> &mdash; re-points cores, BIOS and saves at the current machine. Use this after restoring a backup on a different computer.</li>
-                <li><strong>Scan Cores / Download Cores</strong> &mdash; finds installed cores, or fetches ones you do not have yet.</li>
-                <li><strong>Back Up / Restore Settings</strong> &mdash; zips your RetroArch overrides plus a copy of <code>retroarch.cfg</code> to carry to another machine.</li>
+                <li><strong>Edit RetroArch Settings</strong>: the full settings tree (video, audio, input, latency, shaders, achievements and the rest) edited from inside EmuLatte.</li>
+                <li><strong>Configure in RetroArch</strong>: opens RetroArch's own menu running on EmuLatte's config. Changes you make there save back here.</li>
+                <li><strong>Re-import Paths</strong>: re-points cores, BIOS and saves at the current machine. Use this after restoring a backup on a different computer.</li>
+                <li><strong>Scan Cores / Download Cores</strong>: finds installed cores, or fetches ones you do not have yet.</li>
+                <li><strong>Back Up / Restore Settings</strong>: zips your RetroArch overrides plus a copy of <code>retroarch.cfg</code> to carry to another machine.</li>
             </ul>
 
             <h3>Express RetroArch</h3>
@@ -364,10 +364,10 @@
             <p>Per-game overrides are how you handle the one game on a platform that needs a different core or different settings, without disturbing the other four hundred.</p>
 
             <h3>Save states</h3>
-            <p>The <strong>Save State Manager</strong> (<strong>Settings &rarr; RetroArch</strong>, or the game page) browses save states across your whole library. You can label them, launch straight into one, delete them, and back them up. Labels are yours &mdash; "before the boss" beats "slot 3".</p>
+            <p>The <strong>Save State Manager</strong> (<strong>Settings &rarr; RetroArch</strong>, or the game page) browses save states across your whole library. You can label them, launch straight into one, delete them, and back them up. Labels are yours: "before the boss" beats "slot 3".</p>
 
             <h2 id="man-13">14. Custom Emulator Commands</h2>
-            <p>RetroArch is the default, not a requirement. Any system or individual game can instead use a <strong>fully custom command</strong> &mdash; standalone emulators, wrapper scripts, anything you can run from a shell.</p>
+            <p>RetroArch is the default, not a requirement. Any system or individual game can instead use a <strong>fully custom command</strong>: standalone emulators, wrapper scripts, anything you can run from a shell.</p>
             <p>Set it on the system to apply to everything on that platform, or on a single game to override just that one. This is how you handle the platforms RetroArch does not serve well, and it is why the tagline is a joke rather than a limitation.</p>
 
             <h2 id="man-14">15. BIOS Files</h2>
@@ -386,10 +386,10 @@
             <h2 id="man-16">16. RetroAchievements</h2>
             <p>Put your <strong>retroachievements.org</strong> username and API key into <strong>Settings &rarr; Scrapers</strong> (the API key is in your profile settings on the site) and press <strong>Test Credentials</strong>.</p>
             <p>EmuLatte then shows achievement sets and your progress on supported games. The achievement filter on the game page separates earned from unearned.</p>
-            <p>Achievements have to be switched on inside RetroArch as well &mdash; the <strong>Achievements</strong> section of the RetroArch settings tree, or via Express. EmuLatte drives its own config, so enabling it here does not touch any other RetroArch install you have.</p>
+            <p>Achievements have to be switched on inside RetroArch as well, in the <strong>Achievements</strong> section of the RetroArch settings tree, or via Express. EmuLatte drives its own config, so enabling it here does not touch any other RetroArch install you have.</p>
 
             <h2 id="man-17">17. Trailers</h2>
-            <p>EmuLatte downloads trailers with a bundled <strong>yt-dlp</strong> and <strong>ffmpeg</strong> &mdash; both ship inside the AppImage, so there is nothing to install.</p>
+            <p>EmuLatte downloads trailers with a bundled <strong>yt-dlp</strong> and <strong>ffmpeg</strong>: both ship inside the AppImage, so there is nothing to install.</p>
             <p>From a game page, search for a trailer, pick the right result, and download it. Downloaded trailers are stored locally and play in an embedded player. There is no streaming and no account.</p>
 
             <div class="tip-box">
@@ -397,19 +397,19 @@
             </div>
 
             <h2 id="man-18">18. Game Manual PDFs</h2>
-            <p>This is the manual for <em>EmuLatte</em>. The <strong>Manual</strong> button on a game page is a different thing entirely: it fetches the <strong>scanned manual for that game</strong> &mdash; the actual printed booklet that came in the box &mdash; from ScreenScraper, and opens it in its own window with Chromium's PDF viewer.</p>
+            <p>This is the manual for <em>EmuLatte</em>. The <strong>Manual</strong> button on a game page is a different thing entirely: it fetches the <strong>scanned manual for that game</strong>: the actual printed booklet that came in the box, from ScreenScraper, and opens it in its own window with Chromium's PDF viewer.</p>
             <p>It needs ScreenScraper credentials (section 9), and coverage depends on what ScreenScraper has for that title. Fetched manuals are cached locally, so a manual you keep opens instantly next time.</p>
 
             <h2 id="man-19">19. Couch Mode</h2>
-            <p>Couch Mode is EmuLatte's fullscreen, gamepad-first, <strong>play-only</strong> face &mdash; built for a TV, a projector or a genuine CRT. It reads the same library. It deliberately cannot edit anything: it is for playing games, not managing them.</p>
+            <p>Couch Mode is EmuLatte's fullscreen, gamepad-first, <strong>play-only</strong> face, built for a TV, a projector or a genuine CRT. It reads the same library. It deliberately cannot edit anything: it is for playing games, not managing them.</p>
             <p>Enter it with <strong>&#9654; GO FULLSCREEN</strong> in the top bar, from <strong>Settings &rarr; General</strong>, or set <strong>Start in Couch Mode on launch</strong> to boot straight into it.</p>
 
             <h3>Display types</h3>
-            <p>Three separate layouts, each with its own tuning &mdash; switch in <strong>Settings &rarr; Display Type</strong> inside Couch Mode:</p>
+            <p>Three separate layouts, each with its own tuning. Switch in <strong>Settings &rarr; Display Type</strong> inside Couch Mode:</p>
             <ul>
-                <li><strong>Horizontal</strong> &mdash; the standard widescreen layout</li>
-                <li><strong>Vertical</strong> &mdash; for a rotated or portrait display</li>
-                <li><strong>CRT Mode (640&times;480)</strong> &mdash; a genuinely low-resolution layout with a three-column game page, built to be readable on a real CRT rather than merely shrunk down</li>
+                <li><strong>Horizontal</strong>: the standard widescreen layout</li>
+                <li><strong>Vertical</strong>: for a rotated or portrait display</li>
+                <li><strong>CRT Mode (640&times;480)</strong>: a genuinely low-resolution layout with a three-column game page, built to be readable on a real CRT rather than merely shrunk down</li>
             </ul>
 
             <h3>Controls</h3>
@@ -424,9 +424,9 @@
                 <tr><td>LT / RT</td><td><span class="key">,</span> <span class="key">.</span></td><td>Jump by first letter</td></tr>
                 <tr><td>Select</td><td><span class="key">S</span></td><td>Sort</td></tr>
                 <tr><td>Start</td><td><span class="key">M</span></td><td>Settings menu</td></tr>
-                <tr><td>&mdash;</td><td><span class="key">F11</span></td><td>Exit Couch Mode</td></tr>
+                <tr><td>none</td><td><span class="key">F11</span></td><td>Exit Couch Mode</td></tr>
             </table>
-            <p>Hold a direction to repeat; in CRT mode, scrolling a long list accelerates the longer you hold. On-screen button labels follow your <strong>Gamepad Buttons</strong> setting &mdash; Xbox, PlayStation or Nintendo lettering.</p>
+            <p>Hold a direction to repeat; in CRT mode, scrolling a long list accelerates the longer you hold. On-screen button labels follow your <strong>Gamepad Buttons</strong> setting: Xbox, PlayStation or Nintendo lettering.</p>
 
             <h3>Returning from a game</h3>
             <p>The <strong>Return Combo</strong> is a button combination you hold <em>while a game is running</em> to come back to Couch Mode. Six combinations are available, including hold-for-two-seconds variants that are much harder to trigger by accident.</p>
@@ -436,22 +436,22 @@
 
             <h3>Save states, screensaver and sound</h3>
             <ul>
-                <li><strong>Manage Save States</strong> &mdash; the save-state manager, usable from the sofa</li>
-                <li><strong>Screensaver</strong> &mdash; a screenshot slideshow after 1, 3, 5 or 10 minutes idle, or off</li>
-                <li><strong>Sound</strong> &mdash; ambient background music and interface sound effects, with volume</li>
-                <li><strong>Now playing</strong> &mdash; shows what launched, and what you are returning from</li>
+                <li><strong>Manage Save States</strong>: the save-state manager, usable from the sofa</li>
+                <li><strong>Screensaver</strong>: a screenshot slideshow after 1, 3, 5 or 10 minutes idle, or off</li>
+                <li><strong>Sound</strong>: ambient background music and interface sound effects, with volume</li>
+                <li><strong>Now playing</strong>: shows what launched, and what you are returning from</li>
             </ul>
 
             <h3>RetroArch Simple Setup</h3>
-            <p>The Express settings from the desktop face, rebuilt for a gamepad, including the shader submenu. The two stay in sync &mdash; it is the same configuration, not a second copy.</p>
+            <p>The Express settings from the desktop face, rebuilt for a gamepad, including the shader submenu. The two stay in sync, because it is the same configuration, not a second copy.</p>
 
             <h3>Other Couch settings</h3>
             <ul>
-                <li><strong>Refresh</strong> &mdash; rescans your ROM folders for new games without going back to the desktop</li>
-                <li><strong>Navigation Mode</strong> &mdash; cover wall or list-with-details</li>
-                <li><strong>Carousel Label</strong> &mdash; logo, name, or both on the start carousel</li>
-                <li><strong>Display Density</strong> &mdash; scales the whole interface for low-resolution screens</li>
-                <li><strong>Sync Desktop Colors</strong> &mdash; mirror the desktop face's theme instead of Couch's own</li>
+                <li><strong>Refresh</strong>: rescans your ROM folders for new games without going back to the desktop</li>
+                <li><strong>Navigation Mode</strong>: cover wall or list-with-details</li>
+                <li><strong>Carousel Label</strong>: logo, name, or both on the start carousel</li>
+                <li><strong>Display Density</strong>: scales the whole interface for low-resolution screens</li>
+                <li><strong>Sync Desktop Colors</strong>: mirror the desktop face's theme instead of Couch's own</li>
             </ul>
 
             <div class="warn-box">
@@ -460,18 +460,18 @@
 
             <h2 id="man-20">20. Themes &amp; Fonts</h2>
             <p>EmuLatte ships <strong>92 themes in 10 categories</strong>, and both faces carry all of them. Pick one from <strong>Settings &rarr; General &rarr; Choose Theme</strong>, or from <strong>Color Theme</strong> inside Couch Mode.</p>
-            <p>The categories run from <em>Originals &amp; System</em> and <em>BrewBalance</em> through <em>Gaming Legends</em>, <em>Linux Ricing</em>, <em>Sci-Fi Universes</em> and <em>Horror Realm</em>, to <strong>Systems</strong> &mdash; twenty retro-OS palettes reproducing MS-DOS, Windows 3.1, Windows 95, Windows XP, Classic MacOS, Amiga Workbench, NeXTSTEP, BeOS, OS/2 Warp, RISC OS, Solaris CDE, ZX Spectrum, Commodore 64, GEOS, Atari ST, IBM 3270, Teletext, and amber and green CRT phosphor.</p>
-            <p>Each Systems theme carries <strong>its own era typeface</strong> &mdash; the interface actually changes font to match the operating system it is imitating. All fonts are bundled in the AppImage; nothing is fetched from the network.</p>
+            <p>The categories run from <em>Originals &amp; System</em> and <em>BrewBalance</em> through <em>Gaming Legends</em>, <em>Linux Ricing</em>, <em>Sci-Fi Universes</em> and <em>Horror Realm</em>, to <strong>Systems</strong>: twenty retro-OS palettes reproducing MS-DOS, Windows 3.1, Windows 95, Windows XP, Classic MacOS, Amiga Workbench, NeXTSTEP, BeOS, OS/2 Warp, RISC OS, Solaris CDE, ZX Spectrum, Commodore 64, GEOS, Atari ST, IBM 3270, Teletext, and amber and green CRT phosphor.</p>
+            <p>Each Systems theme carries <strong>its own era typeface</strong>: the interface actually changes font to match the operating system it is imitating. All fonts are bundled in the AppImage; nothing is fetched from the network.</p>
             <p>Couch Mode additionally offers a <strong>Press Start 2P</strong> interface font under <strong>Fonts</strong>, with long-form text kept in the readable face regardless.</p>
             <p><strong>UI Scale</strong> (50%&ndash;150%) is separate, under <strong>Settings &rarr; General</strong>.</p>
 
             <h2 id="man-21">21. Exporting Games to Clarity</h2>
             <div class="manual-box">
                 <p class="manual-box-title">How games actually get to Clarity</p>
-                <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Clarity does not read EmuLatte's database and has no "show emulation" toggle.</p>
+                <p>By <strong>exporting them from inside EmuLatte</strong>: nothing else. Clarity does not read EmuLatte's database and has no "show emulation" toggle.</p>
             </div>
             <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into Clarity's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
-            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; Clarity sees a game, not your library.</p>
+            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong>: Clarity sees a game, not your library.</p>
             <p>This requires both AppImages to sit in the same parent folder, so EmuLatte can find Clarity's <code>GameManagerConfig/</code> next to its own <code>Emulatte_Stuff/</code> (section 2).</p>
 
             <h2 id="man-22">22. Your Data &amp; Backups</h2>
@@ -495,23 +495,32 @@
 
             <h3>Closing EmuLatte</h3>
             <p><strong>Ctrl+Q</strong> quits EmuLatte and closes any emulator it started. It asks first if a game, a scrape or a download is still going, and cancelling leaves everything exactly as it was. The same action is in <strong>Settings &rarr; General &rarr; Quit</strong>, and in Couch Mode's menu under <strong>SYSTEM</strong> for when there is no keyboard to hand.</p>
-            <p>Closing the window instead &mdash; your window manager's close, Meta+W on Omarchy &mdash; deliberately leaves a running game alone, so you can shut the library and keep playing. Terminating EmuLatte from a terminal, or logging out, takes the emulator with it rather than leaving it orphaned.</p>
+            <p>Closing the window instead, with your window manager's close (Meta+W on Omarchy), deliberately leaves a running game alone, so you can shut the library and keep playing. Terminating EmuLatte from a terminal, or logging out, takes the emulator with it rather than leaving it orphaned.</p>
 
             <h3>Backups</h3>
             <p>From <strong>Settings &rarr; Data</strong>:</p>
             <ul>
                 <li><strong>Back Up EmuLatte</strong>: the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states. <code>ROMS/</code> and <code>BIOS/</code> are deliberately left out: a backup of a library is its metadata, not tens of gigabytes you already have. The folder layout is what makes them replaceable.</li>
                 <li><strong>Back Up Clarity Suite</strong>: the same, plus Clarity's own <code>GameManagerConfig</code> folder (Clarity, Couch Mode and the Clock), as one archive of both apps</li>
-                <li><strong>Restore from Backup</strong> &mdash; overwrites current data and restarts EmuLatte</li>
+                <li><strong>Restore from Backup</strong>: overwrites current data and restarts EmuLatte</li>
             </ul>
 
             <div class="warn-box">
-                <p><strong>Restoring on a different computer:</strong> ROM paths and RetroArch folders are machine-specific. After a restore on a new machine, run <strong>Settings &rarr; RetroArch &rarr; Re-import Paths</strong> to re-point cores, BIOS and saves at that machine. Your <em>ROM folders</em> may also need re-pointing if the collection lives somewhere else on the new machine.</p>
+                <p><strong>Restoring on a different computer:</strong> ROM paths and RetroArch folders are machine-specific. After a restore on a new machine, run <strong>Settings &rarr; RetroArch &rarr; Re-import Paths</strong> to re-point cores, BIOS and saves at that machine. Your ROMs need nothing beyond a <strong>Rescan Library</strong>: games are matched back to the files in your own <code>ROMS</code> folder by system and filename, keeping their art, favourites and play history, however differently the new machine stores them.</p>
             </div>
 
             <div class="tip-box">
                 <p><strong>Artwork looks after itself.</strong> Art paths are stored absolutely, so moving the AppImage or restoring into a different folder would otherwise leave every cover pointing at the old location. EmuLatte re-points them to the current folder on startup. Images you supplied yourself from outside the data folder are left exactly where they are.</p>
             </div>
+
+            <h3>The same collection on two computers</h3>
+            <p>Scraping is slow and it spends an API quota, so there is no reason to do it twice for the same games. <strong>Settings &rarr; Library &rarr; Bring artwork over from another computer</strong> moves the results from one machine to the other.</p>
+            <p>On the machine that has the artwork, press <strong>Export My Artwork</strong> and point it somewhere, a USB stick being the obvious choice. EmuLatte writes an <code>EmuLatte_Artwork</code> folder holding the covers, heroes, logos and screenshots, plus a <code>metadata.json</code> of the descriptions, years, developers, publishers, genres, player counts, ratings and scraper ids. Only games you have actually scraped go in, so a library of tens of thousands of ROMs with a few hundred scraped produces a bundle of a few megabytes rather than a copy of everything.</p>
+            <p>On the other machine, press <strong>Import Artwork</strong> and point at that folder. You can also point it straight at another machine's whole <code>Emulatte_Stuff</code> folder and skip the export; EmuLatte reads only the scraped games out of it and writes nothing back to it.</p>
+            <div class="tip-box">
+                <p><strong>Your folder layout does not have to match.</strong> Nothing in the bundle is a path. Each entry names a system and a ROM filename, which is the same way EmuLatte recognises a ROM that has moved between folders, so the artwork lands on the right games however the two machines store their collections, and your own ROM paths are never touched.</p>
+            </div>
+            <p>By default only empty fields are filled in, so anything you scraped here survives. Tick <strong>Replace details I already have</strong> to overwrite instead.</p>
 
             <h3>Reclaiming space</h3>
             <p><strong>Clean Unused Images &amp; Videos</strong> deletes downloaded art and trailers that are no longer linked to any game. It reports what it found before removing anything.</p>
