@@ -9,7 +9,8 @@
     "pack": "electron-builder --dir",
     "predist": "node scripts/scramble-ssdev.js",
     "dist": "electron-builder --linux AppImage",
-    "postdist": "D=/home/jose/Games/Clarity; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\""
+    "postdist": "D=/home/jose/Clarity; F=EmuLatte.AppImage; [ -f $D/$F ] && mv $D/$F $D/EmuLatte_old.AppImage; cp dist/$F $D/$F && echo \"Deployed $F to $D\"",
+    "test": "ELECTRON_RUN_AS_NODE=1 electron scripts/test-rom-library.js"
   },
   "keywords": [
     "emulation",
@@ -41,16 +42,19 @@
     },
     "files": [
       "main.js",
+      "rom-library.js",
       "ss-dev.js",
+      "library-report.js",
+      "report-render.js",
+      "report-main.js",
       "preload.js",
+      "omarchy.js",
+      "omarchy-theme.js",
+      "desktop-descriptor.js",
       "renderer.js",
       "index.html",
       "couch.html",
       "couch.js",
-      "crt.html",
-      "crt.js",
-      "crt.css",
-      "omarchy-theme.js",
       "manual.html",
       "manual.js",
       "usermanual.html",

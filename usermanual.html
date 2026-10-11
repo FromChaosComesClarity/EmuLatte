@@ -137,8 +137,8 @@
             <div class="nav-group-label">Getting Started</div>
             <button class="manual-nav-btn" data-target="man-1">1. What EmuLatte Is</button>
             <button class="manual-nav-btn" data-target="man-2">2. Install &amp; First Run</button>
-            <button class="manual-nav-btn" data-target="man-3">3. Adding Systems</button>
-            <button class="manual-nav-btn" data-target="man-4">4. Importing ROMs</button>
+            <button class="manual-nav-btn" data-target="man-3">3. Systems</button>
+            <button class="manual-nav-btn" data-target="man-4">4. Getting ROMs In</button>
 
             <div class="nav-group-label">The Library</div>
             <button class="manual-nav-btn" data-target="man-5">5. Library &amp; Gallery</button>
@@ -199,37 +199,59 @@
             </ul>
 
             <div class="warn-box">
-                <p><strong>Where you put the AppImage matters.</strong> EmuLatte stores its data in a <code>GameManagerConfig/</code> folder <em>next to the AppImage itself</em>. Put it somewhere permanent &mdash; for example <code>~/Games/Clarity/</code> &mdash; before you start building a library. Moving the AppImage later means moving that folder with it.</p>
+                <p><strong>Where you put the AppImage matters.</strong> EmuLatte keeps everything in a folder called <code>Emulatte_Stuff/</code> <em>next to the AppImage itself</em>: the library database, the artwork, and the <code>ROMS/</code> and <code>BIOS/</code> folders. Put the AppImage somewhere permanent before you start building a library. Moving it later means moving that folder with it.</p>
             </div>
 
-            <p>If you already run Clarity, drop EmuLatte alongside it so both share the same <code>GameManagerConfig/</code> parent. That is what makes credential import (section 11) and export (section 21) work without any configuration.</p>
+            <p>The first launch creates <code>Emulatte_Stuff/</code> for you, with a sub-folder in <code>ROMS/</code> for <em>every</em> system EmuLatte knows, all 56 of them, and an empty <code>BIOS/</code>. If you have run EmuLatte before, its old folder inside Clarity's <code>GameManagerConfig/</code> is moved into the new one automatically, once, with your whole library intact.</p>
 
-            <p>On first launch the library is empty and no systems are defined. That is expected. The order of operations is: <strong>add a system</strong> (section 3), <strong>import ROMs into it</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10).</p>
+            <p>So the order of operations is short: <strong>drop ROMs into the folder for their system</strong> (section 4), then <strong>scrape</strong> (sections 9&ndash;10). There is no step where you tell EmuLatte which systems you want. They are all there from the start, and the ones with nothing in them stay out of your way.</p>
 
-            <h2 id="man-3">3. Adding Systems</h2>
-            <p>A <strong>system</strong> is a console or platform &mdash; SNES, PS1, Dreamcast. It owns a ROM folder, a default emulator core, and its own scraping and launch settings. Every game belongs to exactly one system.</p>
-            <p>Open <strong>Settings &rarr; Systems &rarr; Manage Systems</strong>. From there you can add a system from the bundled presets or define one by hand.</p>
+            <p>If you also run Clarity, drop EmuLatte alongside it so both sit in the same parent folder. That is what makes credential import (section 11) and export (section 21) work without any configuration. The two apps no longer share a data folder, only a parent.</p>
 
-            <h3>From a preset</h3>
-            <p>The 56 presets cover the systems most people actually own ROMs for, and each arrives with a sensible default RetroArch core already chosen, plus the identifiers the scrapers need to search the right platform. Pick the system, point it at your ROM folder, and you are done.</p>
+            <h2 id="man-3">3. Systems</h2>
+            <p>A <strong>system</strong> is a console or platform: SNES, PS1, Dreamcast. It owns a folder under <code>ROMS/</code>, a default emulator core, and its own scraping and launch settings. Every game belongs to exactly one system.</p>
 
-            <h3>By hand</h3>
-            <p>If your platform is not in the list, create it manually. You will need to supply at least a name, a ROM folder and a launch method &mdash; either a RetroArch core or a custom command (section 14).</p>
+            <p><strong>You do not add systems.</strong> All 56 are there from the first launch, each with a sensible default RetroArch core already chosen and the identifiers the scrapers need to search the right platform, and each with its own folder waiting for ROMs. Browsing by system only lists the ones that have a game in them, so an empty library does not mean 56 empty shelves.</p>
+
+            <p><strong>Settings &rarr; Library</strong> lists every system, the folder it reads from, and how many games are in it. <strong>Settings &rarr; Systems &rarr; Manage Systems</strong> is where you change one: its default core, its file extensions, its ScreenScraper platform, its folder name.</p>
+
+            <h3>Folder names</h3>
+            <p>Each system's folder is named the way <strong>ES-DE</strong> names it: <code>megadrive</code>, <code>psx</code>, <code>atari2600</code>, <code>tg16</code>. Each system also answers to the names <strong>Batocera</strong>, <strong>RetroBat</strong> and <strong>RetroPie</strong> use, so a collection laid out by any of them is read without renaming a single folder: drop a <code>genesis/</code> folder next to <code>megadrive/</code> and both are read as Mega Drive. Every system folder has a <code>systeminfo.txt</code> saying what belongs in it and which other names it answers to.</p>
+
+            <h3>A system of your own</h3>
+            <p>If your platform is not in the list, create it in Manage Systems. You will need a name, a launch method (either a RetroArch core or a custom command, section 14) and the file extensions it takes. It gets a folder under <code>ROMS/</code> like every other system and is scanned the same way.</p>
+
+            <h3>Deleting one</h3>
+            <p>Deleting a system in Manage Systems <strong>sticks</strong>: it is remembered, so the next launch does not hand it back. <strong>Settings &rarr; Library &rarr; Restore Default Systems</strong> brings every shipped system back.</p>
 
             <div class="tip-box">
                 <p><strong>Per-system settings live here too.</strong> The system editor is also where you set a system's default core, its BIOS requirements, disc-reference repair, and RetroArch settings that should apply to every game on that platform.</p>
             </div>
 
-            <h2 id="man-4">4. Importing ROMs</h2>
-            <p>Two ways in, both on the main toolbar:</p>
-            <ul>
-                <li><strong>Scan Folder</strong> &mdash; point EmuLatte at a directory and it sweeps it for ROMs matching the system's known extensions. This is how you import a collection.</li>
-                <li><strong>Add ROM</strong> &mdash; add a single file by hand, for when a scan missed something or the file lives somewhere unusual.</li>
-            </ul>
-            <p>Importing <strong>never moves, copies or renames your ROM files</strong>. EmuLatte records the path and leaves your collection exactly where it is. Removing a game from the library likewise deletes only the database row, never the file on disk.</p>
+            <h2 id="man-4">4. Getting ROMs In</h2>
+            <p><strong>Drop them in the folder for their system.</strong> That is the whole procedure. <code>Emulatte_Stuff/ROMS/snes/</code> is your SNES library; put a <code>.sfc</code> in it and it is a game the next time EmuLatte opens.</p>
 
-            <h3>Re-scanning later</h3>
-            <p>Run the folder scan again after adding new ROMs. Games already in the library are skipped, so re-scanning is safe and is the normal way to pick up new arrivals. Couch Mode's <strong>Refresh</strong> does the same thing without leaving the sofa.</p>
+            <p>Every launch reads every system's folder and makes the library match what is on the disk: new files become games, and a row whose file you deleted goes with it. You never tell EmuLatte about a ROM; you put the ROM where it belongs.</p>
+
+            <ul>
+                <li><strong>Sub-folders are read too</strong>, as deep as you like, so one folder per game is fine.</li>
+                <li><strong>A new game arrives with its filename as its title</strong> and no art. EmuLatte offers to scrape whatever it just found, so the usual flow is: drop files, open EmuLatte, say yes.</li>
+                <li><strong>Nothing is moved, copied or renamed.</strong> EmuLatte records the path and leaves your files alone.</li>
+            </ul>
+
+            <h3>Rescan without restarting</h3>
+            <p>Dropped files in while EmuLatte was open? Press <strong>Rescan Library</strong>: the circular arrow on the left rail, or the button in <strong>Settings &rarr; Library</strong>. In Couch Mode it is in the menu, under <strong>LIBRARY</strong>, so you never have to leave the sofa.</p>
+
+            <h3>A collection that already lives somewhere else</h3>
+            <p>If your ROMs are on an external drive or a NAS mount, do not move them. <strong>Settings &rarr; Library &rarr; Change&hellip;</strong> points EmuLatte's <code>ROMS</code> folder at where they already are, and the per-system folders are created there. Because the folder names match what ES-DE, Batocera, RetroBat and RetroPie use (section 3), a collection organised by one of those usually needs nothing beyond this one step.</p>
+
+            <div class="tip-box">
+                <p><strong>A ROM somewhere unusual.</strong> <strong>Add ROM</strong> and <strong>Scan Folder</strong> on the left rail still exist, for a single file or a folder that sits outside your ROMS folder entirely. Games added that way are kept and never pruned, and their folder is checked for new siblings on every rescan too, but nothing outside your ROMS folder is ever removed from the library automatically.</p>
+            </div>
+
+            <div class="warn-box">
+                <p><strong>What "removed" means.</strong> Deleting a ROM from a system folder removes that game from the library, along with the art and metadata EmuLatte scraped for it. Your other files are never touched, and a folder that is not there at all, an unplugged drive say, is skipped rather than treated as empty, so the library survives a missing disk.</p>
+            </div>
 
             <h3>Multi-disc and archives</h3>
             <p>Multi-disc games are the usual sharp edge in any ROM collection. The system editor's <strong>disc-reference repair</strong> exists for exactly this: it fixes up <code>.m3u</code> and <code>.cue</code> files whose internal references point at paths that no longer exist, which is what normally breaks a disc-based game after you move or re-rip a collection.</p>
@@ -255,7 +277,7 @@
                 <tr><td><span class="key">Favourite</span></td><td>Flags the game as a favourite</td></tr>
                 <tr><td><span class="key">Want to Play</span></td><td>Flags the game for your backlog</td></tr>
                 <tr><td><span class="key">Playlist</span></td><td>Adds the game to one or more playlists</td></tr>
-                <tr><td><span class="key">Clarity</span></td><td>Exports the game to CN's library (section 21)</td></tr>
+                <tr><td><span class="key">Clarity</span></td><td>Exports the game to Clarity's library (section 21)</td></tr>
                 <tr><td><span class="key">Scrape</span></td><td>Fetches metadata and artwork (sections 9&ndash;10)</td></tr>
                 <tr><td><span class="key">Trailer</span></td><td>Watches, or downloads, the game's trailer (section 17)</td></tr>
                 <tr><td><span class="key">Manual</span></td><td>Opens the scanned game manual PDF (section 18)</td></tr>
@@ -308,7 +330,7 @@
 
             <h2 id="man-10">11. Clarity Credential Import</h2>
             <p>If Clarity is installed alongside EmuLatte, <strong>Settings &rarr; Scrapers &rarr; Import from Clarity</strong> copies your existing <strong>IGDB</strong> and <strong>SteamGridDB</strong> credentials across so you do not have to register twice or paste keys by hand.</p>
-            <p>This reads CN's settings out of the shared <code>GameManagerConfig/</code> folder. If the button reports nothing found, the two apps are not sharing a parent folder &mdash; see section 2.</p>
+            <p>This reads Clarity's settings out of its own <code>GameManagerConfig/</code> folder, next to EmuLatte's. If the button reports nothing found, the two AppImages are not in the same parent folder; see section 2.</p>
 
             <h2 id="man-11">12. The Emulator Scanner</h2>
             <p><strong>Settings &rarr; Systems &rarr; Add Emulators</strong> scans your machine for installed emulators and offers to assign them to existing systems or create new systems around them.</p>
@@ -350,7 +372,12 @@
 
             <h2 id="man-14">15. BIOS Files</h2>
             <p>Some systems will not run without their BIOS. EmuLatte ships a database of what each platform requires and checks whether you have it.</p>
-            <p>The system editor shows <strong>BIOS status</strong> for that platform: which files are needed, and which are present. You can add a file you already own individually, or point EmuLatte at a folder and let it pick out the ones it recognises. Files are copied into RetroArch's <code>system/</code> folder where the cores expect to find them.</p>
+
+            <p><strong>Drop them in <code>Emulatte_Stuff/BIOS/</code>.</strong> Flat, or in sub-folders, in whatever shape the files arrived in. Every launch reads that folder and files each one it recognises under the exact name the core expects, matching by <strong>checksum</strong>, so a correct file with the wrong name still lands in the right place.</p>
+
+            <p>That folder <em>is</em> EmuLatte's RetroArch system directory, not a staging area: what is in it is what the cores read. If you had BIOS files somewhere else before, the first launch brings them across for you; if that folder was on a drive that was not plugged in, EmuLatte keeps trying on later launches and says so in <strong>Settings &rarr; Library</strong>.</p>
+
+            <p><strong>Settings &rarr; Library</strong> summarises how many systems have everything they need and names the ones that do not. The system editor shows the detail for one platform: which files are needed, which are present, and which have been checksum-verified. You can still add a single file by hand, or point EmuLatte at a folder and let it pick out what it recognises.</p>
 
             <div class="warn-box">
                 <p><strong>EmuLatte does not supply BIOS files</strong> and will not download them. It only tells you what is missing and files what you already own into the right place.</p>
@@ -443,15 +470,17 @@
                 <p class="manual-box-title">How games actually get to Clarity</p>
                 <p>By <strong>exporting them from inside EmuLatte</strong> &mdash; nothing else. Clarity does not read EmuLatte's database and has no "show emulation" toggle.</p>
             </div>
-            <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into CN's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
-            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; CN sees a game, not your library.</p>
-            <p>This requires both apps to share a <code>GameManagerConfig/</code> parent folder (section 2).</p>
+            <p>Press <strong>ADD TO CLARITY</strong> on a game page. EmuLatte copies that game's art across and writes an ordinary row into Clarity's <code>games.db</code> with its <strong>Store</strong> set to <code>Emulation</code>, carrying EmuLatte's own launch command. From then on it launches from Clarity or Couch Mode exactly as it does here.</p>
+            <p>Export is <strong>one-directional and per-game</strong>. Re-exporting a game you already exported updates it in place rather than creating a duplicate. <strong>Management of the ROM collection always stays in EmuLatte</strong> &mdash; Clarity sees a game, not your library.</p>
+            <p>This requires both AppImages to sit in the same parent folder, so EmuLatte can find Clarity's <code>GameManagerConfig/</code> next to its own <code>Emulatte_Stuff/</code> (section 2).</p>
 
             <h2 id="man-22">22. Your Data &amp; Backups</h2>
             <p>Everything EmuLatte owns lives in one folder, next to the AppImage:</p>
             <table class="controls-table">
                 <tr><th>Path</th><th>Contents</th></tr>
-                <tr><td><code>GameManagerConfig/EmuLatte/</code></td><td>Everything below</td></tr>
+                <tr><td><code>Emulatte_Stuff/</code></td><td>Everything below</td></tr>
+                <tr><td><code>ROMS/</code></td><td>One folder per system. This is the library.</td></tr>
+                <tr><td><code>BIOS/</code></td><td>BIOS and firmware; EmuLatte's RetroArch system directory</td></tr>
                 <tr><td><code>emulatte.db</code></td><td>The library: games, systems, playlists, settings, achievements</td></tr>
                 <tr><td><code>images/covers/</code></td><td>Boxart</td></tr>
                 <tr><td><code>images/heroes/</code></td><td>Wide background art</td></tr>
@@ -459,14 +488,16 @@
                 <tr><td><code>images/screenshots/</code></td><td>In-game shots</td></tr>
                 <tr><td><code>videos/</code></td><td>Downloaded trailers</td></tr>
                 <tr><td><code>manuals/</code></td><td>Cached game manual PDFs</td></tr>
+                <tr><td><code>playlists/</code></td><td>The <code>.m3u</code> files EmuLatte writes for multi-disc games</td></tr>
+                <tr><td><code>retroarch/</code></td><td>EmuLatte's own RetroArch config (section 13)</td></tr>
             </table>
-            <p>Your <strong>ROM files are not in here</strong> and are never copied into it. EmuLatte stores paths and leaves your collection where you put it.</p>
+            <p>If you point the ROMS or BIOS folder somewhere else (section 4), that is the one thing that lives outside. Nothing here belongs to Clarity and nothing of Clarity's is in here. The two apps share a parent folder and nothing more.</p>
 
             <h3>Backups</h3>
             <p>From <strong>Settings &rarr; Data</strong>:</p>
             <ul>
-                <li><strong>Back Up EmuLatte</strong> &mdash; the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states</li>
-                <li><strong>Back Up Clarity Suite</strong> &mdash; everything in <code>GameManagerConfig</code> (EmuLatte, Clarity, Couch Mode and the Clock) plus save states, as a full 1:1 copy</li>
+                <li><strong>Back Up EmuLatte</strong>: the library, art, trailers, credentials and RetroArch config, plus your RetroArch save states. <code>ROMS/</code> and <code>BIOS/</code> are deliberately left out: a backup of a library is its metadata, not tens of gigabytes you already have. The folder layout is what makes them replaceable.</li>
+                <li><strong>Back Up Clarity Suite</strong>: the same, plus Clarity's own <code>GameManagerConfig</code> folder (Clarity, Couch Mode and the Clock), as one archive of both apps</li>
                 <li><strong>Restore from Backup</strong> &mdash; overwrites current data and restarts EmuLatte</li>
             </ul>
 

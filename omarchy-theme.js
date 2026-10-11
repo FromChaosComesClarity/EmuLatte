@@ -3,10 +3,10 @@
 // inside it declaring the palette in named roles, background, foreground, accent, and the
 // usual ANSI set. Every app on the system is themed from that one file.
 //
-// The suite's own themes are the same shape (bg / accent / text / border), which means the
+// EmuLatte's own themes are the same shape (bg / accent / text / border), which means the
 // right integration is not "pick whichever of our 93 themes looks closest". It is to build
-// a theme from the user's actual palette, so Clarity matches their desktop exactly
-// and keeps matching when they switch. That is what toCafeTheme() does.
+// a theme from the user's actual palette, so EmuLatte matches their desktop exactly
+// and keeps matching when they switch. That is what toAppTheme() does.
 //
 // The key simplification: `~/.local/state/omarchy/current/theme` is the *materialised*
 // current theme, Omarchy copies the resolved theme there whichever of the stock or user
@@ -14,7 +14,8 @@
 // name ("Thegreek") against a slug ("thegreek"), or stock against user overlay. It also
 // means a theme with no colors.toml simply reports unavailable rather than half-working.
 //
-// Node builtins only, this file is meant to be copied into EmuLatte unchanged.
+// Node builtins only. This is Clarity's packages/core/omarchy-theme.js, ported here: the two
+// apps declare the same theme tokens, so the mapping needed no re-derivation.
 'use strict';
 
 const fs = require('fs');
@@ -113,7 +114,7 @@ function mix(a, b, t) {
 }
 
 // ── The mapping ──────────────────────────────────────────────────────────────
-// Clarity's theme shape, filled from Omarchy's roles. The roles line up almost
+// EmuLatte's theme shape, filled from Omarchy's roles. The roles line up almost
 // exactly, which is why this is a mapping and not an approximation:
 //
 //   bg          ← background            the window behind everything
@@ -139,7 +140,7 @@ function mix(a, b, t) {
 // chain therefore collapses roles into each other, on a minimal theme every text tier
 // resolved to the same colour and menus became invisible against the page. So a declared
 // role is always preferred, and anything absent is *derived* from the three that are not.
-function toCafeTheme(colors = readColors()) {
+function toAppTheme(colors = readColors()) {
     if (!colors) return null;
 
     const bg = pick(colors, 'background', 'dark_background', 'darker_background');
@@ -216,7 +217,7 @@ function toCafeTheme(colors = readColors()) {
 // and `mode` lets the UI hint light/dark without re-deriving it.
 function describe() {
     const colors = readColors();
-    const theme = toCafeTheme(colors);
+    const theme = toAppTheme(colors);
     if (!theme) return { available: false, name: currentThemeName(), theme: null, mode: '' };
     const declared = String(colors.mode || '').toLowerCase();
     return {
@@ -273,6 +274,6 @@ function watch(onChange, { debounceMs = 250 } = {}) {
 module.exports = {
     STATE_DIR, THEME_DIR, COLORS,
     currentThemeName, hasTheme, readColors, parseFlatToml,
-    toCafeTheme, describe, isSupported, watch,
+    toAppTheme, describe, isSupported, watch,
     normHex, rgba, luma,
 };

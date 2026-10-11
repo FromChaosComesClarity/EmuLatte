@@ -61,6 +61,9 @@ function autoDensity() {
 }
 async function init() {
     syncDesktop = (await window.api.getSetting('couch_sync_desktop')) === '1';
+    // ⚠️ Before applyActiveTheme, not after: the palette has to be in the table by the time a
+    // theme is resolved, or the first paint takes applyTheme's unknown-name fallback.
+    await initOmarchyTheme();
     await applyActiveTheme();
     const dRaw = (await window.api.getSetting('couch_density')) || 'auto';
     const density = dRaw === 'auto' ? autoDensity() : (parseFloat(dRaw) || 1);
@@ -91,8 +94,23 @@ async function init() {
     applyStartMode();   // reflect the remembered carousel/tiles view
     resetIdle();
     couchReady = true;
+    window.api.getLastScan?.().then(couchApplyScan).catch(() => {});
     window.api.signalReady?.();   // releases a --game=<id> that arrived before the library loaded (start-in-couch)
 }
+
+// The launch scan runs in the main process, so Couch Mode can be the face that is up when it
+// lands. Take the library it produced rather than the one loaded a moment earlier.
+let _couchScanSeen = 0;
+async function couchApplyScan(res) {
+    if (!res?.ok || (res.at && res.at === _couchScanSeen)) return;
+    _couchScanSeen = res.at || Date.now();
+    if (!res.added && !res.removed) return;
+    [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+    gamesById = new Map(games.map(g => [g.id, g]));
+    buildCategories();
+    renderCarousel(); renderTiles();
+}
+window.api.onLibraryScanned?.(res => { if (couchReady) couchApplyScan(res); });
 
 // Opened with --game=<id> while Couch Mode is up. Stay in Couch Mode — the user is across the
 // room with a pad — and just navigate to the couch game page rather than dropping them onto the
@@ -241,6 +259,49 @@ function applyTheme(name) {
     Object.keys(t).forEach(k => { if (k !== 'font') r.style.setProperty('--' + k, t[k]); });
     r.style.setProperty('--ui-font', t.font ? `'${t.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
 }
+// ── The desktop's own palette, on the couch ──────────────────────────────────
+// Omarchy declares its colours in named roles and the desktop face maps them into a real
+// theme. Couch has its own theme table, so it has to register the same palette under the
+// same key or the two faces disagree.
+//
+// ⚠️ This is a correctness fix, not tidiness. applyTheme() below falls back to HALF-LIFE for
+// a name it does not know, silently. So with "Sync Desktop Colors" on and the desktop face
+// wearing the Omarchy palette, Couch would drop to a completely unrelated theme and give no
+// sign why: you would match your desktop on one face and not the other.
+//
+// The key is the same stable string the desktop face uses, and deliberately does not carry
+// the Omarchy theme's own name: `el_theme` records whichever theme is active, and a key like
+// "OMARCHY TOKYO-NIGHT" would stop resolving the moment somebody ran `omarchy theme set`.
+const OMARCHY_THEME = 'YOUR DESKTOP';
+
+function registerOmarchyTheme(desc) {
+    if (!desc || !desc.available || !desc.theme) {
+        delete THEMES[OMARCHY_THEME];
+        delete THEME_CATEGORIES['Your Desktop'];
+        return false;
+    }
+    // ⚠️ accent_menu is Couch's own token and the desktop face has no use for it, so the
+    // mapping does not always carry one. Falling back to `accent` keeps a menu highlight
+    // that belongs to the palette rather than to whatever was on screen before.
+    THEMES[OMARCHY_THEME] = Object.assign({}, desc.theme, {
+        accent_menu: desc.theme.accent_menu || desc.theme.accent,
+    });
+    THEME_CATEGORIES['Your Desktop'] = [OMARCHY_THEME];
+    return true;
+}
+
+async function initOmarchyTheme() {
+    if (!window.api.omarchyTheme) return;                 // an older build of the preload
+    try { registerOmarchyTheme(await window.api.omarchyTheme()); } catch (e) { return; }
+    // `omarchy theme set` rewrites the state directory and the main process notices. Couch is
+    // a face someone leaves running on a TV for hours, so following the switch matters more
+    // here than on the desktop, not less.
+    window.api.onOmarchyTheme(desc => {
+        registerOmarchyTheme(desc);
+        applyActiveTheme();
+    });
+}
+
 let syncDesktop = false;   // when on, Couch mirrors the desktop mode's color scheme (el_theme)
 async function applyActiveTheme() {
     if (syncDesktop) {
@@ -315,15 +376,56 @@ function overlayMove(dir) {
     let p = sel.indexOf(overlayIndex); if (p < 0) p = 0;
     overlayIndex = sel[(p + dir + sel.length) % sel.length]; highlightOverlay();
 }
-async function openMenu() {
+async function openMenu(hint) {
     menuOpen = true; menuMode = 'main';
-    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode']);
+    renderOverlay('SETTINGS', ['§APPEARANCE', 'Color Theme', `Sync Desktop Colors: ${syncDesktop ? 'On' : 'Off'}`, 'Display Type', 'Fonts', 'Carousel Label', 'Navigation Mode', 'Display Density', 'Screensaver', '§AUDIO', 'Sound', '§CONTROLS', 'Gamepad Icons', 'Return Combo', '§LIBRARY', 'Rescan Library', '§SYSTEM', 'RetroArch Simple Setup', 'Manage Save States', 'Close Menu', 'Exit Couch Mode'], hint);
+}
+
+// ── RESCAN FROM THE COUCH ────────────────────────────────────────────────────
+// The same scan the desktop face and every launch run: read the ROMS folder, make the library
+// match it. Reported back into the menu's own hint line, since there is no cursor out here.
+async function rescanFromMenu() {
+    const i = overlayItems.findIndex(t => String(t) === 'Rescan Library');
+    const row = $('ov-' + i);
+    if (row) row.textContent = 'Rescanning\u2026';
+    let res = null;
+    try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
+    let msg;
+    const changed = res && (res.added || res.removed || res.adopted || res.merged);
+    if (!res?.ok) msg = res?.error || 'The library could not be read.';
+    else if (!changed) msg = res.rootExists
+        ? `Library up to date. Nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+        : 'The ROMS folder is not there. Set it from the desktop face, in Settings \u203a Library.';
+    else {
+        const bits = [];
+        if (res.added)   bits.push(`added ${res.added}`);
+        if (res.revived) bits.push(`${res.revived} playable again`);
+        if (res.adopted - res.revived > 0) bits.push(`${res.adopted - res.revived} re-pointed`);
+        if (res.merged)  bits.push(`${res.merged} duplicates folded in`);
+        if (res.removed) bits.push(`removed ${res.removed}`);
+        msg = `Library ${bits.join(', ')}. ` + (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
+    }
+    if (changed) {
+        [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+        gamesById = new Map(games.map(g => [g.id, g]));
+        buildCategories();
+        renderCarousel(); renderTiles();
+    }
+    await openMenu(msg);
+    const back = overlayItems.findIndex(t => String(t) === 'Rescan Library');
+    if (back >= 0) { overlayIndex = back; highlightOverlay(); }
 }
 function closeMenu() { menuOpen = false; $('overlay-backdrop').classList.add('hidden'); }
 let _themeCat = null;
 async function openThemeMenu() {   // level 1: theme categories
     menuMode = 'themecat'; _themeCat = null;
-    renderOverlay('COLOR THEME', ['§CATEGORY', ...Object.keys(THEME_CATEGORIES), 'Back']);
+    // The desktop's own palette leads the list where there is one, the same order the desktop
+    // face uses. On a gamepad that matters more: every category costs a press to scroll past.
+    const cats = Object.keys(THEME_CATEGORIES);
+    const ordered = cats.includes('Your Desktop')
+        ? ['Your Desktop', ...cats.filter(c => c !== 'Your Desktop')]
+        : cats;
+    renderOverlay('COLOR THEME', ['§CATEGORY', ...ordered, 'Back']);
 }
 async function openThemeCatMenu(cat) {   // level 2: themes within a category
     menuMode = 'theme'; _themeCat = cat; const cur = await getCfg('couch_theme', 'HALF-LIFE');
@@ -563,6 +665,7 @@ async function overlayConfirm() {
         else if (raw === 'Sound') openSoundMenu();
         else if (raw === 'Gamepad Icons') openLayoutMenu();
         else if (raw === 'Return Combo') openComboMenu();
+        else if (raw === 'Rescan Library') rescanFromMenu();
         else if (raw === 'RetroArch Simple Setup') openRssMenu();
         else if (raw === 'Manage Save States') openSaveMgr();
         else if (raw === 'Close Menu') closeMenu();

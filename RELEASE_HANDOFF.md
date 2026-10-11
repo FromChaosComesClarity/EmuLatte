@@ -1,6 +1,6 @@
 # EmuLatte 1.0 — Release Handoff
 
-**Written:** 2026-07-20, from the Clarity monorepo session that shipped CN 1.0.
+**Written:** 2026-07-20, from the Clarity monorepo session that shipped Clarity 1.0.
 **For:** a fresh Claude session started in `/home/jose/Documents/DEVELOPMENT/CLAUDE/EmuLatte_Electron_Build/`.
 
 Open that session and say: **"Read RELEASE_HANDOFF.md and let's start."**
@@ -25,10 +25,10 @@ Jose (`shampoo-is-a-lie`, joserobertoazevedo@gmail.com). Read these before makin
   when he says so. This repo is already on `experimental` and it is clean.
 - **Build after changes.** `npm run dist` after code changes — no need to ask. Takes a while and
   produces a ~213 MB AppImage.
-- **No emojis in the README.** CN's README had them stripped deliberately. Use the `◈` / box-drawing
+- **No emojis in the README.** Clarity's README had them stripped deliberately. Use the `◈` / box-drawing
   style already in EmuLatte's README.
 - **Bundle fonts locally.** Never Google Fonts / remote fonts *in the app*. Per-app `assets/fonts/`.
-  (The **website** is the exception — CN's site does load Google Fonts, and that's fine and intended.)
+  (The **website** is the exception — Clarity's site does load Google Fonts, and that's fine and intended.)
 - **Capitalization is exact:** `EmuLatte`. Never "Emulatte", "EmuLatté", "emuLatte".
 - **Tagline:** "I use RetroArch BTW".
 - He writes prompts casually and expects you to infer scope. When a task has several parts, do them
@@ -50,7 +50,7 @@ Jose (`shampoo-is-a-lie`, joserobertoazevedo@gmail.com). Read these before makin
 | `postdist` | copies the AppImage to `/home/jose/Games/Clarity/` ✅ |
 | Electron | 41.3.0; deps `better-sqlite3`, `adm-zip` ✅ |
 
-**Shape of the app** — two faces in one binary, like CN:
+**Shape of the app** — two faces in one binary, like Clarity:
 - `index.html` + `renderer.js` (267 KB) — the desktop face.
 - `couch.html` + `couch.js` (111 KB) — **Couch Mode**, EmuLatte's own gamepad/TV face. It has
   display types (Horizontal/Vertical/CRT), a screensaver, ambient BGM/SFX, a now-playing screen,
@@ -75,7 +75,7 @@ building from source must place them manually. This is why the AppImage is 213 M
 
 ## 3. Audit — findings already confirmed
 
-I ran CN's audit probes against this repo. **These four are real and already confirmed.** Start here.
+I ran Clarity's audit probes against this repo. **These four are real and already confirmed.** Start here.
 
 ### 3.1 ❌ README states the ecosystem integration backwards — HIGH PRIORITY
 
@@ -86,14 +86,14 @@ I ran CN's audit probes against this repo. **These four are real and already con
 > the same launch commands it stores."
 
 **This is wrong**, and it's the exact claim that was corrected everywhere else in the ecosystem on
-2026-07-20. The truth, confirmed in CN's code (`check-emulatte` only detects the AppImage for the
+2026-07-20. The truth, confirmed in Clarity's code (`check-emulatte` only detects the AppImage for the
 launcher button):
 
-> Games reach Clarity **only by exporting them to Clarity from inside EmuLatte**. CN
+> Games reach Clarity **only by exporting them to Clarity from inside EmuLatte**. Clarity
 > does not read EmuLatte's DB and has no "show emulation" toggle. Exported games land as ordinary
 > `games.db` rows with `Store` = `Emulation`. Management of the ROM collection always stays in EmuLatte.
 
-CN's README, in-app manual and website were all fixed. EmuLatte's README is the last place the old
+Clarity's README, in-app manual and website were all fixed. EmuLatte's README is the last place the old
 claim survives. **Say "export", never "reads its DB".** The ASCII ecosystem diagram in the same
 section also needs its `EmuLatte` line reworded.
 
@@ -104,13 +104,13 @@ in the ROM Library box. Fix both, or make the README not state a number.
 
 ### 3.3 ❌ No version plumbing / no About dialog
 
-`grep` for `get-app-version` and `app.getVersion` returns **nothing**. CN 1.0 added a `get-app-version`
+`grep` for `get-app-version` and `app.getVersion` returns **nothing**. Clarity 1.0 added a `get-app-version`
 IPC handler feeding an About dialog so the shipped version is visible in-app. EmuLatte has no
 equivalent. Add:
 - `ipcMain.handle('get-app-version', () => app.getVersion())` in `main.js`
 - expose it in `preload.js`
 - an About entry in the app menu showing name, version, GPL-3.0, the Clarity ecosystem line
-  and the contact/GitHub links. Mirror CN's About wording.
+  and the contact/GitHub links. Mirror Clarity's About wording.
 
 ### 3.4 ⚠️ Theme drift between the two faces
 
@@ -119,7 +119,7 @@ equivalent. Add:
 - The only difference is `Couch Mode`, present on the desktop face and missing from Couch Mode.
 
 Decide with Jose whether that's intentional (a "Couch Mode" theme inside EmuLatte's couch face is a bit
-odd) or an oversight. **The bigger question:** CN's three faces all carry **93 themes in 10
+odd) or an oversight. **The bigger question:** Clarity's three faces all carry **93 themes in 10
 categories** after the LatteWrite "Systems" import. EmuLatte is at ~70 and never received the 20
 retro-OS "Systems" themes. Ask whether 1.0 should bring EmuLatte to parity — it's a copy-paste of
 the theme defs plus the era-font wiring, and it's the single most visible consistency gap in the
@@ -132,17 +132,17 @@ for two waves, because a face that's missing a theme just falls back instead of 
 
 | Probe | Result |
 |---|---|
-| Duplicate element IDs in `index.html` / `couch.html` / `manual.html` | ✅ none (CN had a dead button from this) |
-| Library search scanning every DB column | ✅ clean — search is title-scoped (`renderer.js:108`, `couch.js:891`). CN's bug was `Object.values` over 52 columns |
+| Duplicate element IDs in `index.html` / `couch.html` / `manual.html` | ✅ none (Clarity had a dead button from this) |
+| Library search scanning every DB column | ✅ clean — search is title-scoped (`renderer.js:108`, `couch.js:891`). Clarity's bug was `Object.values` over 52 columns |
 | Unbounded `textContent +=` log growth | ✅ none found |
 | Games killed when the app quits | ✅ clean — `spawn(..., {detached:true, stdio:'ignore'}).unref()` at `main.js:670,809,850` |
 | Hardcoded `/home/jose` in shipped code | ✅ only in the `postdist` npm script, which never ships |
-| Dev database bundled into the asar | ✅ clean — `build.files` lists only source + `assets/**`, no config/db. CN shipped its dev `games.db` by accident; **still verify the built AppImage** per §3.6 |
+| Dev database bundled into the asar | ✅ clean — `build.files` lists only source + `assets/**`, no config/db. Clarity shipped its dev `games.db` by accident; **still verify the built AppImage** per §3.6 |
 | No i18n at all | ✅ confirmed absent — see §3.7 |
 
 ### 3.6 Verify the built artifact before releasing
 
-CN's worst pre-release find was a personal games database bundled inside the asar. The `files` list
+Clarity's worst pre-release find was a personal games database bundled inside the asar. The `files` list
 here looks safe, but prove it on the real artifact:
 
 ```bash
@@ -155,24 +155,24 @@ Expect: no `GameManagerConfig`, no `.db`, no `ss_dev.json`, and no plaintext Scr
 
 ### 3.7 Decision needed: internationalization
 
-CN and Couch Mode ship English + pt_BR. EmuLatte has **no i18n layer at all** (`main.js:1378` `LANG_PREF`
+Clarity and Couch Mode ship English + pt_BR. EmuLatte has **no i18n layer at all** (`main.js:1378` `LANG_PREF`
 is only ScreenScraper's metadata-language preference, unrelated). Options: ship 1.0 English-only and
-say so, or port CN's i18n system. **Ask Jose — do not decide this alone.** English-only is the
+say so, or port Clarity's i18n system. **Ask Jose — do not decide this alone.** English-only is the
 sensible 1.0 scope; the ecosystem memory has `project_i18n.md` if he wants it done.
 
 ### 3.8 Remaining audit passes to run yourself
 
 Findings above came from targeted probes. Still to do:
 
-1. `/code-review` at **high** effort on the full diff since the last release tag (CN's high review
+1. `/code-review` at **high** effort on the full diff since the last release tag (Clarity's high review
    returned 6 real findings on the Save Manager alone, all worth fixing).
-2. Every modal/overlay: confirm each one closes on **all** exit paths. CN's audit found a whole class
+2. Every modal/overlay: confirm each one closes on **all** exit paths. Clarity's audit found a whole class
    of "config screen stays visible after transition" bugs — fixed by making all 4 transitions hide it.
 3. Couch Mode input routing: whatever EmuLatte's equivalent of an overlay-state allowlist is, confirm
    a newly added menu is registered in it. In Couch Mode a missing state looks like a **total app freeze**,
    not a broken menu — it cost a whole bug on the font picker. There is no `gameState` symbol in
    `couch.js`, so the model differs; find it before assuming it's fine.
-4. Dead code sweep — CN removed an unreachable pre-merge `manual.html` and a dead input handler.
+4. Dead code sweep — Clarity removed an unreachable pre-merge `manual.html` and a dead input handler.
 5. First-run experience on a **clean** `GameManagerConfig/` — the single most under-tested path.
    Rename your config dir aside and launch cold.
 
@@ -193,7 +193,7 @@ Ordered. Each phase should be its own commit on `experimental`.
 - [ ] `npm run dist`, smoke-test the AppImage
 
 ### Phase 2 — In-app user manual
-EmuLatte has **no user manual**. CN's is 22 sections in a themed in-app viewer and is the model.
+EmuLatte has **no user manual**. Clarity's is 22 sections in a themed in-app viewer and is the model.
 Write one covering, at minimum:
 
 1. What EmuLatte is · 2. Install & first run · 3. Adding systems · 4. Importing ROMs ·
@@ -220,14 +220,14 @@ See §5 for the full spec. Gate the publish on his say-so.
 ### Phase 5 — GitHub release
 - [ ] ff-merge `experimental` → `main`, push both **(ask first)**
 - [ ] Tag `v1.0.0` and push the tag
-- [ ] Write `RELEASE_NOTES_v1.0.0.md` (CN has one at
+- [ ] Write `RELEASE_NOTES_v1.0.0.md` (Clarity has one at
       `/home/jose/Documents/DEVELOPMENT/CLAUDE/RELEASE_NOTES_v1.0.0.md` — mirror its structure)
 - [ ] Create the GitHub release, attach `EmuLatte.AppImage` (213 MB — under GitHub's 2 GB limit, fine)
 - [ ] Update the repo's About blurb, topics, and website field
 - [ ] ⚠️ **`gh` CLI is NOT installed on this machine.** Either install it, or Jose does the release
       through the GitHub web UI. Don't assume `gh` exists — I checked.
 
-> **Note on CN's tag:** as of 2026-07-20 Clarity itself is merged and pushed but the `v1.0.0`
+> **Note on Clarity's tag:** as of 2026-07-20 Clarity itself is merged and pushed but the `v1.0.0`
 > tag was still not created. If Jose wants the ecosystem tagged consistently, mention it.
 
 ---
@@ -236,10 +236,10 @@ See §5 for the full spec. Gate the publish on his say-so.
 
 ### 5.1 First decision: where it lives
 
-**Recommended — add `emulatte.html` to the existing `CN_website` repo.**
+**Recommended — add `emulatte.html` to the existing `ClarityWebSite` repo.**
 `/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/` → `github.com/shampoo-is-a-lie/ClarityWebSite`
 → published at `https://shampoo-is-a-lie.github.io/ClarityWebSite/`.
-One repo, one Pages deploy, shared `assets/`, and CN's landing page **already links to EmuLatte**
+One repo, one Pages deploy, shared `assets/`, and Clarity's landing page **already links to EmuLatte**
 (`index.html:358`) — that link just changes from the GitHub repo to `emulatte.html`. Cheapest to
 maintain and keeps the ecosystem visually welded together.
 
@@ -279,28 +279,28 @@ don't suppress each other's intros.
 
 **Tone:** lowercase handwritten headings ("what's in the cup", "a look inside", "also on the menu"),
 dry one-liners, no marketing voice. EmuLatte's established quip is **"I use RetroArch BTW"** — it is
-already on CN's site as EmuLatte's card and should headline the EmuLatte page.
+already on Clarity's site as EmuLatte's card and should headline the EmuLatte page.
 
 ### 5.3 Content outline
 
 - Wordmark + kicker + "I use RetroArch BTW"
 - Download button → `https://github.com/shampoo-is-a-lie/EmuLatte/releases/latest`, meta line
   "version 1.0 · single AppImage · GPL-3.0"
-- A three-line menu block mirroring CN's Manager/Installer/Couch Mode list — e.g. Library / Scrapers /
+- A three-line menu block mirroring Clarity's Manager/Installer/Couch Mode list — e.g. Library / Scrapers /
   Couch Mode
 - **"what's in the cup"** feature board (7-ish items): 56 systems with core defaults · emulator
   scanner · four scraping sources in one picker · RetroAchievements · trailers via yt-dlp ·
   **Couch Mode** · local-only data
 - **"a look inside"** screenshot gallery — §5.4
-- **"also on the menu"** — a card pointing back at Clarity (and the Clock), mirroring how CN's
+- **"also on the menu"** — a card pointing back at Clarity (and the Clock), mirroring how Clarity's
   page points here. **Use the export wording from §3.1.**
-- Support block: reuse CN's Ko-fi button, PIX modal (QR + key `b734a9e2-e479-42f9-abd6-c88d1b8b880e`)
+- Support block: reuse Clarity's Ko-fi button, PIX modal (QR + key `b734a9e2-e479-42f9-abd6-c88d1b8b880e`)
   and GitHub button verbatim
 - Footer: "Built by J.R.A.", contact `shampooisalie@gmail.com`, GPL-3.0-or-later
 
 ### 5.4 Screenshot gallery — the pipeline that already works
 
-Built and shipped on CN's site (`CN_website/index.html`, commits `f6aa917`, `97ac086`, `ed05e1e`).
+Built and shipped on Clarity's site (`ClarityWebSite/index.html`, commits `f6aa917`, `97ac086`, `ed05e1e`).
 Copy the pattern; it's proven.
 
 **Capture** to a folder, then convert — 33 MB of PNGs became **1.6 MB** of WebP:
@@ -348,7 +348,7 @@ render a **temp copy** with the boot div hidden and `#chalk` opacity forced to 1
 
 ### 5.5 Publishing
 GitHub Pages serves from `main`. Push, wait under a minute, hard-reload. **Gate the push on Jose.**
-Once live, update CN's `index.html:358` link and the EmuLatte repo's website field.
+Once live, update Clarity's `index.html:358` link and the EmuLatte repo's website field.
 
 ---
 
@@ -356,11 +356,11 @@ Once live, update CN's `index.html:358` link and the EmuLatte repo's website fie
 
 | What | Where |
 |---|---|
-| CN website (the visual reference) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/index.html` |
-| CN release notes (structure to mirror) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/RELEASE_NOTES_v1.0.0.md` |
-| The CN monorepo (manual, About, themes, i18n to copy from) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/Clarity/` |
-| EmuLatte architecture notes (DB schema, IPC handlers, hard parts) | CN memory `project_emulatte_plan.md` |
-| EmuLatte concept + ecosystem rules | CN memory `project_emulatte_concept.md` |
+| Clarity website (the visual reference) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/CN_website/index.html` |
+| Clarity release notes (structure to mirror) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/RELEASE_NOTES_v1.0.0.md` |
+| The Clarity monorepo (manual, About, themes, i18n to copy from) | `/home/jose/Documents/DEVELOPMENT/CLAUDE/Clarity/` |
+| EmuLatte architecture notes (DB schema, IPC handlers, hard parts) | Clarity memory `project_emulatte_plan.md` |
+| EmuLatte concept + ecosystem rules | Clarity memory `project_emulatte_concept.md` |
 | Couch Mode original plan | `docs/couch-mode-plan.md` (this repo) |
 
 Memory lives at
@@ -374,15 +374,15 @@ read those files directly if you need them.
 
 - [ ] Audit findings §3.1–§3.4 fixed; §3.6 artifact verified clean; §3.8 passes run
 - [ ] About dialog shows 1.0.0
-- [ ] In-app user manual covering all features including Couch Mode and CN export
+- [ ] In-app user manual covering all features including Couch Mode and Clarity export
 - [ ] README rewritten, accurate, Couch Mode covered, no emojis
 - [ ] Website live, same visual language, screenshot gallery working at desktop and mobile widths
-- [ ] CN's site links to the EmuLatte page
+- [ ] Clarity's site links to the EmuLatte page
 - [ ] `experimental` ff-merged to `main`, both pushed, `v1.0.0` tagged
 - [ ] GitHub release published with the AppImage attached
 - [ ] AppImage smoke-tested from a clean config directory
 
 ---
 
-*Written by the CN 1.0 session. If something here contradicts what you find in the code, the code
+*Written by the Clarity 1.0 session. If something here contradicts what you find in the code, the code
 wins — say so rather than working around it.*

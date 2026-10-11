@@ -46,7 +46,7 @@ logic is platform-adaptive and density/aspect are user-driven, not tied to any o
 Keep (gamepad-navigable): game wall (All / System / Favourites / Recents / Want) using the
 console/handheld/arcade categories + A–Z/Last-Played/etc sorts; game detail (cover, hero/SS reel,
 description, ▶ PLAY → `launch-game`); Now-Playing; fav/want; optional on-screen-keyboard search;
-optional sleep/screensaver (CN wallpapers) + ambient BGM/SFX.
+optional sleep/screensaver (Clarity wallpapers) + ambient BGM/SFX.
 Strip: Steam/Heroic/GOG install watchers & store flows; PC platform filters; IGDB
 perspective/flow/difficulty modifiers; anything bound to the suite `games.db` schema (data layer
 swapped to EmuLatte IPC/`emulatte.db`).

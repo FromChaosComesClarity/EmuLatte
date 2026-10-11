@@ -36,12 +36,23 @@ window.addEventListener('DOMContentLoaded', async () => {
     await loadCores();
     await loadSystemPresets();
     retroarchVariant = await window.api.getSetting('retroarch_variant') || 'none';
+    // ⚠️ Before the theme is resolved, not after: the desktop's palette lives in the theme
+    // table under a key this registers, and applyTheme() on a key that is not there yet is a
+    // silent no-op, which would drop anyone wearing it back to the built-in default.
+    await initOmarchy();
     const savedTheme = await window.api.getSetting('el_theme') || 'Couch Mode';
     applyTheme(savedTheme, false);
     wireUI();
+    initZoomKeys();   // not Omarchy-only: an interface too large to use is too large anywhere
     enhanceAllSelects();
     updateTemplateButtonLabels();
     wireScrapeProgress();
+    maybeShowWelcome();       // first run only; a no-op on every later start
+    // The launch scan runs in the main process and may finish before or after this face loads,
+    // so take it from whichever arrives: the result that is already waiting, or the event.
+    window.api.onLibraryScanned(res => applyScanResult(res, { quiet: true }));
+    window.api.onLibraryScanProgress(paintScanProgress);
+    window.api.getLastScan().then(res => applyScanResult(res, { quiet: true })).catch(() => {});
     window.api.signalReady();
 });
 
@@ -1233,13 +1244,21 @@ function startHeroCycle() {
 // ── SYSTEM FILTERS ────────────────────────────────────────────────────────────
 function renderSystemFilters() {
     const container = document.getElementById('system-filters');
-    if (!allSystems.length) {
-        container.innerHTML = '';
+    // Every system exists from the first launch, so browsing by system only lists the ones that
+    // have a game in them, the same thing ES-DE does. The full set, with each one's folder,
+    // is in Settings \u203a Library and in the Systems manager.
+    const counts = new Map();
+    for (const g of allGames) counts.set(g.system_id, (counts.get(g.system_id) || 0) + 1);
+    const shown = allSystems.filter(s => counts.get(s.id) || String(currentFilter) === String(s.id));
+    if (!shown.length) {
+        container.innerHTML = allSystems.length
+            ? `<div style="font-size:11px; color:var(--text_dim); padding:8px 2px; line-height:1.5;">No games yet. Drop ROMs into the system folders under your ROMS folder and press Rescan Library.</div>`
+            : '';
         return;
     }
     container.innerHTML = `<div style="font-size:10px; font-weight:900; color:var(--text_dim); letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; padding-left:2px;">Systems</div>` +
-        allSystems.map(s => {
-            const count = allGames.filter(g => g.system_id === s.id).length;
+        shown.map(s => {
+            const count = counts.get(s.id) || 0;
             return `<button class="filter-btn-system" data-system-id="${s.id}" data-filter="${s.id}"
                 style="width:100%; text-align:left; font-size:11px; padding:8px 10px; background:var(--bg_menu); border:1px solid var(--border); color:var(--text_sec); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
                 <span>${escHtml(s.name)}</span>
@@ -1465,13 +1484,86 @@ function switchView(viewId) {
 function closeGamePage() { switchView(_bgView || 'view-gallery'); renderCurrentView(); }
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
-async function launchGame(id) {
+// A game with a save behind it gets asked about first, on this face as well as Couch Mode:
+// resume one of them, or start fresh. Skipped entirely when there is nothing saved, so the
+// common case is still one click.
+async function launchGame(id, opts = null) {
+    _lastLaunchId = id;
+    if (opts === null) {
+        let states = [];
+        try { states = await window.api.listSaveStates(id); } catch {}
+        if (states.length) { openSavePicker(id, states); return; }
+    }
+    if (opts) return launchGameWith(id, opts);
     const result = await window.api.launchGame(id);
+    // A game that cannot start because its core is not installed is a question, not an error:
+    // the core is one download away and EmuLatte knows exactly which one.
+    if (!result.ok && result.needCore) { await offerMissingCore(result); return; }
     if (!result.ok) { showLaunchToast(result.error || 'No launch command configured', result.cmd); return; }
     markPlayed(id);
     const game = allGames.find(g => g.id === id);
     if (game) showNowPlaying(game);
 }
+
+// ── RESUME OR START FRESH ─────────────────────────────────────────────────────
+const saveRelTime = (ms) => {
+    const d = Math.max(0, Date.now() - ms) / 1000;
+    if (d < 90) return 'just now';
+    if (d < 5400) return `${Math.round(d / 60)} min ago`;
+    if (d < 172800) return `${Math.round(d / 3600)} h ago`;
+    return new Date(ms).toLocaleDateString();
+};
+function openSavePicker(id, states) {
+    const g = gamesById.get(id);
+    document.getElementById('sp-sub').textContent =
+        `${g?.title || 'This game'} has ${states.length} save${states.length !== 1 ? 's' : ''}.`;
+    const cards = [`<button class="sp-card" data-slot="__fresh__"><div class="sp-blank">▶</div>
+        <div class="sp-meta"><div class="sp-slot">Start Fresh</div><div class="sp-time">From the beginning</div></div></button>`];
+    for (const st of states) {
+        const name = st.label || (st.slot === 'auto' ? 'Auto Save' : `Slot ${st.slot}`);
+        // The thumbnail RetroArch writes beside the state. file:// so it loads straight off disk.
+        const art = st.thumb
+            ? `<img class="sp-thumb" src="file://${encodeURI(st.thumb)}" alt="">`
+            : `<div class="sp-blank" style="font-size:16px; letter-spacing:1px;">NO SHOT</div>`;
+        cards.push(`<button class="sp-card" data-slot="${escHtml(String(st.slot))}">${art}
+            <div class="sp-meta"><div class="sp-slot">${escHtml(name)}</div><div class="sp-time">${escHtml(saveRelTime(st.mtime))}</div></div></button>`);
+    }
+    const host = document.getElementById('sp-cards');
+    host.innerHTML = cards.join('');
+    host.querySelectorAll('.sp-card').forEach(el => el.addEventListener('click', () => {
+        const slot = el.dataset.slot;
+        closeModal('modal-save-pick');
+        launchGame(id, slot === '__fresh__' ? { fresh: true } : { slot });
+    }));
+    openModal('modal-save-pick');
+    host.querySelector('.sp-card')?.focus();
+}
+// Launch with an explicit choice from the picker.
+async function launchGameWith(id, opts) {
+    const result = await window.api.launchGameEx(id, opts);
+    if (!result?.ok && result?.needCore) { await offerMissingCore({ ...result, gameId: id }); return; }
+    if (!result?.ok) { showLaunchToast(result?.error || 'Could not launch.', result?.cmd); return; }
+    markPlayed(id);
+    const game = allGames.find(g => g.id === id);
+    if (game) showNowPlaying(game);
+}
+
+// Install the core a game just asked for, then start the game. One prompt, one button, and
+// the thing the user actually wanted happens without a trip through Settings.
+async function offerMissingCore(result) {
+    const go = await showConfirm(
+        `${result.error}\n\nDownload it from the libretro buildbot and play?`,
+        'Download and play', false, 'Missing core');
+    if (!go) return;
+    showLaunchToast(`Downloading the ${result.coreName} core...`, null, 'CORES');
+    const r = await window.api.installCore(result.needCore);
+    if (!r?.ok) { showLaunchToast(r?.error || 'The core could not be downloaded.', null, 'CORES'); return; }
+    await loadCores();
+    const retry = await window.api.launchGame(result.gameId ?? _lastLaunchId);
+    if (retry?.ok) { markPlayed(_lastLaunchId); const g = allGames.find(x => x.id === _lastLaunchId); if (g) showNowPlaying(g); }
+    else showLaunchToast(retry?.error || 'Still could not launch.', retry?.cmd);
+}
+let _lastLaunchId = null;
 
 // The launch handlers stamp last_played in the DB; mirror it into the in-memory copies so
 // RECENTLY PLAYED and the "Last Played" sort are right straight away, with no reload.
@@ -1985,15 +2077,17 @@ function openSystemsModal() {
 function renderSystemsList() {
     const list = document.getElementById('systems-list');
     if (!allSystems.length) {
-        list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim); font-size:13px;">No systems added yet.</div>`;
+        list.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim); font-size:13px;">No systems. Settings \u203a Library \u203a Restore Default Systems brings them all back.</div>`;
         return;
     }
+    // Every system is here, with or without games, unlike the side panel, which only lists the
+    // ones you can actually browse. The folder is shown because it is where the ROMs go.
     list.innerHTML = allSystems.map(s => {
         const count = allGames.filter(g => g.system_id === s.id).length;
         return `<div class="system-list-item">
             <div>
                 <div class="sys-name">${escHtml(s.name)}</div>
-                <div class="sys-meta">${escHtml(s.extensions || '—')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
+                <div class="sys-meta">ROMS/${escHtml(s.folder || '?')} · ${escHtml(s.extensions || 'any file type')} · ${count} ROM${count !== 1 ? 's' : ''} · ${escHtml(s.launch_template || 'No template')}</div>
             </div>
             <button class="btn-edit-sys" data-id="${s.id}" style="font-size:11px; padding:6px 14px;">Edit</button>
         </div>`;
@@ -2101,6 +2195,12 @@ function openEditSystemModal(sys = null) {
     document.getElementById('edit-system-name').value          = sys?.name || '';
     document.getElementById('edit-system-short').value         = sys?.short_name || '';
     document.getElementById('edit-system-extensions').value    = sys?.extensions || '';
+    document.getElementById('edit-system-folder').value        = sys?.folder || '';
+    // The names the other front-ends use are read as well as this one, so say which ones apply.
+    const pre = allSystemPresets.find(pp => pp.short_name === sys?.short_name);
+    document.getElementById('edit-system-folder-hint').textContent = pre?.folder_aliases?.length
+        ? `The folder under your ROMS folder that this system's games are read from. These are read too: ${pre.folder_aliases.join(', ')}.`
+        : "The folder under your ROMS folder that this system's games are read from.";
     document.getElementById('edit-system-template').value      = sys?.launch_template || '';
     document.getElementById('edit-system-core-all').checked     = false;
     const storedCore = sys?.default_core || '';                    // resolve a bare filename to its installed path
@@ -2331,6 +2431,9 @@ function applyTheme(name, save = true) {
     Object.keys(t).forEach(k => { if (k !== 'font') root.style.setProperty(`--${k}`, t[k]); });
     root.style.setProperty('--ui-font', t.font ? `'${t.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
     _activeTheme = name;
+    // Geometry follows the palette: the desktop's corner radius is worn only while its colours
+    // are, so it needs no toggle of its own beyond the one in the Desktop pane.
+    syncOmarchyGeometry(name);
     if (save) {
         window.api.setSetting('el_theme', name);
         try { localStorage.setItem('el_theme_cache', JSON.stringify(t)); } catch(e) {}
@@ -2347,7 +2450,13 @@ function renderThemeCategories() {
     backBtn.style.display = 'none';
     cats.innerHTML = '';
     grid.innerHTML = '';
-    Object.keys(EL_THEME_CATEGORIES).forEach(cat => {
+    // The desktop's own palette leads the list where there is one: it is the theme most likely
+    // to be wanted on a machine that has it, and the only one here that is not ours.
+    const catNames = Object.keys(EL_THEME_CATEGORIES);
+    const orderedCats = catNames.includes('Your Desktop')
+        ? ['Your Desktop', ...catNames.filter(c => c !== 'Your Desktop')]
+        : catNames;
+    orderedCats.forEach(cat => {
         const btn = document.createElement('button');
         btn.className = 'theme-cat-btn';
         btn.textContent = cat;
@@ -2359,7 +2468,7 @@ function renderThemeCategories() {
         cats.appendChild(btn);
     });
     // Show first category by default
-    const firstCat = Object.keys(EL_THEME_CATEGORIES)[0];
+    const firstCat = orderedCats[0];
     cats.querySelector('.theme-cat-btn')?.classList.add('active');
     renderThemesInCategory(firstCat);
 }
@@ -2394,6 +2503,638 @@ function renderThemesInCategory(cat) {
         });
         grid.appendChild(wrap);
     });
+}
+
+
+// ── OMARCHY: WEARING THE DESKTOP ─────────────────────────────────────────────
+// Omarchy declares its palette in named roles (background, foreground, accent, …) and every
+// app on the system is themed from that one file. EmuLatte's own themes have the same shape,
+// so the right integration is not "pick whichever of our themes looks closest": it is to
+// build a theme from the user's actual palette and keep matching when they switch.
+//
+// The mapping lives in the main process (omarchy-theme.js) and arrives here already in this
+// app's token shape, so this half only has to register it and re-register it on a change.
+
+const OMARCHY_THEME = 'YOUR DESKTOP';
+let _omarchyThemeName = '';     // the Omarchy theme's own display name, for the pane
+let _omarchyStatus = null;      // last answer from omarchy-status, for the pane
+
+/*
+ * Put the desktop's palette in the theme table under one STABLE key.
+ *
+ * ⚠️ The key deliberately does not carry the Omarchy theme's name. `el_theme` stores whichever
+ * theme is active, and a key like "OMARCHY TOKYO-NIGHT" would stop resolving the moment the
+ * user ran `omarchy theme set` on something else, silently dropping them back to a default.
+ * One key, repopulated, means following the desktop is a decision made once.
+ */
+function registerOmarchyTheme(desc) {
+    if (!desc || !desc.available || !desc.theme) {
+        delete EL_THEMES[OMARCHY_THEME];
+        delete EL_THEME_CATEGORIES['Your Desktop'];
+        _omarchyThemeName = '';
+        return false;
+    }
+    EL_THEMES[OMARCHY_THEME] = desc.theme;
+    EL_THEME_CATEGORIES['Your Desktop'] = [OMARCHY_THEME];
+    _omarchyThemeName = desc.name || '';
+    return true;
+}
+
+/*
+ * The desktop's corner radius, not just its colours.
+ *
+ * Matching the palette makes the app look like the desktop; matching the geometry makes it sit
+ * in it. Omarchy defaults to square corners, and an app full of rounded cards on a square
+ * desktop reads as foreign in a way that is hard to name until the two are side by side.
+ *
+ * ⚠️ Cached in localStorage for the same reason the palette is: the value arrives over an
+ * async round trip, and anything applied after that lands on a window the user is already
+ * looking at. The early script in index.html reads the cache before the first paint.
+ */
+function applyOmarchyGeometry(rounding) {
+    const root = document.documentElement;
+    if (rounding === null || rounding === undefined) {
+        root.style.removeProperty('--radius');
+        try { localStorage.removeItem('el_radius_cache'); } catch (e) {}
+        return;
+    }
+    const px = `${Math.max(0, Number(rounding) || 0)}px`;
+    root.style.setProperty('--radius', px);
+    try { localStorage.setItem('el_radius_cache', px); } catch (e) {}
+}
+
+/*
+ * Apply or drop the desktop's corner radius for a theme about to be worn. Called from
+ * applyTheme(), which is the only place a theme changes, so the two can never disagree.
+ */
+function syncOmarchyGeometry(themeName) {
+    if (!_omarchyStatus) return;
+    const on = themeName === OMARCHY_THEME && _omarchyStatus.settings.matchGeometry;
+    applyOmarchyGeometry(on ? (_omarchyStatus.geometry ? _omarchyStatus.geometry.rounding : null) : null);
+}
+
+/*
+ * Called once at start. Everything here is a no-op off Omarchy, and the pane's rail button
+ * stays hidden, so nothing about this appears on any other desktop.
+ */
+async function initOmarchy() {
+    let s;
+    try { s = await window.api.omarchyStatus(); } catch (e) { return; }
+    if (!s) return;
+    _omarchyStatus = s;
+
+    // The window-management half is true for anyone on Hyprland, Omarchy or not, so the pane
+    // is offered to them too: the rules, the idle inhibitor and the corner radius are all
+    // theirs. Someone on neither never sees any of it.
+    if (!s.isOmarchy && !s.isHyprland) return;
+    const railBtn = document.getElementById('settings-rail-omarchy');
+    if (railBtn) railBtn.style.display = '';
+
+    // On a tiling desktop the window is a tile, so both of these are on by default here and
+    // exist nowhere else.
+    applyCompactChrome(s.settings.compactChrome);
+    initResponsive();
+
+    registerOmarchyTheme(s.theme);
+
+    // `omarchy theme set` rewrites the state directory and the main process notices. Re-register
+    // the palette, and re-apply it if it is the one being worn.
+    window.api.onOmarchyTheme(desc => {
+        registerOmarchyTheme(desc);
+        if (_activeTheme === OMARCHY_THEME) {
+            if (desc && desc.available) applyTheme(OMARCHY_THEME);
+            else applyTheme('Couch Mode');   // the theme went away; do not leave a stale palette on
+        }
+        if (document.getElementById('modal-settings')?.classList.contains('open')) renderOmarchyPane();
+    });
+}
+
+
+// ── COMPACT CHROME, AND A WINDOW THAT IS A TILE ──────────────────────────────
+
+/*
+ * Hide the title bar and rehome what it carried.
+ *
+ * ⚠️ The fullscreen button is MOVED, not duplicated and not recreated: appendChild relocates
+ * a node with its listeners intact, so the button in the rail is the same button that was in
+ * the bar and cannot drift from it. A copy would need its handler wiring again here, and
+ * would be the thing that breaks the next time that handler changes.
+ *
+ * ⚠️ The window controls are NOT rehomed, and that is the one asymmetry. Under a tiling
+ * compositor close, minimise and maximise belong to the compositor and are already bound to
+ * keys; carrying them into the rail would be offering a worse copy of something the desktop
+ * already does. The fullscreen pill has no such equivalent, so it has to keep a home.
+ */
+let _ctaHome = null;   // where the button was, so turning this off puts it back exactly
+
+function applyCompactChrome(on) {
+    const bar = document.getElementById('titlebar');
+    const cta = document.getElementById('btn-go-fullscreen');
+    const rail = document.getElementById('rail-top');
+    if (!bar || !cta || !rail) return;
+
+    if (on) {
+        if (!_ctaHome) _ctaHome = { parent: cta.parentNode, next: cta.nextSibling };
+        cta.classList.add('rail-cta');
+        cta.classList.remove('titlebar-pill');
+        cta.textContent = '▶';
+        cta.title = 'Switch to fullscreen play mode';
+        rail.appendChild(cta);
+    } else if (_ctaHome) {
+        cta.classList.remove('rail-cta');
+        cta.classList.add('titlebar-pill');
+        cta.textContent = '▶ GO FULLSCREEN';
+        _ctaHome.parent.insertBefore(cta, _ctaHome.next);
+    }
+    document.body.classList.toggle('compact-chrome', !!on);
+}
+
+/*
+ * Degrade the layout as the WINDOW narrows, not as the screen does.
+ *
+ * ⚠️ A ResizeObserver rather than a CSS media query, and the difference is not academic on a
+ * tiling desktop: a media query asks how big the screen is, and this app spends its life in
+ * half or a third of one. Half of a 1440px screen is 720px, a third is 480px, so a narrow
+ * window is the ordinary case rather than the exception a media query treats it as.
+ */
+const NARROW_AT = 900;
+const TIGHT_AT = 680;
+
+function initResponsive() {
+    const apply = () => {
+        const w = document.documentElement.clientWidth;
+        document.body.classList.toggle('narrow', w < NARROW_AT);
+        document.body.classList.toggle('tight', w < TIGHT_AT);
+    };
+    apply();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(apply).observe(document.documentElement);
+    else window.addEventListener('resize', apply);
+}
+
+/*
+ * Ctrl +, Ctrl - and Ctrl 0 change the interface scale from anywhere.
+ *
+ * ⚠️ The reason this is a key and not only a row of buttons: those buttons live inside the
+ * Control Panel, which is a modal drawn at the very scale you are trying to fix. An escape
+ * hatch must not live behind the thing it rescues you from.
+ *
+ * Persisted immediately, unlike the buttons, which are saved with the rest of the form when
+ * the panel is saved. A keystroke has no Save to wait for.
+ */
+const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+async function nudgeZoom(delta) {
+    const current = parseFloat(await window.api.getSetting('zoom')) || 1.0;
+    let i = ZOOM_STEPS.findIndex(z => Math.abs(z - current) < 0.001);
+    if (i < 0) i = ZOOM_STEPS.indexOf(1.0);
+    const next = delta === 0 ? 1.0 : ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + delta))];
+    window.api.setZoom(next);
+    await window.api.setSetting('zoom', String(next));
+    // Keep the Control Panel's own buttons honest, so opening it after using the keys does
+    // not show a scale you are not looking at.
+    document.querySelectorAll('.zoom-btn').forEach(b => b.classList.toggle('active', parseFloat(b.dataset.val) === next));
+}
+
+function initZoomKeys() {
+    window.addEventListener('keydown', e => {
+        if (!e.ctrlKey || e.altKey || e.metaKey) return;
+        // ⚠️ e.code, not e.key: with Ctrl held the produced character varies by layout, and on
+        // several the '+' is a shifted key whose e.key is not '+' at all.
+        if (e.code === 'Equal' || e.code === 'NumpadAdd') { e.preventDefault(); nudgeZoom(1); }
+        else if (e.code === 'Minus' || e.code === 'NumpadSubtract') { e.preventDefault(); nudgeZoom(-1); }
+        else if (e.code === 'Digit0' || e.code === 'Numpad0') { e.preventDefault(); nudgeZoom(0); }
+    });
+}
+
+// ── THE DESKTOP PANE ─────────────────────────────────────────────────────────
+// Rendered on entry rather than at start, so an install the user just did in a terminal is
+// reflected by reopening the pane. Every probe behind it is a file read or a short spawn.
+
+function omarchyCard(title, search, body) {
+    return `<div class="tool-card" data-search="omarchy hyprland desktop ${search}">
+        <div class="tool-card-title">${title}</div>${body}</div>`;
+}
+
+function omarchyToggle(id, key, on, label, hint) {
+    return `<label class="core-all-toggle" style="margin-top:6px;">
+        <input type="checkbox" id="${id}" data-omarchy-flag="${key}" ${on ? 'checked' : ''}> ${label}</label>
+        ${hint ? `<div class="hint">${hint}</div>` : ''}`;
+}
+
+
+// ── FIRST RUN ─────────────────────────────────────────────────────────────────
+// Shown once, on a machine that has never opened this app.
+//
+// It leads with what the host actually HAS, because the first thing a new user reads should
+// be a fact rather than a form. Everything is measured when the modal opens; nothing is
+// remembered from a previous run and nothing is assumed.
+//
+// ⚠️ Deliberately narrow. RetroArch and the three systems that ship without a core are the
+// only things offered here, because they are the only ones whose absence stops something
+// working. The optional tools and the alternative emulators are a matter of taste and live
+// in Settings under Omarchy; putting them here would turn a first impression into a list of
+// eight things to buy, and train people to dismiss the screen without reading it.
+//
+// ⚠️ Nothing is offered on a host this app cannot act on. Off Omarchy the installer commands
+// do not exist, so the report states what is missing and stops there: an offer that cannot
+// be honoured is worse than no offer.
+async function renderWelcomeDetection() {
+    const card = document.getElementById('wlc-detect-card');
+    const body = document.getElementById('wlc-detect-body');
+    const acts = document.getElementById('wlc-actions');
+    const note = document.getElementById('wlc-detect-note');
+    if (!card || !body || !acts) return;
+
+    const lines = [];
+    const buttons = [];
+    let s = null;
+    try { s = await window.api.omarchyStatus(); } catch {}
+
+    // ⚠️ `isOmarchy`, not `detected`. This module reports the former; the sibling app's copy
+    // reports the latter, and reading the wrong one is silently falsy, so every Omarchy host
+    // is told it is not running Omarchy and every install offer disappears.
+    if (s?.isOmarchy) {
+        lines.push(`<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Omarchy</b><span class="wlc-detail">${escHtml(s.version || 'detected')}${s.isHyprland ? ', Hyprland' : ''}</span></div>`);
+    } else {
+        lines.push(`<div class="wlc-line"><span class="wlc-dot wlc-off"></span><b>Omarchy</b><span class="wlc-detail">not detected, so nothing can be installed from here</span></div>`);
+    }
+
+    // RetroArch is the headline: 53 of the 56 shipped presets launch through it, and without
+    // it a freshly imported library is a list of games with nothing behind them.
+    const ra = (s?.installers || []).find(i => i.key === 'retroarch');
+    if (ra) {
+        lines.push(ra.present
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>RetroArch</b><span class="wlc-detail">installed${ra.via ? ', via ' + escHtml(ra.via) : ''}</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-warn"></span><b>RetroArch</b><span class="wlc-detail">missing, and 53 of the 56 presets launch through it</span></div>`);
+        if (!ra.present && s?.isOmarchy) {
+            buttons.push({ label: 'Install RetroArch and the full core set', primary: true,
+                           run: () => window.api.omarchyRunInstaller('retroarch') });
+        }
+    }
+
+    // The three systems with no libretro core. Reported as one line, because "PS3, Vita and
+    // Switch need an emulator" is one fact, not three.
+    const emus = s?.emulators || [];
+    const need = emus.filter(e => e.required && !e.present);
+    if (emus.length) {
+        lines.push(need.length
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-warn"></span><b>Standalone emulators</b><span class="wlc-detail">${need.length} of 3 missing, ${escHtml(need.map(e => e.label).join(', '))}. Only PS3, Vita and Switch need one</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Standalone emulators</b><span class="wlc-detail">PS3, Vita and Switch are all covered</span></div>`);
+        if (need.length && s?.isOmarchy) {
+            buttons.push({ label: `Install the ${need.length} missing emulator${need.length > 1 ? 's' : ''}`,
+                           run: () => window.api.omarchyInstallTools(need.map(e => e.key)) });
+        }
+    }
+
+    // The optional tools are counted but never offered here. Saying how many there are is
+    // useful; asking about them on first launch is not.
+    const g = s?.gap;
+    if (g && typeof g.total === 'number') {
+        const extras = (g.missingExtras || []).length;
+        lines.push(extras
+            ? `<div class="wlc-line"><span class="wlc-dot wlc-off"></span><b>Optional extras</b><span class="wlc-detail">${extras} available, none required. Settings, then Omarchy</span></div>`
+            : `<div class="wlc-line"><span class="wlc-dot wlc-ok"></span><b>Optional extras</b><span class="wlc-detail">all present</span></div>`);
+    }
+
+    body.innerHTML = lines.join('');
+    acts.innerHTML = '';
+    buttons.forEach((b, i) => {
+        const el = document.createElement('button');
+        el.textContent = b.label;
+        el.style.width = '100%';
+        if (b.primary) el.className = 'primary';
+        el.addEventListener('click', async () => {
+            el.disabled = true;
+            const r = await b.run();
+            el.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+            el.disabled = false;
+        });
+        acts.appendChild(el);
+    });
+    if (note) note.style.display = buttons.length ? '' : 'none';
+    card.style.display = '';
+}
+
+// One opener for both ways in, so the button in Settings cannot drift from the automatic
+// first run. `noshowChecked` is the state to give the checkbox: ticked on a genuine first
+// run, because that is the answer most people want; whatever is stored when it is opened
+// deliberately, because finding the box already ticked on a screen you asked for reads as
+// the choice having been made for you.
+async function showWelcome(noshowChecked) {
+    const chk = document.getElementById('chk-welcome-noshow');
+    if (chk) chk.checked = noshowChecked;
+    openModal('modal-welcome');
+    renderWelcomeDetection();   // not awaited: the modal should paint before the probes finish
+    showWelcomeRomsPath();
+    renderPlayReadiness('wlc-play-body', 'btn-welcome-install-cores').catch(() => {});
+    refreshMenuEntryButton();
+}
+
+// The app-menu button says which way it will go, so pressing it is never a guess.
+async function refreshMenuEntryButton() {
+    for (const [btnId, statusId] of [['btn-welcome-add-menu', 'wlc-menu-status'], ['btn-settings-add-menu', 'settings-menu-status']]) {
+        const btn = document.getElementById(btnId);
+        if (!btn) continue;
+        let r = null;
+        try { r = await window.api.menuEntriesPresent(); } catch {}
+        const on = !!r?.present?.length;
+        btn.textContent = on ? 'Remove from Application Menu' : 'Add to Application Menu';
+        btn.classList.toggle('primary', !on);
+        btn.dataset.installed = on ? '1' : '';
+        const st = document.getElementById(statusId);
+        if (st && on) { st.textContent = `In your app menu (${r.present.length} entr${r.present.length === 1 ? 'y' : 'ies'}).`; st.style.color = 'var(--accent)'; }
+        else if (st) st.textContent = '';
+    }
+}
+async function toggleMenuEntries(statusId) {
+    const st = document.getElementById(statusId);
+    const btn = document.getElementById(statusId === 'wlc-menu-status' ? 'btn-welcome-add-menu' : 'btn-settings-add-menu');
+    const installed = btn?.dataset.installed === '1';
+    const r = installed ? await window.api.removeFromMenu() : await window.api.installToMenu();
+    if (st) {
+        st.textContent = r?.ok
+            ? (installed ? 'Removed from your app menu.' : `Added: ${(r.installed || []).join(' and ')}.`)
+            : (r?.error || 'That did not work.');
+        st.style.color = r?.ok ? 'var(--accent)' : '#ef5350';
+    }
+    refreshMenuEntryButton();
+}
+
+// The first thing a new user needs is where to put files, so the first run says it outright.
+async function showWelcomeRomsPath() {
+    const el = document.getElementById('wlc-roms-path');
+    if (!el) return;
+    try {
+        const rep = await window.api.libraryFolders();
+        if (rep?.ok) el.textContent = rep.root;
+    } catch {}
+}
+
+function dismissWelcome() {
+    closeModal('modal-welcome');
+    // ⚠️ Both directions, and only on dismissal.
+    //
+    // Only on dismissal, because a first run interrupted by a crash or by closing the window
+    // should come back rather than be silently spent.
+    //
+    // Both directions, because writing '1' and never clearing it makes the checkbox a one-way
+    // switch: untick it on a later visit and nothing happens, since last time's '1' is still
+    // there. That is the second way back to this screen, and it has to actually work.
+    const on = !!document.getElementById('chk-welcome-noshow')?.checked;
+    window.api.setSetting('welcome_shown', on ? '1' : '0');
+}
+
+async function maybeShowWelcome() {
+    let seen = '';
+    try { seen = await window.api.getSetting('welcome_shown'); } catch {}
+    if (seen === '1') return;
+    await showWelcome(true);
+}
+
+async function renderOmarchyPane() {
+    const host = document.getElementById('omarchy-pane');
+    if (!host) return;
+    let s;
+    try { s = await window.api.omarchyStatus(); } catch (e) { return; }
+    if (!s) return;
+    _omarchyStatus = s;
+    registerOmarchyTheme(s.theme);
+
+    const cards = [];
+
+    // 1. What this machine is. Reported rather than assumed: the version comes from
+    //    /etc/os-release and the compositor's from hyprctl.
+    cards.push(omarchyCard('This Desktop', 'version hyprland compositor detect os-release', `
+        <div class="hint" style="margin-top:0;">
+            ${s.isOmarchy ? `<b>${escHtml(s.prettyName || 'Omarchy')}</b>${s.version ? ` ${escHtml(s.version)}` : ''}`
+                          : 'Not Omarchy, but Hyprland is running, so the window behaviour below is yours too.'}
+            ${s.isHyprland ? `<br>${escHtml((s.hyprland || 'Hyprland').split(' built')[0])} · ${s.monitors} monitor${s.monitors === 1 ? '' : 's'}` : ''}
+            ${s.theme && s.theme.available ? `<br>Desktop theme: <b>${escHtml(s.theme.name)}</b> (${escHtml(s.theme.mode)})` : ''}
+        </div>`));
+
+    // 2. The palette. One button, deliberately, rather than a silent takeover: overriding a
+    //    theme somebody picked on purpose would be worse than asking once.
+    if (s.theme && s.theme.available) {
+        const wearing = _activeTheme === OMARCHY_THEME;
+        cards.push(omarchyCard('Match My Desktop Theme', 'theme colors palette match follow colors.toml', `
+            <button id="btn-omarchy-match-theme" class="primary" style="width:100%;" ${wearing ? 'disabled' : ''}>
+                ${wearing ? `Wearing ${escHtml(s.theme.name)}` : `Use ${escHtml(s.theme.name)}`}
+            </button>
+            <div class="hint">Builds a theme from your desktop's own palette rather than picking the
+            closest of ours, and follows it the moment you run <code>omarchy theme set</code>. It is
+            also in the theme picker, under <b>Your Desktop</b>.</div>
+            ${omarchyToggle('omarchy-geometry-chk', 'omarchy_match_geometry', s.settings.matchGeometry,
+                'Take the desktop’s corner radius too',
+                `Your desktop is currently set to ${s.geometry ? s.geometry.rounding : 0}px corners. Applied only while you are wearing the desktop palette.`)}`));
+    } else {
+        cards.push(omarchyCard('Match My Desktop Theme', 'theme colors palette', `
+            <div class="hint" style="margin-top:0;">Your current desktop theme does not ship a
+            <code>colors.toml</code>, so there is no palette to read. Switch to one that does and this
+            appears on its own.</div>`));
+    }
+
+    // 2b. The window as a tile. Gated on Hyprland rather than on Omarchy: someone running
+    //     Hyprland on plain Arch has exactly the same title bar doing exactly as little.
+    if (s.isHyprland) {
+        cards.push(omarchyCard('Window Chrome', 'titlebar title bar compact chrome tiling drag rail fullscreen zoom scale', `
+            ${omarchyToggle('omarchy-chrome-chk', 'omarchy_compact_chrome', s.settings.compactChrome,
+                'Hide the title bar',
+                'You cannot drag a tiled window and the compositor owns close, minimise and maximise, so that row is 35px of nothing. On a tiled window it is a whole extra line of covers. The fullscreen button moves into the rail rather than being lost.')}
+            <div class="hint" style="margin-top:10px;"><b>Ctrl +</b>, <b>Ctrl −</b> and <b>Ctrl 0</b> change the
+            interface scale from anywhere, because the buttons that do it live inside this panel,
+            drawn at the very scale you would be trying to fix.</div>`));
+    }
+
+    // 3. What is missing. RetroArch is the headline because 53 of the 56 shipped presets
+    //    launch through it, and Omarchy's own installer brings the whole core set in one step.
+    const missingInst = s.installers.filter(i => !i.present);
+    if (missingInst.length) {
+        cards.push(omarchyCard('Missing for Emulation', 'retroarch install cores controller xbox gamepad missing', `
+            ${missingInst.map(i => `
+                <div style="margin-top:8px;">
+                    <button class="${i.headline ? 'primary' : ''}" style="width:100%;" data-omarchy-installer="${escHtml(i.key)}">Install ${escHtml(i.label)}</button>
+                    <div class="hint">${escHtml(i.why)}</div>
+                </div>`).join('')}
+            <div class="hint" style="margin-top:10px;">Each opens a terminal running Omarchy's own
+            installer. Nothing here ever runs <code>sudo</code> for you: you see the command and type
+            your own password.</div>`));
+    } else {
+        cards.push(omarchyCard('Missing for Emulation', 'retroarch install cores controller', `
+            <div class="hint" style="margin-top:0;">Nothing missing. RetroArch and controller support
+            are both installed.</div>`));
+    }
+
+    // 4. The optional tools. Selected, then installed in one command, because repo and AUR
+    //    packages take different commands and mixing them produces a "target not found".
+    const missingTools = s.tools.filter(t => !t.present);
+    if (missingTools.length) {
+        cards.push(omarchyCard('Optional Tools', 'gamemode mangohud gamescope flatpak wmctrl packages install', `
+            ${missingTools.map(t => `
+                <label class="core-all-toggle" style="margin-top:6px;">
+                    <input type="checkbox" data-omarchy-tool="${escHtml(t.key)}"> ${escHtml(t.label)}${t.extra ? ' <span style="opacity:.6;">(extra)</span>' : ''}
+                </label>
+                <div class="hint">${escHtml(t.why)}</div>`).join('')}
+            <button id="btn-omarchy-install-tools" style="width:100%; margin-top:10px;">Install Selected…</button>
+            <div class="hint">Opens a terminal with the command. <b>Extra</b> means this app never calls
+            it itself, so nothing here degrades without it.</div>`));
+    }
+
+    // 4b. Standalone emulators. Two groups, and the split is the whole point of the card:
+    //     three presets ship with no core and cannot run at all until something is installed,
+    //     everything else already works and is only an upgrade. Presenting those as one list
+    //     would make eight optional installs look like eight missing dependencies.
+    const emus = Array.isArray(s.emulators) ? s.emulators : [];
+    const needEmu = emus.filter(e => e.required && !e.present);
+    const altEmu  = emus.filter(e => !e.required && !e.present);
+    if (needEmu.length || altEmu.length) {
+        const row = e => `
+            <label class="core-all-toggle" style="margin-top:6px;">
+                <input type="checkbox" data-omarchy-emu="${escHtml(e.key)}"${e.required ? ' checked' : ''}>
+                ${escHtml(e.label)} <span style="opacity:.6;">${escHtml(e.system)}</span>${e.repo === 'aur' ? ' <span style="opacity:.6;">(AUR)</span>' : ''}
+            </label>
+            <div class="hint">${escHtml(e.why)}</div>`;
+        cards.push(omarchyCard('Emulators', 'rpcs3 vita3k ryujinx dolphin pcsx2 duckstation ppsspp melonds ps3 vita switch standalone emulator install', `
+            ${needEmu.length ? `<div class="hint" style="margin-top:0;"><b>These three systems cannot run without one.</b>
+                PlayStation 3, PS Vita and Switch have no libretro core, so their presets launch a binary you
+                supply. Until one is installed those shelves have nothing behind them.</div>
+                ${needEmu.map(row).join('')}` : `<div class="hint" style="margin-top:0;">Every system that needs a
+                standalone emulator has one.</div>`}
+            ${altEmu.length ? `<div class="hint" style="margin-top:12px;"><b>Alternatives.</b> Each of these already
+                runs through a libretro core, so nothing here is missing. They are the standalone builds, which is
+                where the per-game fixes and the sharper upscaling live.</div>
+                ${altEmu.map(row).join('')}` : ''}
+            <button id="btn-omarchy-install-emus" style="width:100%; margin-top:10px;">Install Selected…</button>
+            <div class="hint">Opens a terminal running Omarchy's own package commands. Repo and AUR packages
+            are installed with different commands, so a mixed selection becomes two. Nothing here ever runs
+            <code>sudo</code> for you.</div>`));
+    }
+
+    // 5. Window behaviour. The learned-class list is shown because it is the one part of this
+    //    the user cannot otherwise see, and a missing entry explains a game that did not
+    //    fullscreen: it was that emulator's first launch.
+    if (s.isHyprland) {
+        const mode = s.settings.gameWindowMode;
+        const learned = s.settings.knownGameClasses;
+        cards.push(omarchyCard('How Emulators Open', 'window rules fullscreen float tile hyprland tiling', `
+            <div class="form-row" style="margin-top:6px;">
+                <label>When a game starts</label>
+                <select id="omarchy-window-mode">
+                    <option value="fullscreen" ${mode === 'fullscreen' ? 'selected' : ''}>Fullscreen (recommended)</option>
+                    <option value="float" ${mode === 'float' ? 'selected' : ''}>Floating window</option>
+                    <option value="tile" ${mode === 'tile' ? 'selected' : ''}>Leave it to the compositor</option>
+                </select>
+            </div>
+            <div class="hint">Tiled, an emulator is resized by the layout rather than by its aspect
+            ratio, which is what turns a clean 4:3 picture into a smeared one.</div>
+            ${omarchyToggle('omarchy-rules-chk', 'omarchy_window_rules', s.settings.windowRules,
+                'Let EmuLatte set window rules',
+                'Session-only, and nothing is ever written to your Hyprland config.')}
+            <div class="hint" style="margin-top:10px;">Emulators recognised so far:
+                <b>${learned.length ? escHtml(learned.join(', ')) : 'none yet'}</b>.
+                A new emulator is recognised by reading back the window it actually opens, so its
+                first launch is not affected and every one after it is.</div>
+            <button id="btn-omarchy-reload-rules" style="width:100%; margin-top:10px;">Apply Now</button>
+            <div class="hint">Rules normally take effect at the next start, because Hyprland cannot
+            withdraw one once it is set. This reloads your Hyprland config to clear them, which also
+            drops runtime rules set by other tools this session.</div>`));
+    }
+
+    // 6. Getting out of the way while you play.
+    cards.push(omarchyCard('While You Play', 'idle lock screen sleep power profile performance battery', `
+        ${omarchyToggle('omarchy-idle-chk', 'omarchy_hold_idle', s.settings.holdIdle,
+            'Hold the screen awake while a game runs',
+            'A pad-only Couch session produces no keyboard or mouse input at all, so the desktop’s idea of idle and yours have nothing in common. Held for exactly as long as the game runs, and released with it, so a crash cannot leave your lock screen disabled.')}
+        ${s.isOmarchy ? omarchyToggle('omarchy-power-chk', 'omarchy_power_profile', s.settings.powerProfile,
+            'Switch to the performance power profile while a game runs',
+            'The previous profile is captured before switching and put back afterwards, so this cannot strand a laptop on performance.') : ''}`));
+
+    // 7. Kernel tuning. This REPORTS. It never tunes: kernel parameters belong to the
+    //    distribution and to the person running the machine.
+    if (s.isOmarchy) {
+        const rows = s.tuning.map(t => {
+            const mark = t.ok === null ? '?' : t.ok ? '✓' : '✕';
+            const colour = t.ok === null ? 'var(--text_dim)' : t.ok ? 'var(--accent)' : 'var(--text_sec)';
+            return `<div style="margin-top:8px;">
+                <div style="font-size:12px;"><span style="color:${colour}; font-weight:900;">${mark}</span>
+                    ${escHtml(t.label)} <span style="color:var(--text_dim);">= ${escHtml(String(t.value))}</span></div>
+                ${t.ok ? '' : `<div class="hint">${escHtml(t.why)}</div>`}</div>`;
+        }).join('');
+        cards.push(omarchyCard('System Tuning', 'sysctl kernel tuning max_map_count split lock file limit', `
+            ${rows}
+            ${s.tuningCommand ? `
+                <button id="btn-omarchy-tuning" style="width:100%; margin-top:10px;">Fix in a Terminal…</button>
+                <div class="hint">Writes a <code>sysctl.d</code> drop-in so the change survives a reboot.
+                This app reports these and never changes them for you: kernel parameters belong to your
+                machine, and you see the command and type your own password.</div>`
+              : '<div class="hint" style="margin-top:10px;">Everything is already where it should be.</div>'}`));
+    }
+
+    host.innerHTML = cards.join('');
+    wireOmarchyPane();
+}
+
+function wireOmarchyPane() {
+    const status = el => { const n = document.getElementById(el); return n; };
+
+    document.getElementById('btn-omarchy-match-theme')?.addEventListener('click', () => {
+        applyTheme(OMARCHY_THEME);
+        if (_omarchyStatus?.settings.matchGeometry) applyOmarchyGeometry(_omarchyStatus.geometry?.rounding);
+        renderOmarchyPane();
+    });
+
+    document.querySelectorAll('#omarchy-pane [data-omarchy-flag]').forEach(chk => {
+        chk.addEventListener('change', async () => {
+            const key = chk.dataset.omarchyFlag;
+            await window.api.omarchySetFlag(key, chk.checked);
+            if (key === 'omarchy_match_geometry') {
+                applyOmarchyGeometry(chk.checked && _activeTheme === OMARCHY_THEME ? _omarchyStatus?.geometry?.rounding : null);
+            }
+            // Live, not on the next start: the title bar is right there and the whole point of
+            // the toggle is being able to see what it costs you.
+            if (key === 'omarchy_compact_chrome') applyCompactChrome(chk.checked);
+        });
+    });
+
+    document.querySelectorAll('#omarchy-pane [data-omarchy-installer]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const r = await window.api.omarchyRunInstaller(btn.dataset.omarchyInstaller);
+            btn.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+        });
+    });
+
+    document.getElementById('btn-omarchy-install-emus')?.addEventListener('click', async (e) => {
+        const keys = [...document.querySelectorAll('#omarchy-pane [data-omarchy-emu]:checked')].map(c => c.dataset.omarchyEmu);
+        if (!keys.length) { e.target.textContent = 'Pick something first.'; return; }
+        // Same handler as the tools button: installCommand() spans both catalogues, so a
+        // selection of emulators comes out as the same repo/AUR pair of commands.
+        const r = await window.api.omarchyInstallTools(keys);
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+    });
+
+    document.getElementById('btn-omarchy-install-tools')?.addEventListener('click', async (e) => {
+        const keys = [...document.querySelectorAll('#omarchy-pane [data-omarchy-tool]:checked')].map(c => c.dataset.omarchyTool);
+        if (!keys.length) { e.target.textContent = 'Pick something first.'; return; }
+        const r = await window.api.omarchyInstallTools(keys);
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+    });
+
+    document.getElementById('omarchy-window-mode')?.addEventListener('change', async (e) => {
+        await window.api.omarchySetWindowMode(e.target.value);
+    });
+
+    document.getElementById('btn-omarchy-reload-rules')?.addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        const r = await window.api.omarchyReloadRules();
+        e.target.textContent = r?.ok ? `Applied to ${r.applied} rule${r.applied === 1 ? '' : 's'}.` : (r?.error || 'Hyprland refused the reload.');
+    });
+
+    document.getElementById('btn-omarchy-tuning')?.addEventListener('click', async (e) => {
+        const r = await window.api.omarchyRunTuning();
+        e.target.textContent = r?.ok ? 'Opened in a terminal…' : (r?.error || 'Could not open a terminal.');
+    });
+
+    if (typeof enhanceAllSelects === 'function') enhanceAllSelects();
 }
 
 // ── UI WIRING ─────────────────────────────────────────────────────────────────
@@ -2519,16 +3260,9 @@ function wireUI() {
         renderList(getFilteredGames());
     });
 
-    // Refresh — reload the library AND scan every system's folder(s) for new ROMs
-    document.getElementById('btn-refresh-library').addEventListener('click', async () => {
-        const btn = document.getElementById('btn-refresh-library');
-        btn.style.animation = 'spin 0.6s linear infinite';
-        await loadGames();
-        let res = null;
-        try { res = await window.api.rescanNewGames(); } catch (e) {}
-        btn.style.animation = '';
-        await handleRescanResults(res);
-    });
+    // Rescan Library: read the ROMS folder again and make the library match it. The same
+    // scan runs on every launch; this is for after dropping files in with EmuLatte open.
+    document.getElementById('btn-rescan-library').addEventListener('click', () => rescanLibrary());
 
     // Gallery search — debounced so typing doesn't rebuild the whole grid on every keystroke
     wireGalleryDelegation();
@@ -2603,22 +3337,15 @@ function wireUI() {
 
     // Settings
     document.getElementById('btn-open-settings').addEventListener('click', async () => {
-        document.getElementById('settings-ss-user').value          = await window.api.getSetting('ss_user')           || '';
-        document.getElementById('settings-ss-pass').value          = await window.api.getSetting('ss_pass')           || '';
-        document.getElementById('settings-ra-user').value          = await window.api.getSetting('ra_user')           || '';
-        document.getElementById('settings-ra-key').value           = await window.api.getSetting('ra_api_key')        || '';
-        document.getElementById('settings-igdb-client-id').value   = await window.api.getSetting('igdb_client_id')    || '';
-        document.getElementById('settings-igdb-client-secret').value = await window.api.getSetting('igdb_client_secret') || '';
-        document.getElementById('settings-tgdb-key').value         = await window.api.getSetting('tgdb_api_key')      || '';
-        document.getElementById('settings-sgdb-key').value         = await window.api.getSetting('sgdb_api_key')      || '';
-        document.getElementById('settings-moby-key').value         = await window.api.getSetting('moby_api_key')      || '';
+        await loadSettingsCredentials();
         const z = await window.api.getSetting('zoom') || '1.0';
         document.querySelectorAll('.zoom-btn').forEach(b => b.classList.toggle('active', b.dataset.val === z));
         document.getElementById('settings-search').value = '';
         document.querySelectorAll('#modal-settings .tool-card').forEach(c => c.style.display = '');
         document.getElementById('settings-content').classList.remove('searching');
-        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b.dataset.pane === 'general'));
-        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'general'));
+        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b.dataset.pane === 'home'));
+        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'home'));
+        paintSettingsHome();
         document.getElementById('settings-content').scrollTop = 0;
         document.getElementById('settings-ss-status').textContent   = '';
         document.getElementById('settings-ra-status').textContent   = '';
@@ -3025,6 +3752,7 @@ function wireUI() {
             name:             document.getElementById('edit-system-name').value.trim(),
             short_name:       document.getElementById('edit-system-short').value.trim(),
             extensions:       document.getElementById('edit-system-extensions').value.trim(),
+            folder:           document.getElementById('edit-system-folder').value.trim(),
             launch_template:  document.getElementById('edit-system-template').value.trim(),
             default_core:     document.getElementById('edit-system-core').value.trim(),
             default_emulator: document.getElementById('edit-system-emulator').value.trim(),
@@ -3252,7 +3980,7 @@ function wireUI() {
 
     // RetroArch full settings menu
     document.getElementById('btn-ra-settings').addEventListener('click', openRaSettings);
-    const closeRaSettings = () => { closeModal('modal-ra-settings'); openModal('modal-settings'); };   // return to the Settings hub it came from
+    const closeRaSettings = async () => { closeModal('modal-ra-settings'); await loadSettingsCredentials(); openModal('modal-settings'); };   // return to the Settings hub it came from
     document.getElementById('btn-ra-set-close').addEventListener('click', closeRaSettings);
     document.getElementById('btn-ra-set-save').addEventListener('click', async () => {
         await window.api.raConfigSet(_raChanges);
@@ -3446,8 +4174,14 @@ function wireUI() {
         btn.textContent = 'Test Credentials';
         btn.disabled = false;
         if (result.ok) {
+            // ⚠️ Saved here, not only by the Save button. Credentials that have just proved
+            // they work are the ones the user believes are stored: "I entered them and it said
+            // connected". Leaving them unsaved until a separate button is pressed is how an
+            // account ends up blank while every scrape fails with no explanation.
+            await window.api.setSetting('ss_user', user);
+            await window.api.setSetting('ss_pass', pass);
             const quota = result.maxRequestsPerDay ? `, ${result.requestsToday || 0} of ${result.maxRequestsPerDay} requests used today` : '';
-            statusEl.textContent = `✓ Connected as ${result.username}${quota}`;
+            statusEl.textContent = `✓ Connected as ${result.username}${quota}. Saved.`;
             statusEl.style.color = 'var(--accent)';
         } else {
             statusEl.textContent = `✗ ${result.error}`;
@@ -3557,15 +4291,15 @@ function wireUI() {
         const z = zBtn ? zBtn.dataset.val : '1.0';
         await window.api.setSetting('zoom', z);
         window.api.setZoom(parseFloat(z));
-        await window.api.setSetting('ss_user',             document.getElementById('settings-ss-user').value.trim());
-        await window.api.setSetting('ss_pass',             document.getElementById('settings-ss-pass').value.trim());
-        await window.api.setSetting('ra_user',             document.getElementById('settings-ra-user').value.trim());
-        await window.api.setSetting('ra_api_key',          document.getElementById('settings-ra-key').value.trim());
-        await window.api.setSetting('igdb_client_id',      document.getElementById('settings-igdb-client-id').value.trim());
-        await window.api.setSetting('igdb_client_secret',  document.getElementById('settings-igdb-client-secret').value.trim());
-        await window.api.setSetting('tgdb_api_key',        document.getElementById('settings-tgdb-key').value.trim());
-        await window.api.setSetting('sgdb_api_key',        document.getElementById('settings-sgdb-key').value.trim());
-        await window.api.setSetting('moby_api_key',        document.getElementById('settings-moby-key').value.trim());
+        // ⚠️ Only when the form was actually filled from storage. Settings can be reopened by
+        // routes that do not populate it (coming back from the theme picker, for one), and this
+        // handler used to write every field unconditionally: one Save on a blank form wiped
+        // every API key the user had, silently, and every scrape afterwards failed with no
+        // reason given. A field that was never loaded is not an instruction to erase anything.
+        if (_settingsPopulated) {
+            for (const [key, id] of CREDENTIAL_FIELDS)
+                await window.api.setSetting(key, document.getElementById(id).value.trim());
+        }
         closeModal('modal-settings');
     });
     document.getElementById('btn-settings-open-data-dir').addEventListener('click', async () => {
@@ -3856,8 +4590,9 @@ function wireUI() {
         openModal('modal-themes');
     });
     document.getElementById('btn-close-themes').addEventListener('click', () => closeModal('modal-themes'));
-    document.getElementById('btn-theme-back').addEventListener('click', () => {
+    document.getElementById('btn-theme-back').addEventListener('click', async () => {
         closeModal('modal-themes');
+        await loadSettingsCredentials();   // reopening without this is what made Save destructive
         openModal('modal-settings');
     });
 
@@ -3885,16 +4620,135 @@ function wireUI() {
         item.addEventListener('click', () => {
             const pane = item.dataset.pane;
             if (pane === 'express') renderExpressSettings();   // load fresh + render the chips on entry
+            if (pane === 'omarchy') renderOmarchyPane();       // re-probe on entry, so an install just done in a terminal shows
+            if (pane === 'library')  renderLibraryPane();      // re-read the folders on entry, so a drive just plugged in shows
             document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b === item));
             document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
             document.getElementById('settings-content').scrollTop = 0;
         });
     });
+    // ── Settings landing page ──
+    document.getElementById('btn-cp-home-updates')?.addEventListener('click', async () => {
+        const st = document.getElementById('cp-home-update-status');
+        if (st) st.textContent = 'Opening the releases page in your browser\u2026';
+        await window.api.openExternal('https://github.com/FromChaosComesClarity/EmuLatte/releases/latest');
+    });
+    // Cleanup sits at the foot of the rail, like the sibling app's, and goes straight to the
+    // card that does it rather than being a second implementation of it.
+    document.getElementById('btn-rail-cleanup')?.addEventListener('click', () => {
+        document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === 'data'));
+        const card = document.getElementById('btn-clean-media')?.closest('.tool-card');
+        if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.style.outline = '1px solid var(--accent)'; setTimeout(() => { card.style.outline = ''; }, 1600); }
+    });
+
     // Manage Systems reachable from the hub (close Settings first so two blurred modals don't stack)
     document.getElementById('btn-settings-manage-systems').addEventListener('click', () => { closeModal('modal-settings'); openSystemsModal(); });
 
-    // About — the CN/EL rail badge. Escape is handled by the global keydown handler below;
-    // like the other modals here, the backdrop is not click-to-close.
+    // ── Settings \u203a Library ──
+    document.getElementById('btn-library-rescan').addEventListener('click', async () => {
+        const st = document.getElementById('library-scan-status');
+        st.textContent = 'Reading the ROMS folder\u2026';
+        const res = await rescanLibrary('btn-library-rescan', 'library-scan-status');
+        st.textContent = scanSummary(res);
+        renderLibraryPane();
+    });
+    document.getElementById('btn-sp-cancel').addEventListener('click', () => closeModal('modal-save-pick'));
+    document.getElementById('btn-scan-close').addEventListener('click', () => closeModal('modal-scan'));
+    document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
+    document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
+    document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);
+    document.getElementById('btn-welcome-add-menu')?.addEventListener('click', () => toggleMenuEntries('wlc-menu-status'));
+    document.getElementById('btn-settings-add-menu')?.addEventListener('click', () => toggleMenuEntries('settings-menu-status'));
+    document.getElementById('btn-welcome-install-cores')?.addEventListener('click', () => installMissingCores('btn-welcome-install-cores', 'wlc-play-body'));
+    // ── Moving the library onto a drive, or adopting one that is already there ──
+    const libStatus = (msg, bad) => {
+        const el = document.getElementById('library-data-status');
+        el.textContent = msg; el.style.color = bad ? '#ef5350' : 'var(--accent)';
+    };
+    document.getElementById('btn-library-move').addEventListener('click', async () => {
+        const go = await showConfirm(
+            'EmuLatte will copy the database, the artwork, the trailers and the manuals to the folder you pick, then use them from there.\n\n'
+            + 'The copies here are renamed rather than deleted, so nothing is thrown away, and EmuLatte restarts when it is done.\n\n'
+            + 'Your ROMS and BIOS folders are not touched.',
+            'Choose a folder', false, 'Move the library');
+        if (!go) return;
+        libStatus('Copying\u2026', false);
+        const r = await window.api.moveLibraryTo();
+        if (r?.canceled) { libStatus('', false); return; }
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus(`Copied ${r.copied} item${r.copied !== 1 ? 's' : ''} to ${r.target}. Restarting\u2026`, false);
+    });
+    document.getElementById('btn-library-use').addEventListener('click', async () => {
+        const r = await window.api.useLibraryAt();
+        if (r?.canceled) return;
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus(`Using the library at ${r.target}. Restarting\u2026`, false);
+    });
+    document.getElementById('btn-library-home').addEventListener('click', async () => {
+        const go = await showConfirm(
+            'EmuLatte will go back to the library folder beside it. Nothing on the drive is deleted, and you can point at it again later.',
+            'Bring it back', false, 'Library location');
+        if (!go) return;
+        const r = await window.api.libraryBackHome();
+        if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
+        libStatus('Going back to the local library. Restarting\u2026', false);
+    });
+    document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
+    document.getElementById('btn-library-open-bios').addEventListener('click', () => window.api.openLibraryFolder('bios'));
+    document.getElementById('btn-library-set-roms').addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('roms');
+        if (r?.canceled) return;
+        if (!r?.ok) { showAlert(r?.error || 'That folder could not be used.', 'ROMS folder'); return; }
+        await applyScanResult(r.scan, { quiet: false });
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-set-bios').addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('bios');
+        if (r?.canceled) return;
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-reset-roms').addEventListener('click', async () => {
+        await window.api.resetLibraryRoot('roms');
+        const res = await rescanLibrary('btn-library-reset-roms');
+        document.getElementById('library-scan-status').textContent = scanSummary(res);
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-reset-bios').addEventListener('click', async () => {
+        await window.api.resetLibraryRoot('bios');
+        renderLibraryPane();
+    });
+    document.getElementById('btn-library-restore-systems').addEventListener('click', async () => {
+        const r = await window.api.restoreDefaultSystems();
+        if (!r?.ok) { showAlert(r?.error || 'The systems could not be restored.', 'Systems'); return; }
+        await loadSystems();
+        await applyScanResult(r.scan, { quiet: true });
+        document.getElementById('library-scan-status').textContent =
+            r.inserted ? `Brought back ${r.inserted} system${r.inserted !== 1 ? 's' : ''}.` : 'Every system was already here.';
+        renderLibraryPane();
+    });
+
+    // About, opened from the CL/EL rail badge. Escape is handled by the global keydown
+    // handler below; like the other modals here, the backdrop is not click-to-close.
+    // Settings, then General: the same screen on demand. Settings closes first so two
+    // blurred overlays cannot stack, which is what the Manage Systems button does too.
+    document.getElementById('btn-settings-first-run')?.addEventListener('click', async () => {
+        closeModal('modal-settings');
+        let seen = '';
+        try { seen = await window.api.getSetting('welcome_shown'); } catch {}
+        await showWelcome(seen === '1');
+    });
+
+    document.getElementById('btn-welcome-done')?.addEventListener('click', dismissWelcome);
+    document.getElementById('btn-welcome-open-roms')?.addEventListener('click', () => window.api.openLibraryFolder('roms'));
+    document.getElementById('btn-welcome-set-roms')?.addEventListener('click', async () => {
+        const r = await window.api.setLibraryRoot('roms');
+        if (r?.canceled) return;
+        showWelcomeRomsPath();
+        if (r?.ok) await applyScanResult(r.scan, { quiet: false });
+    });
+    document.getElementById('btn-welcome-manual')?.addEventListener('click', () => { dismissWelcome(); window.api.openUserManual(); });
+
     document.getElementById('btn-about').addEventListener('click', () => openModal('modal-about'));
     document.getElementById('btn-close-about').addEventListener('click', () => closeModal('modal-about'));
     // User manual — reachable from About and from Settings → General.
@@ -4509,7 +5363,13 @@ async function runScrapeWorker() {
         updateScrapeCount();
 
         const result = await item.scraperFn(item.id);
-        if (!result?.ok) scrapeStats.failed++;
+        if (!result?.ok) {
+            scrapeStats.failed++;
+            // Keep the first real reason. A run of 48 failures with one cause is one problem,
+            // and "48 failed" on its own sent the last one looking in the wrong place.
+            if (!scrapeStats.reason && result?.error) scrapeStats.reason = String(result.error);
+            if (result?.authFailed) scrapeStats.authFailed = true;
+        }
         else if (result.session) updateRateInfo(result.session);
         scrapeStats.done++;
         updateScrapeCount();
@@ -4518,7 +5378,7 @@ async function runScrapeWorker() {
         if (item.isSS && scrapeQueue.length && !scrapeCancelled) await new Promise(r => setTimeout(r, 1500));
     }
 
-    const { done, failed } = scrapeStats;
+    const { done, failed, reason, authFailed } = scrapeStats;
     const cancelled = scrapeCancelled;
     scrapeQueue   = [];
     scrapeStats   = { done: 0, failed: 0, total: 0 };
@@ -4532,9 +5392,14 @@ async function runScrapeWorker() {
     }
 
     const verb = cancelled ? 'Stopped' : 'Done';
-    const msg  = failed
-        ? `${verb}. ${done - failed} scraped, ${failed} failed.`
-        : `${verb}. ${done} ROM${done !== 1 ? 's' : ''} scraped.`;
+    let msg;
+    if (!failed) msg = `${verb}. ${done} ROM${done !== 1 ? 's' : ''} scraped.`;
+    else if (authFailed || (done - failed === 0 && failed > 2))
+        // Everything failed, or the scraper said the login was rejected: one cause, named.
+        msg = `${verb}. Nothing scraped, ${failed} failed. ${authFailed
+            ? 'The scraper rejected the login. Check the account in Settings \u203a Scrapers and press Test Credentials.'
+            : (reason || 'Same error every time, so this is one problem rather than 48.')}`;
+    else msg = `${verb}. ${done - failed} scraped, ${failed} failed.${reason ? ` First error: ${reason}` : ''}`;
     showLaunchToast(msg, null);
 }
 
@@ -4555,29 +5420,327 @@ function enqueueScrapeIds(ids, source) {
     else runScrapeWorker();
 }
 
-// Refresh rescan → import the new ROMs, then offer to scrape them (source picker).
-async function handleRescanResults(res) {
-    const entries = res?.entries || [];
-    if (!entries.length) {
-        showLaunchToast(res?.folders
-            ? 'Library up to date — no new games found.'
-            : 'No ROM folders to scan yet — add a game or connect your drive first.', null);
-        return;
+// ── SETTINGS \u203a LIBRARY ────────────────────────────────────────────────────
+// Where the folders are, which system reads from which one, and what the BIOS folder is
+// missing. Re-read every time the pane opens, so a drive plugged in a second ago shows up.
+// ── READY TO PLAY ─────────────────────────────────────────────────────────────
+// One answer to "will my games actually start": is RetroArch here, can its config see the
+// cores, and does every system holding games have the core it names. Anything missing comes
+// with the button that fixes it.
+let _missingCores = [];
+async function renderPlayReadiness(bodyId = 'play-ready-body', btnId = 'btn-install-missing-cores') {
+    const body = document.getElementById(bodyId);
+    const btn  = document.getElementById(btnId);
+    if (!body) return null;
+    let r = null;
+    try { r = await window.api.playReadiness(); } catch {}
+    if (!r?.ok) { body.textContent = 'Could not check.'; return null; }
+
+    if (r.retroarch === 'none') {
+        body.innerHTML = `<b style="color:#ef5350;">RetroArch is not installed.</b> Almost every system here runs through it. Install it from your package manager (on Omarchy the First Run screen offers to do it for you), then come back.`;
+        if (btn) btn.style.display = 'none';
+        return r;
     }
-    const newIds = [];
-    for (const e of entries) {
-        let romPath = e.path;
-        if (e.kind === 'multidisc') { const r = await window.api.createM3u({ title: e.title, discs: e.discs }); if (r?.ok) romPath = r.path; }
-        const id = await window.api.addGame({ system_id: e.system_id, title: e.title, rom_path: romPath });
-        if (id) newIds.push(id);
+    _missingCores = r.needed || [];
+    // How the picture gets drawn, which decides whether a game runs at full speed and whether
+    // the shaders can load at all.
+    const sh = r.shader || {};
+    // A shader that cannot load is the worst kind of setting: it looks applied and does
+    // nothing. Say so plainly, naming the one that is set.
+    let shLine = '';
+    if (!sh.enabled) shLine = ' No shader set.';
+    else if (sh.resolves) shLine = ` Shader: <b>${escHtml(sh.name)}</b>.`;
+    else shLine = ` <span style="color:#ef5350;">The shader you picked, <b>${escHtml(sh.name)}</b>, cannot load`
+        + (sh.needsPack ? ': it builds on libretro&rsquo;s shader pack, which is not downloaded yet.' : ': its files are missing.')
+        + '</span>';
+    const drvLine = `Rendering with <b>${escHtml(r.videoDriver)}</b>.`
+        + (r.videoDriver === 'gl'
+            ? ` <span style="color:#ef5350;">That is the legacy driver: it runs roughly half speed with a shader at full resolution, and cannot load slang shaders at all. ${escHtml(r.recommendedDriver)} is the one to use.</span>`
+            : '')
+        + shLine
+        + (r.autoShaders ? ' <span style="color:#ef5350;">RetroArch is also auto-loading presets of its own, so a game may show a shader you did not choose.</span>' : '');
+    if (!r.missing.length) {
+        const n = r.ready.reduce((a, x) => a + x.games, 0);
+        body.innerHTML = (r.ready.length
+            ? `<b style="color:var(--accent);">Everything is ready.</b> ${n} game${n !== 1 ? 's' : ''} across ${r.ready.length} system${r.ready.length !== 1 ? 's' : ''}, every core installed. ${r.coresFound} cores found in ${r.coreDirs.length} folder${r.coreDirs.length !== 1 ? 's' : ''}.`
+            : `No games yet. Drop ROMs into the folders below and press Rescan Library.`)
+            + `<div style="margin-top:6px; color:var(--text_dim);">${drvLine}</div>`;
+        if (btn) btn.style.display = 'none';
+        _toggleShaderBtn(r);
+        return r;
     }
-    await loadGames();
-    const n = newIds.length;
-    if (!n) return;
+    const rows = r.missing.map(m =>
+        `<div style="display:flex; gap:8px; padding:3px 0;"><span style="flex:1;">${escHtml(m.name)}</span>`
+        + `<span style="color:var(--text_dim);">${m.games} game${m.games !== 1 ? 's' : ''}</span>`
+        + `<code style="color:#ef5350; font-size:10px;">${escHtml(m.base || m.reason)}</code></div>`).join('');
+    body.innerHTML = `<b>${r.missing.length} system${r.missing.length !== 1 ? 's' : ''} cannot play yet</b>, because the core each one needs is not on this machine.`
+        + `<div style="margin-top:6px;">${rows}</div>`
+        + `<div style="margin-top:6px; color:var(--text_dim);">${drvLine}</div>`;
+    _toggleShaderBtn(r);
+    if (btn && _missingCores.length) { btn.style.display = ''; btn.textContent = `Install ${_missingCores.length} missing core${_missingCores.length !== 1 ? 's' : ''}`; }
+    return r;
+}
+
+// The shader pack is EmuLatte's own, downloaded into its folder rather than borrowed from the
+// host, so the button only shows while there is nothing there.
+function _toggleShaderBtn(r) {
+    // Offered whenever the pack is missing, and doubly so when a shader is set that needs it.
+    const want = !!r && (!r.hasShaders || r.shader?.needsPack);
+    for (const id of ['btn-download-shaders', 'btn-welcome-shaders']) {
+        const b = document.getElementById(id);
+        if (!b) continue;
+        b.style.display = want ? '' : 'none';
+        if (want) b.classList.toggle('primary', !!r.shader?.needsPack);
+    }
+}
+async function downloadShaders() {
+    const b = document.getElementById('btn-download-shaders');
+    const st = document.getElementById('play-ready-progress');
+    if (b) { b.disabled = true; b.textContent = 'Downloading the shader pack...'; }
+    let r = null;
+    try { r = await window.api.downloadShaderPack(); } catch (e) { r = { ok: false, error: String(e) }; }
+    if (b) { b.disabled = false; b.textContent = 'Download the shader pack'; }
+    if (st) st.textContent = r?.ok ? `Installed ${r.files} shader files into EmuLatte's own folder.` : (r?.error || 'The shader pack could not be downloaded.');
+    renderPlayReadiness();
+}
+
+// Fetch every core the library is short of, reporting as it goes.
+async function installMissingCores(btnId = 'btn-install-missing-cores', statusId = 'play-ready-progress') {
+    const btn = document.getElementById(btnId);
+    const st  = document.getElementById(statusId);
+    const list = [..._missingCores];
+    if (!list.length) return;
+    if (btn) { btn.disabled = true; }
+    let done = 0; const failed = [];
+    for (const base of list) {
+        if (st) st.textContent = `Downloading ${base} (${done + 1} of ${list.length})...`;
+        let r = null;
+        try { r = await window.api.installCore(base); } catch (e) { r = { ok: false, error: String(e) }; }
+        if (r?.ok) done++; else failed.push(base);
+    }
+    await loadCores();
+    if (btn) btn.disabled = false;
+    if (st) st.textContent = failed.length
+        ? `Installed ${done}. These could not be downloaded: ${failed.join(', ')}.`
+        : `Installed ${done} core${done !== 1 ? 's' : ''}. Your library is ready to play.`;
+    await renderPlayReadiness(btnId === 'btn-welcome-install-cores' ? 'wlc-play-body' : 'play-ready-body', btnId);
+}
+
+// The version chip on the landing page, straight from package.json.
+async function paintSettingsHome() {
+    const el = document.getElementById('cp-home-version');
+    if (!el) return;
+    let v = '';
+    try { v = await window.api.getAppVersion(); } catch {}
+    el.innerHTML = `<span style="width:8px; height:8px; background:var(--accent); display:inline-block;"></span>Version ${escHtml(v || '?')}`;
+    const st = document.getElementById('cp-home-update-status');
+    if (st) st.textContent = '';
+}
+
+// Every credential the Settings form owns, in one list, so saving and loading cannot drift.
+const CREDENTIAL_FIELDS = [
+    ['ss_user',            'settings-ss-user'],
+    ['ss_pass',            'settings-ss-pass'],
+    ['ra_user',            'settings-ra-user'],
+    ['ra_api_key',         'settings-ra-key'],
+    ['igdb_client_id',     'settings-igdb-client-id'],
+    ['igdb_client_secret', 'settings-igdb-client-secret'],
+    ['tgdb_api_key',       'settings-tgdb-key'],
+    ['sgdb_api_key',       'settings-sgdb-key'],
+    ['moby_api_key',       'settings-moby-key'],
+];
+let _settingsPopulated = false;
+async function loadSettingsCredentials() {
+    for (const [key, id] of CREDENTIAL_FIELDS) {
+        const el = document.getElementById(id);
+        if (el) el.value = (await window.api.getSetting(key)) || '';
+    }
+    _settingsPopulated = true;
+}
+
+// Where the library is kept, and the three ways to change it.
+async function renderLibraryLocation() {
+    let r = null;
+    try { r = await window.api.libraryLocation(); } catch {}
+    if (!r?.ok) return;
+    const pathEl = document.getElementById('library-data-path');
+    const noteEl = document.getElementById('library-data-note');
+    const mb = (r.bytes / 1048576).toFixed(0);
+    pathEl.textContent = r.dir;
+    document.getElementById('btn-library-home').style.display = r.external ? '' : 'none';
+    if (r.unreachable) {
+        noteEl.innerHTML = `<span style="color:#ef5350;">The library you chose is on <b>${escHtml(r.wanted)}</b>, which is not connected. EmuLatte is using the folder beside it instead, so what you see here is not that library. Plug the drive in and restart.</span>`;
+    } else if (r.external) {
+        noteEl.innerHTML = `<span style="color:var(--accent);">Kept on a drive, ${mb} MB. Point another computer's EmuLatte at this same folder and it has this library.</span>`;
+    } else {
+        noteEl.innerHTML = `<span style="color:var(--text_dim);">Beside EmuLatte, ${mb} MB.</span>`;
+    }
+}
+
+async function renderLibraryPane() {
+    renderPlayReadiness();
+    renderLibraryLocation();
+    let rep = null;
+    try { rep = await window.api.libraryFolders(); } catch {}
+    if (!rep?.ok) return;
+
+    const romsEl = document.getElementById('library-roms-path');
+    romsEl.textContent = rep.root + (rep.rootExists ? '' : '   (not there right now)');
+    romsEl.style.color = rep.rootExists ? '' : '#ef5350';
+    document.getElementById('btn-library-reset-roms').style.display = rep.isDefaultRoot ? 'none' : '';
+    document.getElementById('library-bios-path').textContent = rep.bios;
+
+    const list = document.getElementById('library-folder-list');
+    list.innerHTML = rep.systems.map(sys => {
+        const extra = sys.extras.length ? ` + ${sys.extras.join(', ')}` : '';
+        const state = sys.games
+            ? `<span style="color:var(--accent); font-weight:900;">${sys.games}</span>`
+            : `<span style="color:var(--text_dim);">empty</span>`;
+        return `<div style="display:flex; align-items:baseline; gap:8px; padding:5px 9px; border-bottom:1px solid var(--border); font-size:11px;">
+            <span style="flex:1 1 auto; color:var(--text_sec);">${escHtml(sys.name)}</span>
+            <code style="color:${sys.exists ? 'var(--text_dim)' : '#ef5350'}; font-size:10px;">${escHtml(sys.folder + extra)}</code>
+            <span style="width:48px; text-align:right;">${state}</span>
+        </div>`;
+    }).join('') || '<div style="padding:10px; font-size:11px; color:var(--text_dim);">No systems.</div>';
+
+    const dis = document.getElementById('library-dismissed');
+    dis.textContent = rep.dismissed.length
+        ? `Deleted and not seeded again: ${rep.dismissed.join(', ')}.`
+        : '';
+
+    const bEl = document.getElementById('library-bios-status');
+    bEl.textContent = 'Checking the BIOS folder\u2026';
+    let bios = null;
+    try { bios = await window.api.biosOverview(); } catch {}
+    if (!bios?.ok) { bEl.textContent = ''; return; }
+    const short = new Map(allSystems.map(sy => [sy.short_name, sy.name]));
+    const need = bios.systems.filter(b => b.missingRequired.length).map(b => short.get(b.short_name) || b.short_name);
+    const have = bios.systems.reduce((n, b) => n + (b.total - b.missing.length), 0);
+    const total = bios.systems.reduce((n, b) => n + b.total, 0);
+    const parts = [];
+    if (bios.pendingImport) parts.push(`Waiting to bring BIOS files across from ${bios.pendingImport} \u2014 that folder is not reachable yet.`);
+    if (!bios.systems.length) parts.push('Nothing in the BIOS database to check.');
+    else {
+        parts.push(`${have} of the ${total} BIOS files EmuLatte knows about are in this folder.`);
+        parts.push(need.length
+            ? `Cannot run without a file that is missing: ${need.slice(0, 10).join(', ')}${need.length > 10 ? `, and ${need.length - 10} more` : ''}.`
+            : 'No system is missing a file it cannot run without.');
+    }
+    bEl.textContent = parts.join(' ');
+}
+
+// ── THE LIBRARY SCAN ──────────────────────────────────────────────────────────
+// The scan itself is the main process's job (it runs on every launch, before any face is up).
+// All of this is reporting: reload what changed, say so, and offer to scrape whatever is new.
+let _lastScanSeen = 0;
+
+// Only the rescan the user asked for reports itself; the one on every launch stays quiet.
+// ⚠️ Two backdrop-filter overlays must not stack, so a rescan started from inside Settings
+// reports on the card that started it instead of opening a window over the top.
+let _scanModalOpen = false;
+let _scanInlineEl = null;
+const SCAN_PHASES = {
+    bios:      'Checking the BIOS folder',
+    reading:   'Reading the ROMS folder',
+    importing: 'Adding what is new',
+    tidying:   'Folding in duplicates',
+    checking:  'Checking for games whose file has gone',
+};
+function scanProgressText(info) {
+    const phase = SCAN_PHASES[info.phase] || 'Working';
+    if (!info.system) return info.total ? `${phase}: ${info.step} of ${info.total}` : `${phase}\u2026`;
+    return info.total ? `${phase}: ${info.system} (${info.step} of ${info.total})` : `${phase}: ${info.system}`;
+}
+function paintScanProgress(info) {
+    if (!info) return;
+    if (_scanInlineEl) { _scanInlineEl.textContent = scanProgressText(info); return; }
+    if (!_scanModalOpen) return;
+    const phase = document.getElementById('scan-phase');
+    const detail = document.getElementById('scan-detail');
+    const bar = document.getElementById('scan-bar');
+    if (phase) phase.textContent = SCAN_PHASES[info.phase] || 'Working';
+    if (detail) detail.textContent = info.system
+        ? (info.total ? `${info.system} (${info.step} of ${info.total})` : info.system)
+        : (info.total ? `${info.step} of ${info.total}` : '');
+    if (bar) bar.style.width = info.total ? `${Math.round((info.step / info.total) * 100)}%` : '';
+}
+
+async function rescanLibrary(btnId = 'btn-rescan-library', inlineStatusId = null) {
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.disabled = true; btn.style.animation = 'spin 0.6s linear infinite'; }
+    const settingsOpen = document.getElementById('modal-settings')?.classList.contains('active');
+    _scanInlineEl = settingsOpen && inlineStatusId ? document.getElementById(inlineStatusId) : null;
+
+    if (!_scanInlineEl) {
+        // Show what is happening rather than freezing a button: a big collection is several
+        // seconds of nothing otherwise, and nothing looks like a hang.
+        _scanModalOpen = true;
+        document.getElementById('scan-result').style.display = 'none';
+        document.getElementById('btn-scan-close').style.display = 'none';
+        document.getElementById('scan-phase').textContent = 'Starting\u2026';
+        document.getElementById('scan-detail').textContent = '';
+        document.getElementById('scan-bar').style.width = '0%';
+        openModal('modal-scan');
+    }
+
+    let res = null;
+    try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
+    if (btn) { btn.disabled = false; btn.style.animation = ''; }
+
+    if (_scanModalOpen) {
+        document.getElementById('scan-bar').style.width = '100%';
+        document.getElementById('scan-phase').textContent = res?.ok ? 'Done' : 'Could not finish';
+        document.getElementById('scan-detail').textContent = res?.ok
+            ? `${res.folders} folder${res.folders !== 1 ? 's' : ''} read in ${((res.ms || 0) / 1000).toFixed(1)}s`
+            : '';
+        const out = document.getElementById('scan-result');
+        out.textContent = scanSummary(res);
+        out.style.display = '';
+        document.getElementById('btn-scan-close').style.display = '';
+        _scanModalOpen = false;
+    }
+    _scanInlineEl = null;
+
+    await applyScanResult(res, { quiet: true, noToast: true });
+    return res;
+}
+
+function scanSummary(res) {
+    if (!res?.ok) return res?.error || 'The library could not be read.';
+    const bits = [];
+    if (res.added)   bits.push(`Added ${res.added} game${res.added !== 1 ? 's' : ''}`);
+    // Adoption is the headline when it happens: games came back rather than doubling.
+    if (res.revived) bits.push(`${res.revived} game${res.revived !== 1 ? 's' : ''} playable again from the new folder, art and all`);
+    if ((res.adopted || 0) - (res.revived || 0) > 0) bits.push(`${res.adopted - res.revived} re-pointed at the ROMS folder`);
+    if (res.merged)  bits.push(`${res.merged} duplicate${res.merged !== 1 ? 's' : ''} folded back into the scraped entry`);
+    if (res.removed) bits.push(`removed ${res.removed} whose file had gone`);
+    if (!bits.length) return res.rootExists
+        ? `Library up to date. Nothing new in ${res.folders} folder${res.folders !== 1 ? 's' : ''}.`
+        : 'The ROMS folder is not there. Settings \u203a Library says where EmuLatte is looking.';
+    const top = (res.systems || []).slice(0, 3).map(x => `${x.system} (${x.added})`).join(', ');
+    return bits.join(', ') + '.' + (top ? ` ${top}.` : '');
+}
+
+async function applyScanResult(res, { quiet = false, noToast = false } = {}) {
+    if (!res) return;
+    if (res.at && res.at === _lastScanSeen) return;    // the same scan reaching us twice
+    _lastScanSeen = res.at || Date.now();
+    const changed = res.added || res.removed || res.adopted || res.merged;
+    if (changed) { await loadSystems(); await loadGames(); }
+    // Second guard, under the one-shot delivery: never offer to scrape a game that already
+    // has something. Whatever the plumbing does, a scraped game is not a pending job.
+    const unscraped = (res.newIds || []).filter(id => {
+        const g = gamesById.get(id);
+        return g && !g.cover && !g.hero && !g.logo && !g.screenshot && !g.description && !g.screenscraper_id;
+    });
+    if ((!quiet || changed) && !noToast) showLaunchToast(scanSummary(res), null, 'LIBRARY');
+    if (!unscraped.length) return;
+    const newIds = unscraped;
+    // Anything new has a filename for a title and no art, so offer to fill it in right away.
     _scraperPickerMode = 'batchIds';
     _scrapeBatchIds    = newIds;
     const statusEl = document.getElementById('scraper-picker-status');
-    statusEl.textContent = `Added ${n} new game${n !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
+    statusEl.textContent = `Added ${newIds.length} new game${newIds.length !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
     statusEl.style.color = 'var(--accent)';
     openModal('modal-scraper-picker');
 }
@@ -4639,3 +5802,200 @@ function escHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── LIBRARY REPORT ───────────────────────────────────────────────────────────
+// Settings, Library Report. The main process gathers the stats and renders the report
+// (report-main.js); this side only picks what goes in, shows the preview and asks for a
+// file. The preview is the real report document in an iframe, scaled to fit, so what is shown
+// is exactly what gets saved.
+(() => {
+    const $ = id => document.getElementById(id);
+    const modal = $('modal-report');
+    if (!modal) return;
+    const frame = $('rp-frame'), stage = $('rp-stage'), status = $('rp-status');
+const REPORT_UI = {
+        title_default: 'My ROM library', no_data: 'Nothing to show yet', rendering: 'Rendering…',
+        style_clarity: 'EmuLatte', style_afterglow: 'Afterglow', style_daylight: 'Daylight', style_theme: 'My theme',
+        format_document_hint: 'One long page. Save it as a web page or a PDF.',
+        format_poster_hint: 'Everything you picked on a single image. Shows up to six items.',
+        format_cards_hint: 'One image per item, made for a carousel post.',
+        save_html: 'Save as Web Page', save_pdf: 'Save as PDF', save_image: 'Save Image', save_images: 'Save Images',
+        saved: 'Saved to {path}', saved_many: 'Saved {n} images to {path}', failed: 'Could not save the report: {error}',
+        nothing_selected: 'Pick at least one item to build a report.', days: '{n} days',
+    };
+    const SECTION_NAMES = { overview: 'The library', systems: 'Systems', recent: 'Lately', genres: 'Genres', achievements: 'RetroAchievements', couch: 'Couch co-op', ratings: 'Ratings', decades: 'Across the decades', studios: 'Studios', playlists: 'Playlists', favourites: 'Favourites', clarity: 'Clarity' };
+    const fill = (text, vars = {}) => String(text).replace(/\{(\w+)\}/g, (_, k) => vars[k] !== undefined ? vars[k] : `{${k}}`);
+    const STYLE_SWATCH = {
+        emulatte:  ['#1b120d', 'linear-gradient(90deg,#d4a373,#ff8f5e)'],
+        afterglow: ['#1c1020', 'linear-gradient(90deg,#ff7a59,#ffc56b)'],
+        daylight:  ['#eef1f5', 'linear-gradient(90deg,#2344ff,#ff4d2e)'],
+    };
+    let prefs = null, sectionInfo = [], previewTimer = null, previewSeq = 0, busy = false;
+    const R = (key, vars) => fill(REPORT_UI[key] || key, vars);
+    const sectionName = id => SECTION_NAMES[id] || id;
+
+    const defaults = () => ({
+        title: R('title_default'), subtitle: '', sections: null, style: 'emulatte',
+        layout: 'cards', size: 'portrait', recentDays: 30,
+    });
+
+    // "My theme" is read off the live stylesheet, so it follows whatever theme is on screen
+    // without a second copy of the theme table.
+    function themeTokens() {
+        const cs = getComputedStyle(document.documentElement);
+        const v = k => cs.getPropertyValue(`--${k}`).trim();
+        return { bg: v('bg'), bg_menu: v('bg_menu'), bg_panel: v('bg_panel'), accent: v('accent'), accent_menu: v('accent_menu'),
+                 text_main: v('text_main'), text_sec: v('text_sec'), text_dim: v('text_dim'), border: v('border'),
+                 font: (EL_THEMES[_activeTheme] && EL_THEMES[_activeTheme].font) || '' };
+    }
+    const payload = () => ({ ...prefs, theme: themeTokens() });
+    const save = () => { try { window.api.setSetting('report_prefs', JSON.stringify(prefs)); } catch {} };
+    const chosen = () => sectionInfo.filter(s => s.available && (prefs.sections ? prefs.sections.includes(s.id) : true)).map(s => s.id);
+
+    function setStatus(text, isError) { status.textContent = text || ''; status.classList.toggle('err', !!isError); }
+
+    function renderSections() {
+        const box = $('rp-sections');
+        const picked = new Set(chosen());
+        box.innerHTML = '';
+        for (const s of sectionInfo) {
+            const label = document.createElement('label');
+            label.className = `rp-sec${s.available ? (picked.has(s.id) ? ' on' : '') : ' off'}`;
+            if (!s.available) label.title = R('no_data');
+            const box2 = document.createElement('input');
+            box2.type = 'checkbox'; box2.id = `rp-sec-${s.id}`; box2.checked = s.available && picked.has(s.id); box2.disabled = !s.available;
+            box2.addEventListener('change', () => {
+                const next = new Set(chosen());
+                box2.checked ? next.add(s.id) : next.delete(s.id);
+                prefs.sections = sectionInfo.map(x => x.id).filter(id => next.has(id));
+                label.classList.toggle('on', box2.checked);
+                changed();
+            });
+            const span = document.createElement('span'); span.textContent = sectionName(s.id);
+            label.append(box2, span);
+            box.appendChild(label);
+        }
+    }
+
+    function renderStyles() {
+        const box = $('rp-styles');
+        box.innerHTML = '';
+        const tok = themeTokens();
+        for (const id of ['emulatte', 'afterglow', 'daylight', 'theme']) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = `rp-style${prefs.style === id ? ' active' : ''}`; b.dataset.val = id;
+            const [bg, bar] = STYLE_SWATCH[id] || [tok.bg || '#111', tok.accent || '#2fe0d6'];
+            b.innerHTML = `<span class="rp-swatch" style="background:${bg}"><i style="background:${bar}"></i></span><span></span>`;
+            b.lastChild.textContent = R(id === 'emulatte' ? 'style_clarity' : `style_${id}`);
+            b.addEventListener('click', () => { prefs.style = id; renderStyles(); changed(); });
+            box.appendChild(b);
+        }
+    }
+
+    function syncSegments() {
+        for (const [id, key] of [['rp-format', 'layout'], ['rp-size', 'size'], ['rp-recent', 'recentDays']]) {
+            $(id).querySelectorAll('.segmented-btn').forEach(b => b.classList.toggle('active', String(prefs[key]) === b.dataset.val));
+        }
+        $('rp-size-wrap').hidden = prefs.layout === 'document';
+        $('rp-format-hint').textContent = R(`format_${prefs.layout}_hint`);
+        $('rp-recent').querySelectorAll('.segmented-btn').forEach(b => { b.textContent = R('days', { n: b.dataset.val }); });
+        renderActions();
+    }
+
+    function renderActions() {
+        const box = $('rp-actions');
+        const list = prefs.layout === 'document' ? [['html', 'save_html', true], ['pdf', 'save_pdf', false]]
+            : [['png', prefs.layout === 'poster' ? 'save_image' : 'save_images', true]];
+        box.innerHTML = '';
+        for (const [format, key, primary] of list) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = `rp-save-${format}`; if (primary) b.className = 'primary';
+            b.textContent = R(key); b.disabled = busy || !chosen().length;
+            b.addEventListener('click', () => exportAs(format));
+            box.appendChild(b);
+        }
+    }
+
+    function fitPreview(size) {
+        const W = stage.clientWidth, Hh = stage.clientHeight;
+        if (prefs.layout === 'poster') {
+            const k = Math.min((W - 48) / size.w, (Hh - 48) / size.h);
+            frame.style.width = `${size.w}px`; frame.style.height = `${size.h}px`;
+            frame.style.transform = `scale(${k})`;
+            frame.style.left = `${(W - size.w * k) / 2}px`; frame.style.top = `${(Hh - size.h * k) / 2}px`;
+        } else {
+            // The document and the card strip scroll inside the frame; the document is shown at
+            // two-thirds size so a whole section fits, the strip scales itself.
+            const k = prefs.layout === 'document' ? 0.66 : 1;
+            frame.style.width = `${W / k}px`; frame.style.height = `${Hh / k}px`;
+            frame.style.transform = `scale(${k})`; frame.style.left = '0px'; frame.style.top = '0px';
+        }
+    }
+
+    async function refreshPreview() {
+        const seq = ++previewSeq;
+        const empty = $('rp-empty');
+        if (!chosen().length) { empty.hidden = false; empty.textContent = R('nothing_selected'); frame.hidden = true; return; }
+        empty.hidden = true; frame.hidden = false;
+        $('rp-busy').hidden = false; $('rp-busy').textContent = R('rendering');
+        const r = await window.api.reportPreview({ ...payload(), sections: chosen() });
+        if (seq !== previewSeq) return;                         // a newer toggle already asked again
+        $('rp-busy').hidden = true;
+        if (!r || !r.ok) { setStatus(R('failed', { error: r ? r.error : '?' }), true); return; }
+        fitPreview(r.size);
+        frame.srcdoc = r.html;
+    }
+
+    function changed() {
+        save(); syncSegments();
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(refreshPreview, 220);
+    }
+
+    async function exportAs(format) {
+        if (busy) return;
+        busy = true; renderActions(); setStatus(R('rendering'));
+        let r;
+        try { r = await window.api.reportExport({ ...payload(), sections: chosen() }, format); }
+        catch (e) { r = { ok: false, error: e.message }; }
+        busy = false; renderActions();
+        if (!r || r.canceled) { setStatus(''); return; }
+        if (!r.ok) { setStatus(R('failed', { error: r.error === 'nothing_selected' ? R('nothing_selected') : r.error }), true); return; }
+        setStatus(r.count ? R('saved_many', { n: r.count, path: r.path }) : R('saved', { path: r.path }));
+    }
+
+    async function open() {
+        try { prefs = { ...defaults(), ...JSON.parse((await window.api.getSetting('report_prefs')) || '{}') }; }
+        catch { prefs = defaults(); }
+        $('rp-title').value = prefs.title; $('rp-subtitle').value = prefs.subtitle;
+        setStatus('');
+        modal.classList.add('active');
+        const r = await window.api.reportSections(payload());
+        sectionInfo = r && r.ok ? r.sections : [];
+        renderSections(); renderStyles(); syncSegments();
+        refreshPreview();
+    }
+
+    // Opens above Settings rather than closing it, so nothing typed there is lost.
+    $('btn-open-report')?.addEventListener('click', () => open());
+    const close = () => { modal.classList.remove('active'); frame.srcdoc = ''; };
+    $('rp-close').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('active')) close(); });
+
+    for (const [id, key, cast] of [['rp-format', 'layout', String], ['rp-size', 'size', String], ['rp-recent', 'recentDays', Number]]) {
+        $(id).addEventListener('click', e => {
+            const b = e.target.closest('.segmented-btn'); if (!b) return;
+            prefs[key] = cast(b.dataset.val);
+            if (key === 'recentDays') { window.api.reportSections(payload()).then(r => { if (r && r.ok) { sectionInfo = r.sections; renderSections(); } }); }
+            changed();
+        });
+    }
+    let typing = null;
+    for (const [id, key] of [['rp-title', 'title'], ['rp-subtitle', 'subtitle']]) {
+        $(id).addEventListener('input', e => { prefs[key] = e.target.value; clearTimeout(typing); typing = setTimeout(changed, 350); });
+    }
+    $('rp-all').addEventListener('click', () => { prefs.sections = null; renderSections(); changed(); });
+    $('rp-none').addEventListener('click', () => { prefs.sections = []; renderSections(); changed(); });
+    window.addEventListener('resize', () => { if (modal.classList.contains('active')) { clearTimeout(previewTimer); previewTimer = setTimeout(refreshPreview, 200); } });
+})();

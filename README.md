@@ -44,25 +44,32 @@ A full **user manual** ships inside the app: 22 sections covering every feature.
 
 ## ◈ &nbsp; ROM Library
 
+**The folder is the library.** The first launch creates `Emulatte_Stuff/` next to the AppImage with a `ROMS/` folder holding a sub-folder for every one of the 56 systems, and an empty `BIOS/`. Drop files in; they are games the next time EmuLatte opens. The same model ES-DE, Batocera and RetroBat use.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  56 bundled system presets — SNES · Genesis · PS1 · N64     │
-│  GBA · NDS · PSP · Dreamcast · Saturn · PC Engine and more  │
-│                                                             │
-│  Each preset ships with opinionated RetroArch core          │
-│  defaults so you're not starting from zero.                 │
-│                                                             │
-│  Launch via RetroArch (native or Flatpak, auto-detected)    │
-│  or any fully custom emulator command you define.           │
-│  Per-game core override when the system default isn't right.│
+│  Emulatte_Stuff/                                            │
+│  ├── ROMS/                                                  │
+│  │   ├── snes/        ← drop .sfc here                      │
+│  │   ├── megadrive/   ← also reads genesis/, md/            │
+│  │   ├── psx/         ← .cue sets grouped per game          │
+│  │   └── … 53 more, one per system                          │
+│  ├── BIOS/            ← the RetroArch system directory      │
+│  └── emulatte.db, images/, videos/, manuals/                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-An **Emulator Scanner** detects what's already installed on your system — RetroArch, standalone cores, Flatpak variants — and maps them automatically.
+**All 56 systems exist from the first launch**, each with an opinionated RetroArch core default, the identifiers the scrapers need, and a folder of its own. You never add a system. Browsing by system lists only the ones with games in them, so an empty library is not 56 empty shelves.
+
+Folders are named the way **ES-DE** names them, and each system also answers to the names **Batocera**, **RetroBat** and **RetroPie** use, so a collection already laid out by one of those is read as it stands. If it lives on an external drive, point EmuLatte's ROMS folder at it instead of moving it.
+
+Every launch makes the library match the disk: new files become games, rows whose file you deleted go with them. **Rescan Library** does it on demand, from the desktop rail, Settings → Library, or the Couch Mode menu. A folder that is not there, an unplugged drive say, is skipped rather than treated as empty.
+
+Launch via RetroArch (native or Flatpak, auto-detected) or any fully custom emulator command you define, with a per-game core override when the system default isn't right. An **Emulator Scanner** detects what's already installed, from RetroArch to standalone cores to Flatpak variants, and maps them automatically.
 
 **Repair Disc References** fixes `.m3u` and `.cue` files whose internal paths point somewhere that no longer exists — the thing that silently breaks half a multi-disc collection the moment you move or re-rip it. Run it per game or across a whole system.
 
-**BIOS handling** knows what each platform requires and tells you what's missing. Add a file you own, or point it at a folder and let it pick out the ones it recognises — they get filed into RetroArch's `system/` folder where the cores expect them. EmuLatte never supplies or downloads BIOS files.
+**BIOS handling** knows what each platform requires and tells you what's missing. Drop files into `BIOS/` in whatever shape they arrived and every launch files each one it recognises under the exact name a core expects, **matched by checksum** so a correct file with the wrong name still lands right. That folder *is* EmuLatte's RetroArch system directory, not a staging area. EmuLatte never supplies or downloads BIOS files.
 
 > EmuLatte runs RetroArch on **its own config**. Your host `retroarch.cfg` is never read and never written, so nothing here can disturb a setup you already rely on.
 
@@ -175,7 +182,7 @@ Enter it with **▶ GO FULLSCREEN**, or set it to launch straight into Couch Mod
 - **Ambient sound** — background music and interface SFX, with volume
 - **Now-playing screen** — shows what launched, and what you're returning from
 - **RetroArch Simple Setup** — the Express settings rebuilt for a gamepad, shaders included, synced with the desktop face
-- **Refresh** — rescans your ROM folders for new games from within Couch Mode
+- **Rescan Library**: reads the ROMS folder again and reports what changed, without leaving the sofa
 - **Display density** for low-res TVs, on-screen button labels in Xbox / PlayStation / Nintendo lettering, and its own theme (or sync with the desktop's)
 
 > **On Wayland**, apps can't choose their output. Leave **Target Screen** on *Current screen*, drag EmuLatte onto your TV, then go fullscreen. Target Screen works on X11, Windows and macOS.
@@ -198,6 +205,31 @@ Each Systems theme carries **its own era typeface** — the interface actually c
 
 <br>
 
+## ◈ &nbsp; On Omarchy
+
+Detected automatically. On any other desktop none of this appears.
+
+- **A first-run check** reports what this machine actually has before you do anything else:
+  the desktop, RetroArch, and whether the three systems that ship without a core have an
+  emulator. Only the things whose absence stops something working are offered there
+- **RetroArch in one step** through Omarchy's own installer, which brings the full libretro
+  core set with it. 53 of the 56 shipped presets launch through it
+- **Standalone emulators** for the three systems that have no libretro core at all:
+  PlayStation 3, PS Vita and Switch. Alternatives to the bundled cores for PS1, PS2, DS, PSP,
+  GameCube and Wii are offered separately, and clearly marked as a preference rather than a gap
+- **Optional tools** worth having around a ROM collection: `chdman` for turning CUE/BIN and ISO
+  discs into CHD, `unrar` for the sets RetroArch cannot read, and `joystickwake` so a pad-only
+  session stops counting as idle
+- **Window rules** so emulators open fullscreen instead of being tiled and smeared, learned per
+  emulator on first launch. Applied at runtime; nothing is written to your Hyprland config
+- **While you play**, the idle lock is held off and the power profile raised, both optional
+- **System tuning** for the sysctl values emulators care about
+
+Nothing here ever runs `sudo` for you. Every install opens a terminal showing the command, and
+you type your own password.
+
+Settings, then **Omarchy**.
+
 ## ◈ &nbsp; Ecosystem Integration
 
 ```
@@ -209,14 +241,14 @@ Each Systems theme carries **its own era typeface** — the interface actually c
     │
     ├──▸  EmuLatte ◈  ROM library manager — exports games into Clarity's library
     │
-    └──▸  CN Clock    Floating desktop clock — shows art from Clarity + EmuLatte
+    └──▸  Clarity Clock    Floating desktop clock — shows art from Clarity + EmuLatte
 ```
 
 Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on the game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in Clarity's `games.db` with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
 
 Management of the ROM collection always stays in EmuLatte. Export is one-directional and re-exporting an already-exported game updates it in place.
 
-All data lives in `GameManagerConfig/EmuLatte/` — backs up with everything else.
+EmuLatte's own data lives in `Emulatte_Stuff/`, beside Clarity's `GameManagerConfig/` rather than inside it. The two apps share a parent folder and nothing more.
 
 <br>
 
@@ -244,9 +276,7 @@ chmod +x EmuLatte.AppImage
 ./EmuLatte.AppImage
 ```
 
-Place it alongside your Clarity installation (e.g. `~/Games/Clarity/`) so the shared `GameManagerConfig/` directory is found automatically.
-
-EmuLatte stores its data in a `GameManagerConfig/` folder **next to the AppImage**, so put the AppImage somewhere permanent before building a library.
+EmuLatte keeps everything (library, artwork, `ROMS/` and `BIOS/`) in an `Emulatte_Stuff/` folder **next to the AppImage**, so put the AppImage somewhere permanent before building a library. Place it alongside your Clarity installation (e.g. `~/Games/Clarity/`) and credential import and export to Clarity work with no configuration.
 
 > **Language:** EmuLatte 1.0 is English-only. (Clarity and Couch Mode also ship pt_BR; EmuLatte does not yet.)
 

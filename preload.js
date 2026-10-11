@@ -12,16 +12,6 @@ contextBridge.exposeInMainWorld('api', {
     close:    () => ipcRenderer.send('window-close'),
     enterCouch: (opts) => ipcRenderer.invoke('enter-couch-mode', opts),
     exitCouch:  ()     => ipcRenderer.invoke('exit-couch-mode'),
-    enterCrt:   ()     => ipcRenderer.invoke('enter-crt-mode'),
-    exitCrt:    ()     => ipcRenderer.invoke('exit-crt-mode'),
-    // CRT Mode reads the zoom it is starting from rather than assuming 1: every
-    // face sets its own density at load, so the window arrives carrying whatever
-    // the last one chose.
-    getZoom:    ()     => webFrame.getZoomFactor(),
-    // The Omarchy palette, plus the live feed, so `omarchy theme set` restyles an
-    // open face instead of the next one.
-    omarchyTheme:          ()   => ipcRenderer.invoke('omarchy-theme'),
-    onOmarchyThemeChanged: (cb) => ipcRenderer.on('omarchy-theme-changed', (_, d) => cb(d)),
     forceFocus: ()     => ipcRenderer.send('force-focus'),
 
     // Systems
@@ -42,14 +32,31 @@ contextBridge.exposeInMainWorld('api', {
 
     // Settings
     getSetting: (k)    => ipcRenderer.invoke('get-setting', k),
+    reportSections: (prefs)         => ipcRenderer.invoke('report-sections', prefs),
+    reportPreview:  (prefs)         => ipcRenderer.invoke('report-preview', prefs),
+    reportExport:   (prefs, format) => ipcRenderer.invoke('report-export', prefs, format),
     setSetting: (k, v) => ipcRenderer.invoke('set-setting', k, v),
 
     // File / folder pickers
     selectFile:      (filters) => ipcRenderer.invoke('select-file', filters),
     selectDirectory: ()        => ipcRenderer.invoke('select-directory'),
     scanRomFolder:   (p, exts) => ipcRenderer.invoke('scan-rom-folder', p, exts),
-    rescanNewGames:  ()        => ipcRenderer.invoke('rescan-new-games'),
     createM3u:       (payload) => ipcRenderer.invoke('create-m3u', payload),
+
+    // ── The library is the ROMS folder ──
+    scanLibrary:         (opts)  => ipcRenderer.invoke('scan-library', opts),
+    getLastScan:         ()      => ipcRenderer.invoke('get-last-scan'),
+    onLibraryScanned:    (cb)    => ipcRenderer.on('library-scanned', (_, d) => cb(d)),
+    onLibraryScanProgress: (cb)  => ipcRenderer.on('library-scan-progress', (_, d) => cb(d)),
+    libraryFolders:      ()      => ipcRenderer.invoke('library-folders'),
+    libraryLocation:     ()      => ipcRenderer.invoke('library-location'),
+    moveLibraryTo:       ()      => ipcRenderer.invoke('move-library-to'),
+    useLibraryAt:        ()      => ipcRenderer.invoke('use-library-at'),
+    libraryBackHome:     ()      => ipcRenderer.invoke('library-back-home'),
+    openLibraryFolder:   (which) => ipcRenderer.invoke('open-library-folder', which),
+    setLibraryRoot:      (which) => ipcRenderer.invoke('set-library-root', which),
+    resetLibraryRoot:    (which) => ipcRenderer.invoke('reset-library-root', which),
+    restoreDefaultSystems: ()    => ipcRenderer.invoke('restore-default-systems'),
     repairDiscRefsGame:   (id) => ipcRenderer.invoke('repair-disc-refs-game', id),
     repairDiscRefsSystem: (id) => ipcRenderer.invoke('repair-disc-refs-system', id),
 
@@ -152,13 +159,15 @@ contextBridge.exposeInMainWorld('api', {
 
     // RetroArch detection
     detectRetroArch: () => ipcRenderer.invoke('detect-retroarch'),
-    retroarchInstalls: () => ipcRenderer.invoke('retroarch-installs'),
-    setRetroarchVariant: (v) => ipcRenderer.invoke('set-retroarch-variant', v),
-    listDir: (p) => ipcRenderer.invoke('list-dir', p),
 
     // System presets
     getSystemPresets: () => ipcRenderer.invoke('get-system-presets'),
     biosStatus:     (short)       => ipcRenderer.invoke('bios-status', short),
+    biosOverview:   ()            => ipcRenderer.invoke('bios-overview'),
+    playReadiness:  ()            => ipcRenderer.invoke('play-readiness'),
+    installToMenu:     ()         => ipcRenderer.invoke('install-to-menu'),
+    removeFromMenu:    ()         => ipcRenderer.invoke('remove-from-menu'),
+    menuEntriesPresent:()         => ipcRenderer.invoke('menu-entries-present'),
     biosAddFile:    (short, file) => ipcRenderer.invoke('bios-add-file', short, file),
     biosScanFolder: ()            => ipcRenderer.invoke('bios-scan-folder'),
 
@@ -199,8 +208,20 @@ contextBridge.exposeInMainWorld('api', {
     onManualProgress:  (cb)             => ipcRenderer.on('manual-progress', (_, d) => cb(d)),
     onManualChanged:   (cb)             => ipcRenderer.on('manual-changed', (_, d) => cb(d)),
 
+    // Omarchy (desktop integration; every one of these answers harmlessly off Omarchy)
+    omarchyStatus:        ()          => ipcRenderer.invoke('omarchy-status'),
+    omarchyTheme:         ()          => ipcRenderer.invoke('omarchy-theme'),
+    omarchyInstallTools:  (keys)      => ipcRenderer.invoke('omarchy-install-tools', keys),
+    omarchyRunInstaller:  (key)       => ipcRenderer.invoke('omarchy-run-installer', key),
+    omarchyRunTuning:     ()          => ipcRenderer.invoke('omarchy-run-tuning'),
+    omarchySetFlag:       (key, on)   => ipcRenderer.invoke('omarchy-set-flag', key, !!on),
+    omarchySetWindowMode: (mode)      => ipcRenderer.invoke('omarchy-set-game-window-mode', mode),
+    omarchyReloadRules:   ()          => ipcRenderer.invoke('omarchy-reload-rules'),
+    onOmarchyTheme:       (cb)        => ipcRenderer.on('omarchy-theme-changed', (_, d) => cb(d)),
+
     // Misc
     getBaseDir:   () => ipcRenderer.invoke('get-basedir'),
     getConfigDir: () => ipcRenderer.invoke('get-config-dir'),
     openPath:     (p) => ipcRenderer.invoke('open-path', p),
+    openExternal: (u) => ipcRenderer.invoke('open-external', u),
 });

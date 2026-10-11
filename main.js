@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, powerSaveBlocker } = require('electron');
 app.setName('emulatte');
 
 // ssimg:// proxies ScreenScraper thumbnails through the main process so the user's ssid/sspassword
@@ -17,6 +17,18 @@ const { spawn, spawnSync, execFile } = require('child_process');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 
+// Desktop-level integration. All three import node builtins only and nothing from this app,
+// and the first two are the same files the sibling app carries: one module in two repos, so a
+// fix to either belongs in both. Everything they do gates itself off on other desktops.
+const omarchy = require('./omarchy');
+const omarchyTheme = require('./omarchy-theme');
+const desktopDescriptor = require('./desktop-descriptor');
+// The library layer: folder names, the disc-aware scanner, seeding, BIOS. See rom-library.js.
+const romLib = require('./rom-library');
+const {
+    extOf, stripExt, discReferencedFiles, scanFolderEntries, commonAncestor,
+} = romLib;
+
 let baseDir;
 if (process.env.APPIMAGE) {
     baseDir = path.dirname(process.env.APPIMAGE);
@@ -26,7 +38,41 @@ if (process.env.APPIMAGE) {
     baseDir = __dirname;
 }
 
-const configDir    = path.join(baseDir, 'GameManagerConfig', 'EmuLatte');
+// EmuLatte's own folder, beside its own binary. Clarity's GameManagerConfig is no part of
+// this any more: the two apps share a parent folder and nothing else. ROMS and BIOS live in
+// here too, so the whole install is one folder you can copy to another machine.
+const localHome = path.join(baseDir, 'Emulatte_Stuff');
+
+/*
+ * Where the library actually lives, which need not be beside the binary.
+ *
+ * A library can be put on an external drive and the same drive used from another machine, so
+ * the artwork and the database are carried rather than re-scraped. That location cannot be a
+ * setting, because settings live IN the database: something outside it has to say where it
+ * is. So a one-line pointer file sits in the folder beside the binary, and each machine has
+ * its own, which is what lets two machines share one drive.
+ *
+ * ⚠️ A pointer at a drive that is not plugged in must never quietly become a different
+ * library. It falls back to the local folder and says so, loudly, rather than looking like
+ * the library has emptied itself.
+ */
+const LOCATION_FILE = 'data-location.txt';
+function resolveDataDir() {
+    const pointer = path.join(localHome, LOCATION_FILE);
+    let wanted = '';
+    try { wanted = fs.readFileSync(pointer, 'utf8').trim(); } catch {}
+    if (!wanted) return { dir: localHome, external: false, pointer, wanted: '' };
+    let ok = false;
+    try { ok = fs.statSync(wanted).isDirectory(); } catch {}
+    return ok
+        ? { dir: wanted, external: true, pointer, wanted }
+        : { dir: localHome, external: false, pointer, wanted, unreachable: true };
+}
+const dataHome = resolveDataDir();
+if (dataHome.external) console.log('[library] using the library on', dataHome.dir);
+if (dataHome.unreachable) console.log('[library] ⚠ the library at', dataHome.wanted, 'is not reachable; falling back to', localHome);
+
+const configDir    = dataHome.dir;
 const imagesDir    = path.join(configDir, 'images');
 const trailersDir  = path.join(configDir, 'videos');
 const manualsDir   = path.join(configDir, 'manuals');
@@ -39,6 +85,9 @@ const ffmpegPath     = path.join(binDir, 'ffmpeg');
 const ytDlpConfigPath = path.join(binDir, 'yt-dlp.conf');
 
 let db;
+let library = null;      // the ROMS/BIOS folder layer, built once the database is open
+let lastScan = null;     // the most recent library scan, for a renderer that loads after it
+let rendererReady = false;   // whether a face is up and listening, which decides how a scan reaches it
 let mainWin = null;   // the library/couch window; not the user manual or any other child window
 
 function getSavedBounds() {
@@ -69,9 +118,7 @@ function createWindow() {
     win.setMenu(null);
     mainWin = win;
     win.on('closed', () => { if (mainWin === win) mainWin = null; });
-    if (shouldStartCrt()) enterCrt(win);
-    else if (shouldStartCouch()) enterCouch(win);
-    else win.loadFile('index.html');
+    if (shouldStartCouch()) enterCouch(win); else { couchMode = false; win.loadFile('index.html'); }
 
     win.on('close', () => {
         if (!win.isMaximized() && !win.isMinimized() && !win.isFullScreen()) {   // don't persist couch-mode fullscreen bounds
@@ -82,6 +129,7 @@ function createWindow() {
 
     const showWin = () => { if (!win.isVisible()) win.show(); };
     ipcMain.once('renderer-ready', showWin);
+    ipcMain.on('renderer-ready', () => { rendererReady = true; });
     win.once('ready-to-show', () => setTimeout(showWin, 3000));
 }
 
@@ -89,13 +137,18 @@ function createWindow() {
 // link a piece of art back here. Read from argv on first launch, and from the *second*
 // instance's argv when we are already running — otherwise the request would be dropped
 // on the floor and the user would just see the library.
-const gameIdFromArgv = (argv) => {
-    const hit = (argv || []).find(a => a.startsWith('--game='));
+const idFromArgv = (argv, flag) => {
+    const hit = (argv || []).find(a => a.startsWith(flag));
     if (!hit) return null;
-    const id = hit.slice('--game='.length).trim();
+    const id = hit.slice(flag.length).trim();
     return /^\d+$/.test(id) ? id : null;
 };
+const gameIdFromArgv = (argv) => idFromArgv(argv, '--game=');
+// `--play=<id>` starts the game itself, where `--game=<id>` opens its page. The desktop
+// launcher uses both: Enter plays, Shift+Enter opens the page.
+const playIdFromArgv = (argv) => idFromArgv(argv, '--play=');
 let pendingGameId = gameIdFromArgv(process.argv);
+let pendingPlayId = playIdFromArgv(process.argv);
 
 // Always the library/couch window: the user manual opens its own frameless window with no preload,
 // so getAllWindows()[0] is not safe to assume here.
@@ -115,6 +168,11 @@ if (!gotLock) {
     app.quit();
 } else {
     app.on('second-instance', (_e, argv) => {
+        // ⚠️ --play does NOT raise the window. The point of playing from the bar is to get a
+        // game up without the library appearing over it; focusing here would put the manager
+        // in front of the emulator that is about to open.
+        const play = playIdFromArgv(argv);
+        if (play) { playGame(play); return; }
         const w = libraryWindow();
         if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
         openGameInWindow(gameIdFromArgv(argv));
@@ -234,6 +292,7 @@ app.whenReady().then(() => {
             FOREIGN KEY (game_id)     REFERENCES games(id)     ON DELETE CASCADE
         )`).run();
 
+        try { db.prepare(`ALTER TABLE systems ADD COLUMN folder TEXT`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN core_override TEXT`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN ra_game_id INTEGER`).run(); } catch {}
         try { db.prepare(`ALTER TABLE games ADD COLUMN igdb_trailer TEXT`).run(); } catch {}
@@ -279,36 +338,52 @@ app.whenReady().then(() => {
 
         rehomeArtPaths();
 
-        const raVariant = detectRetroArch();
-        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', raVariant);
+        // ── THE LIBRARY IS THE ROMS FOLDER ───────────────────────────────────
+        // Every system exists from the first launch with a folder of its own, and the folder is
+        // what the library is read from. See rom-library.js for the scanner and the folder names.
+        // ⚠️ FIRST. Every path lookup below resolves through getRetroArchCfgDir(), which reads
+        // this setting; on a fresh database it is absent and the host config is looked for in
+        // the wrong place, so the owned config is seeded with nothing in it.
+        db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', detectRetroArch());
 
-        // ⚠️ Touch the owned config at startup, not only when a game launches.
-        // It is what corrects a config seeded against a RetroArch that has
-        // since been replaced — and waiting until launch means the first thing
-        // the user does after switching is the thing that fails.
-        try { ensureOwnedRaCfg(); } catch (e) { console.error('owned RA config:', e.message); }
+        const raCfgIO = { ensure: ensureOwnedRaCfg, parse: parseRaCfg, writeKeys: writeRaCfgKeys };
+        // Where BIOS files were read from until now, captured before anything repoints it, so
+        // a working setup can be brought across rather than quietly lost. A folder somebody
+        // configured is worth waiting for; RetroArch's own default, on a machine that may never
+        // have had one, is not.
+        const cfgSysDir  = readRaCfgKey('system_directory');
+        const prevSysDir = cfgSysDir || getRetroArchSystemDir();
+        library = romLib.createLibrary({
+            getDb: () => db, configDir, presets: systemPresets(), biosDb,
+            insertGame, deleteGame: deleteGameById, raCfg: raCfgIO,
+            log: m => console.log('[library]', m),
+        });
+        library.seedSystems();
+        library.ensureFolders();
+        // The BIOS folder becomes EmuLatte's RetroArch system directory, so what the user drops
+        // in is what the cores read.
+        library.pinBiosDir();
+        if (!library.setting('bios_home_set')) {
+            library.importOldBios(prevSysDir, { retry: !!cfgSysDir });
+            library.putSetting('bios_home_set', '1');
+        } else if (library.setting('bios_import_from')) {
+            library.importOldBios(library.setting('bios_import_from'), { retry: true });   // the drive was away last time
+        }
 
-        /*
-         * ⚠️ Scan for cores when there are none on record.
-         *
-         * The scan was only ever triggered by a button in Settings, so a fresh
-         * install — or one whose core list was emptied by a RetroArch change —
-         * showed no cores, offered none to assign to a system, and left every
-         * ROM unplayable, with nothing on screen explaining why. Finding them
-         * is cheap and the answer is needed before anything else works.
-         */
-        try {
-            const haveCores = db.prepare('SELECT COUNT(*) AS n FROM cores').get()?.n || 0;
-            if (!haveCores) {
-                const r = scanCoresNow();
-                console.log(`[cores] first-run scan: ${r.count || 0} found`);
-            }
-        } catch (e) { console.error('core scan:', e.message); }
+        // Ready to play without being asked: find the cores this machine has, and make sure the
+        // config EmuLatte hands RetroArch can actually see them.
+        repairOwnedRaCfg();
+        try { scanCoresNow(); } catch (e) { console.error('core scan failed:', e.message); }
     } catch (err) {
         console.error('DB error:', err);
     }
 
     createWindow();
+    omarchyStartup();
+    startupLibraryScan();
+    // A cold `--play=<id>`: the database is open by now and playGame needs nothing else, so
+    // the game starts without waiting for the renderer it does not use.
+    if (pendingPlayId) { const id = pendingPlayId; pendingPlayId = null; playGame(id); }
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
@@ -334,51 +409,42 @@ function couchDisplayIndex() {
     return Number(couchSetting('couch_display', '0')) || 0;   // 0 = current/primary
 }
 function couchDisplay(idx) { if (!idx) return null; try { return require('electron').screen.getAllDisplays()[idx - 1] || null; } catch { return null; } }
+// Whether the library window is wearing the Couch face. Needed because a game taking the
+// screen is indistinguishable, from the compositor's side, from the user leaving.
+let couchMode = false;
+
 function enterCouch(win) {
     if (!win) return;
+    couchMode = true;
     const target = couchDisplay(couchDisplayIndex());
     if (target) { win.setFullScreen(false); win.setBounds(target.bounds); }   // move first (honoured on X11/Win/macOS)
     win.setFullScreen(true);
     win.loadFile('couch.html');
     win.show();   // show immediately (esp. start-in-couch) rather than waiting on couch.js's own 'renderer-ready'
 }
-function exitCouch(win) { if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
-const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
+function exitCouch(win) { couchMode = false; if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
 
-// ── CRT Mode ─────────────────────────────────────────────────────────────────
-// A third face, for a tube TV over composite: 720x480 interlaced, driven from a
-// D-pad, through whatever overscan the set crops. It is a menu, not a gallery —
-// see crt.css for why art cannot carry an interface at 480 lines.
-//
-// Like Couch it is a page swap in the same window rather than a second process,
-// so every handler above is already its backend and nothing here is a second
-// implementation of launching, scraping or save states.
-function enterCrt(win) {
-    if (!win) return;
-    win.setFullScreen(true);
-    win.loadFile('crt.html');
-    win.show();
-    // ⚠️ Hyprland can drop a window out of fullscreen on its own, and a face
-    // that is drawing a title-safe box for a specific raster has to insist.
-    if (!win.__crtFullscreenGuard) {
-        win.__crtFullscreenGuard = true;
-        win.on('leave-full-screen', () => {
-            if (!win.isDestroyed() && win.webContents.getURL().endsWith('crt.html')) win.setFullScreen(true);
-        });
-    }
+/*
+ * Put Couch Mode back on the whole screen after a game closes.
+ *
+ * ⚠️ Hyprland takes fullscreen away from the window underneath when the game fullscreens,
+ * and does not give it back when the game exits. Measured: Couch Mode goes from 2752x1152
+ * fullscreen to a tiled 688x563 the moment the emulator appears, and stays tiled afterwards.
+ * Electron's own isFullScreen() follows the compositor down to false, so re-requesting is a
+ * real request rather than a no-op, but only once the game's window has actually gone, which
+ * is why this retries rather than firing once and hoping.
+ */
+function restoreCouchFullscreen() {
+    if (!couchMode) return;
+    const again = (tries) => {
+        const w = libraryWindow();
+        if (!couchMode || !w || w.isDestroyed()) return;
+        if (!w.isFullScreen()) { w.setFullScreen(true); w.focus(); }
+        if (tries > 0) setTimeout(() => again(tries - 1), 400);
+    };
+    setTimeout(() => again(5), 250);
 }
-// ⚠️ Zoom is reset on the way out. CRT Mode zooms the page so one CSS pixel is
-// one screen pixel (crt.js explains why that matters on an interlaced display),
-// and zoom is a property of the window, not of the page in it — left alone, the
-// desktop UI would come back at 61%. index.html applies its own density at load,
-// so handing it back a neutral window is all this has to do.
-function exitCrt(win) {
-    if (!win) return;
-    try { win.webContents.setZoomFactor(1); } catch {}
-    win.setFullScreen(false);
-    win.loadFile('index.html');
-}
-const shouldStartCrt = () => process.argv.includes('--crt') || couchSetting('crt_start_on_launch', '') === '1';
+const shouldStartCouch = () => process.argv.includes('--couch') || couchSetting('couch_start_on_launch', '') === '1';
 // Shipped version, straight from package.json, so the About dialog can never drift from the build.
 ipcMain.handle('get-app-version', () => { try { return app.getVersion(); } catch { return ''; } });
 
@@ -407,25 +473,6 @@ ipcMain.handle('open-user-manual', event => {
 
 ipcMain.handle('enter-couch-mode', e => { enterCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
 ipcMain.handle('exit-couch-mode', e => { exitCouch(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
-ipcMain.handle('enter-crt-mode', e => { enterCrt(BrowserWindow.fromWebContents(e.sender)); return { ok: true }; });
-ipcMain.handle('exit-crt-mode',  e => { exitCrt(BrowserWindow.fromWebContents(e.sender));  return { ok: true }; });
-
-// ── Omarchy theme ────────────────────────────────────────────────────────────
-// CRT Mode is meant to look like it belongs to the machine it is running on, so
-// it takes its palette from the user's Omarchy theme rather than defining one.
-// The watcher means `omarchy theme set` restyles the face while it is open.
-// (The same bridge, byte for byte, as the one in Clarity.)
-const omarchyTheme = require('./omarchy-theme.js');
-ipcMain.handle('omarchy-theme', () => {
-    try { return omarchyTheme.describe(); } catch { return { available: false, name: '', theme: null, mode: '' }; }
-});
-try {
-    omarchyTheme.watch(d => {
-        for (const w of BrowserWindow.getAllWindows()) {
-            try { w.webContents.send('omarchy-theme-changed', d); } catch {}
-        }
-    });
-} catch {}
 // Pull Couch Mode back to the foreground after a launched game exits / the return combo fires.
 ipcMain.on('force-focus', e => {
     const win = BrowserWindow.fromWebContents(e.sender) || BrowserWindow.getAllWindows()[0];
@@ -449,46 +496,59 @@ ipcMain.handle('get-systems', () => {
     return db.prepare('SELECT * FROM systems ORDER BY name ASC').all();
 });
 
+// Systems seed themselves on every launch (see rom-library.js), so this is for one the user
+// invents. It gets a ROMS folder like any other, named after it unless they say otherwise.
 ipcMain.handle('add-system', (_, data) => {
     if (!db) return null;
+    const folder = romLib.slugFolder(data.folder || data.short_name || data.name);
     const r = db.prepare(`INSERT INTO systems
-        (name, short_name, extensions, default_core, default_emulator, launch_template, screenscraper_id)
-        VALUES (@name, @short_name, @extensions, @default_core, @default_emulator, @launch_template, @screenscraper_id)`)
+        (name, short_name, folder, extensions, default_core, default_emulator, launch_template, screenscraper_id)
+        VALUES (@name, @short_name, @folder, @extensions, @default_core, @default_emulator, @launch_template, @screenscraper_id)`)
       .run({
           name: data.name || '',
           short_name: data.short_name || '',
+          folder,
           extensions: data.extensions || '',
           default_core: data.default_core || '',
           default_emulator: data.default_emulator || '',
           launch_template: data.launch_template || '',
           screenscraper_id: data.screenscraper_id || null
       });
+    library?.ensureFolders();
     return r.lastInsertRowid;
 });
 
 ipcMain.handle('update-system', (_, id, data) => {
     if (!db) return false;
+    const cur = db.prepare('SELECT folder, short_name FROM systems WHERE id=?').get(id) || {};
+    const folder = romLib.slugFolder(data.folder || cur.folder || data.short_name || cur.short_name);
     db.prepare(`UPDATE systems SET
-        name=@name, short_name=@short_name, extensions=@extensions,
+        name=@name, short_name=@short_name, folder=@folder, extensions=@extensions,
         default_core=@default_core, default_emulator=@default_emulator,
         launch_template=@launch_template, screenscraper_id=@screenscraper_id
         WHERE id=${id}`)
       .run({
           name: data.name || '',
           short_name: data.short_name || '',
+          folder,
           extensions: data.extensions || '',
           default_core: data.default_core || '',
           default_emulator: data.default_emulator || '',
           launch_template: data.launch_template || '',
           screenscraper_id: data.screenscraper_id || null
       });
+    library?.ensureFolders();
     return true;
 });
 
+// Deleting a system that EmuLatte ships has to stick, or seeding would hand it straight back
+// on the next launch. The short name is remembered; Settings > Library takes them all back.
 ipcMain.handle('delete-system', (_, id) => {
     if (!db) return false;
+    const row = db.prepare('SELECT short_name FROM systems WHERE id=?').get(id);
     db.prepare('DELETE FROM games WHERE system_id=?').run(id);
     db.prepare('DELETE FROM systems WHERE id=?').run(id);
+    if (row?.short_name) library?.dismiss(row.short_name);
     return true;
 });
 
@@ -504,7 +564,7 @@ ipcMain.handle('get-games', () => {
     `).all();
 });
 
-ipcMain.handle('add-game', (_, data) => {
+function insertGame(data) {
     if (!db) return null;
     const r = db.prepare(`INSERT INTO games
         (system_id, title, rom_path, description, year, developer, publisher,
@@ -526,7 +586,8 @@ ipcMain.handle('add-game', (_, data) => {
       });
     ensureScummvmTarget(data.rom_path);   // make ScummVM games launchable automatically (fill empty .scummvm)
     return r.lastInsertRowid;
-});
+}
+ipcMain.handle('add-game', (_, data) => insertGame(data));
 
 ipcMain.handle('update-game', (_, id, data) => {
     if (!db) return false;
@@ -540,7 +601,7 @@ ipcMain.handle('update-game', (_, id, data) => {
     return true;
 });
 
-ipcMain.handle('delete-game', (_, id) => {
+function deleteGameById(id) {
     if (!db) return false;
     // Clean up the art we manage (never the ROM, never user-picked LOCAL files outside imagesDir)
     // and the playlist links, since foreign_keys/cascade isn't enabled on this connection.
@@ -554,7 +615,8 @@ ipcMain.handle('delete-game', (_, id) => {
     db.prepare('DELETE FROM playlist_games WHERE game_id=?').run(id);
     db.prepare('DELETE FROM games WHERE id=?').run(id);
     return true;
-});
+}
+ipcMain.handle('delete-game', (_, id) => deleteGameById(id));
 
 ipcMain.handle('set-game-flag', (_, id, field, value) => {
     if (!db || !['fav', 'want'].includes(field)) return false;
@@ -574,9 +636,299 @@ ipcMain.handle('get-setting', (_, key) => {
     return row ? row.value : null;
 });
 
+// ── LIBRARY REPORT ────────────────────────────────────────────────────────────
+// Settings, Library Report: a picked set of stats saved as a web page, a PDF or images.
+require('./report-main.js').registerReportIpc({
+    ipcMain, getDb: () => db, baseDir, BrowserWindow, dialog, nativeImage: require('electron').nativeImage,
+});
+
 ipcMain.handle('set-setting', (_, key, value) => {
     if (!db) return;
     db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? ''));
+});
+
+// ── OMARCHY ──────────────────────────────────────────────────────────────────
+// Everything in this section is desktop-level integration that switches itself on when
+// Omarchy (or, for the window-management half, any Hyprland session) is detected, and is
+// invisible everywhere else. There is no separate build and no separate platform: this is the
+// same Linux app, aware of the desktop it happens to be sitting on.
+//
+// See docs/omarchy-plan.md for what carries over from the sibling app and what does not.
+
+const settingGet = (key, fallback = null) => {
+    try { return db?.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value ?? fallback; }
+    catch { return fallback; }
+};
+const settingSet = (key, value) => {
+    try { db?.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, String(value ?? '')); }
+    catch {}
+};
+// Settings that decide how windows behave default to ON, and are stored as '1'/'0' so an
+// absent row means "never chosen" and takes the default rather than reading as false.
+const settingFlag = (key, dflt) => { const v = settingGet(key); return v === null || v === '' ? dflt : v === '1'; };
+
+const gameWindowMode = () => settingGet('omarchy_game_window_mode', omarchy.GAME_WINDOW_MODE_DEFAULT);
+
+/*
+ * Emulator window classes learned in previous sessions.
+ *
+ * ⚠️ This is persisted rather than re-derived because learning costs a launch: the class is
+ * read back off the window the emulator actually opened, so the very first launch of a new
+ * emulator cannot be fullscreened, only every one after it. Throwing the list away between
+ * sessions would spend that first launch again every time the app restarted.
+ */
+function knownGameClasses() {
+    try {
+        const list = JSON.parse(settingGet('omarchy_game_classes', '[]'));
+        return Array.isArray(list) ? list.filter(c => typeof c === 'string' && c) : [];
+    } catch { return []; }
+}
+
+function rememberGameClass(cls) {
+    if (!cls) return false;
+    const known = knownGameClasses();
+    if (known.includes(cls)) return false;
+    known.push(cls);
+    settingSet('omarchy_game_classes', JSON.stringify(known));
+    return true;
+}
+
+// ── A game session ───────────────────────────────────────────────────────────
+// Counted, not boolean. Two emulators can be open at once, and the inhibitor has to survive
+// the first one closing.
+//
+// ⚠️ An idle INHIBITOR rather than flipping the desktop's idle setting: an inhibitor dies with
+// the process holding it, whereas a toggle left flipped by a crash would leave someone's lock
+// screen disabled indefinitely. Persistent state that outlives a crash is exactly what a game
+// launcher should not leave behind on a desktop.
+//
+// This matters more here than it does for a mouse-and-keyboard library: a pad-only Couch
+// session generates no input the desktop can see at all, so its idea of idle and the player's
+// have nothing in common.
+let _liveSessions = 0;
+
+function beginGameSession() {
+    if (++_liveSessions !== 1) return;
+    if (settingFlag('omarchy_hold_idle', true))  omarchy.inhibitIdle(true, powerSaveBlocker);
+    if (settingFlag('omarchy_power_profile', true)) omarchy.setGamingPower(true);
+}
+
+function endGameSession() {
+    if (_liveSessions === 0 || --_liveSessions !== 0) return;
+    omarchy.inhibitIdle(false, powerSaveBlocker);
+    omarchy.setGamingPower(false);
+    restoreCouchFullscreen();
+}
+
+/*
+ * The one place an emulator is started. Every launch route goes through here so the session
+ * hooks cannot be forgotten by the next one that is added.
+ *
+ * ⚠️ `detached` + `unref` is what stops a game dying when EmuLatte is closed mid-play, and it
+ * does NOT stop us hearing about its exit: unref only releases the event loop's reference, the
+ * handle still emits, and the closure below keeps it alive. The 'error' listener is not
+ * optional either, spawn reports a failure asynchronously, so a try/catch alone would let an
+ * unhandled 'error' event take the whole app down.
+ */
+// ── WHY A GAME MAY HAVE TO GO THROUGH XWAYLAND ───────────────────────────────
+// RetroArch's native Wayland path gets the viewport wrong when the output it lands on uses a
+// FRACTIONAL scale. Measured on a 3440x1440 monitor at scale 1.25, with grim and a pixel
+// count rather than an opinion:
+//
+//     native Wayland   padding left 779, right 0   -> shoved right, cut off at the edge
+//     XWayland         padding left 623, right 623 -> centred, full height
+//
+// The compositor places the window correctly in both cases (2752x1152 logical at the right
+// spot), so this is inside RetroArch, and no combination of fullscreen mode, aspect index or
+// hand-computed custom viewport fixes it. Costs nothing measurable: 57.6 fps against 57.9.
+//
+// Only when a fractional scale is actually in play. An integer-scaled session renders
+// correctly on Wayland natively, which is the better path, and keeps its own vsync.
+//
+// ⚠️ This is the EMULATOR child process only. Relaunching EmuLatte itself under XWayland was
+// tried and abandoned as fragile with the AppImage runtime (see docs/omarchy-plan.md); this is
+// one spawned process with one environment variable, which is a different proposition.
+function fractionalScaleInUse() {
+    try {
+        if (!omarchy.isHyprland()) return false;
+        return omarchy.monitors().some(m => {
+            const s = Number(m.scale);
+            return Number.isFinite(s) && Math.abs(s - Math.round(s)) > 0.001;
+        });
+    } catch { return false; }
+}
+function emulatorEnv() {
+    const env = { ...process.env };
+    if (!settingFlag('xwayland_on_fractional', true) || !fractionalScaleInUse()) return env;
+    // ⚠️ No X server, no X11 path. Without this the switch below would hand the emulator a
+    // session it cannot connect to at all, which is worse than an off-centre picture.
+    if (!env.DISPLAY) return env;
+    // ⚠️ Every one of these, not just WAYLAND_DISPLAY. Omarchy exports GDK_BACKEND=wayland
+    // for the whole session, so dropping WAYLAND_DISPLAY on its own leaves GTK pointed at a
+    // Wayland display that is no longer named: "cannot open display: :0", and the emulator
+    // exits before it draws a frame. Switching toolkits means switching all of them together.
+    delete env.WAYLAND_DISPLAY;
+    delete env.MOZ_ENABLE_WAYLAND;
+    env.GDK_BACKEND      = 'x11';
+    env.QT_QPA_PLATFORM  = 'xcb';
+    env.SDL_VIDEODRIVER  = 'x11';
+    env.CLUTTER_BACKEND  = 'x11';
+    env.XDG_SESSION_TYPE = 'x11';
+    return env;
+}
+
+function launchEmulator(cmd) {
+    const child = spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore', env: emulatorEnv() });
+    child.on('error', () => {});
+    child.unref();
+    beginGameSession();
+    let ended = false;
+    const done = () => { if (!ended) { ended = true; endGameSession(); } };
+    child.on('exit', done);
+    child.on('close', done);
+    learnAndRuleFor(child.pid);
+    return child;
+}
+
+/*
+ * Find out what window class this emulator opens under, and rule it from now on.
+ *
+ * Nothing is awaited by the caller and nothing is reported: a class that never turns up is the
+ * normal outcome for a game that failed to start or was closed at once, and a window rule is
+ * never worth interrupting play over.
+ */
+function learnAndRuleFor(pid) {
+    if (!omarchy.isHyprland() || !settingFlag('omarchy_window_rules', true)) return;
+    omarchy.learnGameClass(pid).then(cls => {
+        if (!cls) return;
+        if (rememberGameClass(cls)) omarchy.applyGameWindowRule(cls, gameWindowMode());
+    }).catch(() => {});
+}
+
+// ── Wearing the desktop's palette ────────────────────────────────────────────
+// The renderer owns the theme table, so main.js only reports what Omarchy currently declares
+// and says when it changes. `omarchy theme set` rewrites the state directory, and the watcher
+// debounces the two or three events one switch produces.
+let _stopThemeWatch = null;
+
+function startThemeWatch() {
+    if (_stopThemeWatch || !omarchyTheme.isSupported()) return;
+    _stopThemeWatch = omarchyTheme.watch(desc => {
+        for (const w of BrowserWindow.getAllWindows()) {
+            if (!w.isDestroyed()) w.webContents.send('omarchy-theme-changed', desc);
+        }
+    });
+}
+
+app.on('will-quit', () => {
+    try { _stopThemeWatch && _stopThemeWatch(); } catch {}
+    // ⚠️ Put the power profile back even on an abrupt quit with a game still running. The
+    // inhibitor takes care of itself (it dies with this process); the profile does not.
+    if (_liveSessions > 0) { _liveSessions = 1; endGameSession(); }
+});
+
+/*
+ * Once per start: the window rules for this session, the theme watch, and telling the desktop
+ * where this installation is.
+ */
+function omarchyStartup() {
+    if (omarchy.isHyprland() && settingFlag('omarchy_window_rules', true)) {
+        omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() });
+    }
+    startThemeWatch();
+    try {
+        desktopDescriptor.publish({
+            version: app.getVersion(),
+            baseDir,
+            configDir,
+            libraryDb: dbPath,
+            imagesDir,
+            romsDir: library?.romsRoot() || null,
+            biosDir: library?.biosRoot() || null,
+            selfExecutable: process.execPath,
+            // ⚠️ The authoritative answer when we are an AppImage: the exact file we were
+            // launched from, rather than whichever one a directory scan happens to see first.
+            appImagePath: process.env.APPIMAGE || null,
+            // ⚠️ Published rather than duplicated. A desktop widget asking "is a game running"
+            // has to know what an emulator's window looks like, and that list is learned here
+            // at runtime. A copy in the plugin would be right the day it was written and wrong
+            // the first time someone added an emulator.
+            gameClasses: [...new Set([...omarchy.SEED_GAME_CLASSES, ...knownGameClasses()])],
+        });
+    } catch {}
+}
+
+// ── IPC ──────────────────────────────────────────────────────────────────────
+// One call answers the whole Omarchy pane. Every probe in it is a filesystem read or a short
+// spawn, so it is cheap enough to re-run whenever the pane is opened, and re-running it is how
+// the pane reflects an install the user just did in a terminal.
+ipcMain.handle('omarchy-status', () => ({
+    ...omarchy.describe(),
+    theme: omarchyTheme.describe(),
+    geometry: omarchy.hyprGeometry(),
+    tools: omarchy.toolStatus(),
+    // Standalone emulators are carried separately from tools and never folded into `gap`:
+    // three of the shipped presets have no core and genuinely need one, the rest are a
+    // matter of taste, and neither belongs in a count of what this host is missing.
+    emulators: omarchy.emulatorStatus(),
+    gap: omarchy.gapSummary(),
+    // The app reports only what it is responsible for: emulation, never the PC-gaming half.
+    installers: omarchy.installerStatus().filter(i => !i.pcGaming),
+    tuning: omarchy.systemTuning(),
+    tuningCommand: omarchy.tuningCommand(),
+    settings: {
+        windowRules:  settingFlag('omarchy_window_rules', true),
+        holdIdle:     settingFlag('omarchy_hold_idle', true),
+        powerProfile: settingFlag('omarchy_power_profile', true),
+        matchGeometry: settingFlag('omarchy_match_geometry', true),
+        // On by default wherever Hyprland is running: the title bar is dead weight under any
+        // tiling compositor, not only under Omarchy.
+        compactChrome: settingFlag('omarchy_compact_chrome', true),
+        gameWindowMode: gameWindowMode(),
+        knownGameClasses: knownGameClasses(),
+    },
+}));
+
+ipcMain.handle('omarchy-theme', () => omarchyTheme.describe());
+
+ipcMain.handle('omarchy-install-tools',  (_, keys) => omarchy.openInstallTerminal(Array.isArray(keys) ? keys : []));
+ipcMain.handle('omarchy-run-installer',  (_, key)  => omarchy.runInstaller(key));
+ipcMain.handle('omarchy-run-tuning',     ()        => {
+    const cmd = omarchy.tuningCommand();
+    return cmd ? omarchy.openTerminalWith(cmd) : { ok: false, error: 'Nothing to change, every setting is already where it should be.' };
+});
+
+ipcMain.handle('omarchy-set-flag', (_, key, on) => {
+    const allowed = ['omarchy_window_rules', 'omarchy_hold_idle', 'omarchy_power_profile',
+                     'omarchy_match_geometry', 'omarchy_compact_chrome'];
+    if (!allowed.includes(key)) return { ok: false, error: `Unknown setting: ${key}` };
+    settingSet(key, on ? '1' : '0');
+    if (key === 'omarchy_window_rules' && on) {
+        omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() });
+    }
+    return { ok: true };
+});
+
+ipcMain.handle('omarchy-set-game-window-mode', (_, mode) => {
+    if (!Object.prototype.hasOwnProperty.call(omarchy.GAME_WINDOW_MODES, mode)) {
+        return { ok: false, error: `Unknown window mode: ${mode}` };
+    }
+    settingSet('omarchy_game_window_mode', mode);
+    // ⚠️ A Hyprland rule cannot be withdrawn once set, so the new mode cannot simply replace
+    // the old one: the compositor has to be made to forget every runtime rule first, which is
+    // what reload does. Nothing here calls that on its own, the user asked for the change.
+    return { ok: true, applied: false, needsReload: true };
+});
+
+// Make the change take effect now rather than next start.
+//
+// ⚠️ Not free, and the button that calls this says so: `hyprctl reload` drops every window
+// rule added at runtime this session, including ones other tools set, and only ours are put
+// back. It does not touch the user's own config, which is what it re-reads.
+ipcMain.handle('omarchy-reload-rules', () => {
+    const r = omarchy.reloadConfig();
+    if (!r.ok) return { ok: false, error: 'Hyprland did not accept the reload.' };
+    return { ok: true, ...omarchy.applyWindowRules({ gameWindowMode: gameWindowMode(), gameClasses: knownGameClasses() }) };
 });
 
 // ── LAUNCH ────────────────────────────────────────────────────────────────────
@@ -631,19 +983,6 @@ function readHostPathKeys() {
         const m = txt.match(new RegExp(`^\\s*${k}\\s*=\\s*"([^"]*)"`, 'm'));
         if (m) out[k] = m[1];
     }
-    /*
-     * ⚠️ Except the core directories, which are EmuLatte's own and never the
-     * host's.
-     *
-     * Importing them was how the owned config came to point at
-     * /usr/lib/libretro — a directory belonging to a distro package that the
-     * user was in the middle of replacing with the Flatpak. Content paths are
-     * still imported, because BIOS files, ROM folders and shaders are the
-     * user's data and shared by every frontend on the machine; cores are the
-     * part EmuLatte manages, so they live where EmuLatte can manage them.
-     */
-    out.libretro_directory = ownedCoresDir();
-    out.libretro_info_path = ownedInfoDir();
     return out;
 }
 // Merge keys into a .cfg, updating existing lines in place and appending new ones.
@@ -662,41 +1001,150 @@ function writeRaCfgKeys(file, updates) {
 // Create the owned config if missing (or re-seed when force=true): clean + imported paths.
 function ensureOwnedRaCfg(force = false) {
     const file = ownedRaCfgPath();
-    if (!force && fs.existsSync(file)) {
-        /*
-         * ⚠️ Correct a config written before cores became EmuLatte's own.
-         *
-         * Existing installs have libretro_directory pointing at whatever the
-         * host used when the config was seeded — on this machine
-         * /usr/lib/libretro, a directory owned by a distro package the user is
-         * replacing. Left alone, RetroArch would keep being handed a core
-         * directory that is about to disappear.
-         */
-        try {
-            const txt = fs.readFileSync(file, 'utf8');
-            const points = (key, dir) => new RegExp(`^\\s*${key}\\s*=\\s*"${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'm').test(txt);
-            if (!points('libretro_directory', ownedCoresDir()) || !points('libretro_info_path', ownedInfoDir())) {
-                fs.mkdirSync(ownedCoresDir(), { recursive: true });
-                fs.mkdirSync(ownedInfoDir(), { recursive: true });
-                writeRaCfgKeys(file, { libretro_directory: ownedCoresDir(), libretro_info_path: ownedInfoDir() });
-            }
-        } catch (e) { /* a config we cannot read is rewritten below anyway */ }
-        return file;
-    }
+    if (!force && fs.existsSync(file)) return file;
+    const biosPin = library ? { system_directory: library.biosRoot() } : {};
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const lines = [
         '# EmuLatte-owned RetroArch configuration.',
         '# Seeded clean — only directory paths were imported from your host config; everything else is RetroArch defaults.',
         '# Tailor this from EmuLatte (Settings -> RetroArch). RetroArch is the engine; this is the config.',
         'config_save_on_exit = "true"',
-        'input_quit_gamepad_combo = "4"',   // Select + Start quits RetroArch (device-independent RetroPad combo)
-        ...Object.entries(readHostPathKeys()).map(([k, v]) => `${k} = "${v}"`),
+        ...Object.entries({ ...inputDefaults(), ...videoDefaults(), ...savestateDefaults() }).map(([k, v]) => `${k} = "${v}"`),
+        ...Object.entries({ ...readHostPathKeys(), ...biosPin }).map(([k, v]) => `${k} = "${v}"`),
     ];
     fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
     return file;
 }
+// ── THE VIDEO DEFAULTS EMULATTE PICKS FOR ITSELF ─────────────────────────────
+// RetroArch's own compiled-in default is the legacy `gl` driver, and on a modern desktop that
+// is not a neutral choice, it is a slow one. Measured on an RTX 4060 Ti, NES, fullscreen at
+// 3440x1440 with a CRT shader:
+//
+//     gl                 29.1 fps   207% of the time a frame should take (half speed)
+//     vulkan             54.6 fps   110%
+//     vulkan + threaded  58.6 fps   103%
+//
+// The core itself runs at 800+ fps unthrottled, so none of that is emulation cost: it is the
+// driver. `gl` also cannot load slang shaders at all, which is the only kind libretro ships
+// any more, so the shader a user picks silently does nothing on top of running at half speed.
+function detectVideoDriver() {
+    // Vulkan needs both a loader and at least one installed ICD; either missing and RetroArch
+    // falls back on its own, badly. glcore is the fallback rather than gl because it is the
+    // older of the two that can still load slang shaders.
+    const loader = ['/usr/lib/libvulkan.so.1', '/usr/lib64/libvulkan.so.1', '/usr/lib/x86_64-linux-gnu/libvulkan.so.1']
+        .some(f => { try { return fs.existsSync(f); } catch { return false; } });
+    const icd = ['/usr/share/vulkan/icd.d', '/usr/local/share/vulkan/icd.d', path.join(os.homedir(), '.local/share/vulkan/icd.d')]
+        .some(d => { try { return fs.readdirSync(d).some(f => f.endsWith('.json')); } catch { return false; } });
+    return (loader && icd) ? 'vulkan' : 'glcore';
+}
+// Threaded video buys the last 7% but is a known problem for cores that render in hardware, so
+// it is a global default that gets switched back off for those systems at launch. See
+// launchConfigFile.
+const HW_RENDERED_SYSTEMS = new Set(['gc', 'wii', 'ps2', 'ps3', 'psp', 'vita', 'dc', '3ds', 'switch', 'saturn']);
+// The pad-native way into RetroArch's own menu mid-game, and back out of the game entirely.
+// Same enum for both: 0 none, 1 Down+Y+L+R, 2 L3+R3, 3 L1+R1+Start+Select, 4 Start+Select.
+// A save state is only worth offering if you can tell which one it is, so RetroArch is asked
+// to write its screenshot beside every one.
+function savestateDefaults() {
+    return { savestate_thumbnail_enable: 'true' };
+}
+function inputDefaults() {
+    return {
+        input_menu_toggle_gamepad_combo: '2',   // L3 + R3 opens the RetroArch menu
+        input_quit_gamepad_combo: '4',          // Select + Start leaves the game
+    };
+}
+function videoDefaults() {
+    return {
+        video_driver: detectVideoDriver(),
+        video_threaded: 'true',
+        video_vsync: 'true',
+        video_smooth: 'false',          // sharp pixels; bilinear blur is not what retro wants
+        video_fullscreen: 'true',       // a game started from a library belongs on the whole screen
+        video_windowed_fullscreen: 'true',
+        // Keep the system's own shape and letterbox around it, rather than stretching a 4:3
+        // console across an ultrawide. Left unset, RetroArch filled the whole 3440x1440 and
+        // Alex Kidd came out a third too wide. 22 is "core provided": the core says what shape
+        // it is and RetroArch fits the largest copy of that shape on the screen, centred.
+        aspect_ratio_index: '22',
+        video_aspect_ratio_auto: 'false',
+        video_scale_integer: 'false',   // fill the screen; integer scaling would leave bars
+        // ⚠️ RetroArch's own default is ON, and it quietly loads a preset of its own choosing
+        // per core or per game from the config folder. The user then sees a shader on one
+        // system and not another, having picked neither. EmuLatte applies what its Express and
+        // RetroArch pages say and nothing else; the Express toggle can turn this back on.
+        auto_shaders_enable: 'false',
+    };
+}
+
+// ⚠️ The owned config is written ONCE and then never revisited, so whatever the host config
+// happened to say at that moment is what EmuLatte is stuck with. If RetroArch had not been run
+// yet, or wrote its config a minute later, the owned config ends up with no libretro_directory
+// at all, `retroarch -L nestopia_libretro.so` cannot resolve a thing, and every game fails to
+// launch, silently, for the life of the install.
+//
+// So the essentials are checked on every start and repaired in place: the folders cores and
+// core info really live in, taken from the host config when it has them and from the machine
+// itself when it does not.
+function repairOwnedRaCfg() {
+    const file = ensureOwnedRaCfg();
+    const cur = parseRaCfg(file);
+    const host = readHostPathKeys();
+    const updates = {};
+    const abs = v => String(v || '').replace(/^~(?=[/\\])/, os.homedir());
+    const stale = (k) => {
+        const v = cur[k];
+        if (!v || v === 'default') return true;
+        const p = abs(v);
+        try { if (!fs.existsSync(p)) return true; } catch { return true; }
+        // ⚠️ Existing is not the same as useful. RetroArch writes its own default
+        // ~/.config/retroarch/cores back into the config on exit, and that folder exists and is
+        // empty on a machine whose cores came from a package manager. Pointing at it is exactly
+        // as broken as pointing nowhere, so an empty one counts as stale.
+        if (k === 'libretro_directory') return !hasCores(p);
+        if (k === 'libretro_info_path') return !hasCoreInfo(p);
+        return false;
+    };
+    // Everything the host knows and we do not. A good value we already hold is never overwritten.
+    for (const [k, v] of Object.entries(host)) {
+        if (!v || !stale(k)) continue;
+        if (k === 'libretro_directory' && !hasCores(abs(v))) continue;       // the host is wrong too
+        if (k === 'libretro_info_path' && !hasCoreInfo(abs(v))) continue;
+        updates[k] = v;
+    }
+    // Cores and their .info files: fall back to the machine itself when no config knows.
+    if (!updates.libretro_directory && stale('libretro_directory')) {
+        const d = coreSearchDirs().find(hasCores);     if (d) updates.libretro_directory = d;
+    }
+    if (!updates.libretro_info_path && stale('libretro_info_path')) {
+        const d = coreInfoSearchDirs().find(hasCoreInfo); if (d) updates.libretro_info_path = d;
+    }
+    // Video and pad combos: only ever filled in when absent, so anything chosen on purpose stands.
+    for (const [k, v] of Object.entries({ ...videoDefaults(), ...inputDefaults(), ...savestateDefaults() }))
+        if (cur[k] == null || cur[k] === '') updates[k] = v;
+    if (library) {
+        updates.system_directory = library.biosRoot();     // always ours
+        updates.video_shader_dir = library.shaderRoot();   // ditto: EmuLatte's shaders, not the host's
+    }
+    if (Object.keys(updates).length) {
+        writeRaCfgKeys(file, updates);
+        console.log('[retroarch] repaired the owned config:', Object.keys(updates).join(', '));
+    }
+    return { file, updates: Object.keys(updates) };
+}
+
 // Re-derive only the path keys from the local host config (portability / a new machine).
-const reimportRaPaths = () => { const f = ensureOwnedRaCfg(); writeRaCfgKeys(f, readHostPathKeys()); return f; };
+// Re-deriving the path keys from the host must not hand system_directory back to the host's
+// own BIOS folder. EmuLatte's BIOS folder is the one the user drops files into.
+const reimportRaPaths = () => {
+    const f = ensureOwnedRaCfg();
+    const keys = readHostPathKeys();
+    delete keys.system_directory;     // the BIOS folder is ours
+    delete keys.video_shader_dir;     // so are the shaders
+    writeRaCfgKeys(f, keys);
+    if (library) library.pinBiosDir();
+    return f;
+};
 
 function readRaCfgKey(key) {
     const cfgDir = getRetroArchCfgDir();
@@ -762,6 +1210,32 @@ function effectiveShader(game) {
 }
 // --set-shader force-applies the preset every launch (overrides auto-presets), so the chosen
 // shader actually shows up even though gameplay never saves the config back.
+// ⚠️ A .slangp is often one line: `#reference "shaders_slang/crt/newpixie-crt.slangp"`.
+// EmuLatte's own curated presets are exactly that, so they are inert until libretro's slang
+// pack has been downloaded next to them. RetroArch says so only in its log
+// ("Could not read root preset", "Failed to create preset") and then draws the game with no
+// shader at all, which from the outside looks like EmuLatte ignoring the setting.
+function shaderResolves(preset, depth = 0) {
+    if (!preset || depth > 8) return false;
+    let txt;
+    try { if (!fs.existsSync(preset)) return false; txt = fs.readFileSync(preset, 'utf8'); }
+    catch { return false; }
+    const refs = [...txt.matchAll(/^\s*#reference\s+"?([^"\n]+)"?/gm)].map(m => m[1].trim());
+    for (const r of refs) {
+        const target = path.isAbsolute(r) ? r : path.join(path.dirname(preset), r);
+        if (!shaderResolves(target, depth + 1)) return false;
+    }
+    return true;
+}
+// What EmuLatte will actually hand RetroArch, and whether it can possibly work.
+function shaderStatus(game) {
+    const s = effectiveShader(game || null);
+    const out = { enabled: !!s.enable, path: s.shader || '', name: s.shader ? path.basename(s.shader).replace(/\.(slangp|glslp|cgp)$/i, '') : '' };
+    out.resolves = !!(s.enable && s.shader && shaderResolves(s.shader));
+    out.needsPack = !!(s.enable && s.shader && !out.resolves && !(library && library.hasShaderPack()));
+    return out;
+}
+
 function shaderArg(game) { const s = effectiveShader(game); return (s.enable && s.shader) ? ` --set-shader "${s.shader}"` : ''; }
 
 // Build a per-launch config = owned base + enabled scope overrides (global→system→game, later wins) +
@@ -788,6 +1262,13 @@ function launchConfigFile(game, extra = {}) {
         if (data.custom && data.custom.trim())
             for (const line of data.custom.trim().split('\n')) { const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*"?(.*?)"?\s*$/); if (m) cfg[m[1]] = m[2]; }
     }
+    // ⚠️ Threaded video is a 7% win on software cores and a known source of trouble on the
+    // ones that render in hardware, so the systems in that group get it switched back off.
+    if (game) {
+        let shortName = '';
+        try { shortName = db?.prepare('SELECT short_name FROM systems WHERE id=?').get(game.system_id)?.short_name || ''; } catch {}
+        if (HW_RENDERED_SYSTEMS.has(shortName)) cfg.video_threaded = 'false';
+    }
     Object.assign(cfg, extra);
     cfg.config_save_on_exit = 'false';
     const file = raOverridePath('_launch', 0);
@@ -811,56 +1292,23 @@ function ensureScummvmTarget(romPath) {
     } catch {}
 }
 
-/*
- * ⚠️ How RetroArch is actually started on this machine.
- *
- * Every system preset — and every launch template a user has ever saved —
- * begins with the bare word `retroarch`, which is correct for a distro package
- * and wrong for a Flatpak, where the binary does not exist on PATH at all.
- * Remove the distro package in favour of the Flatpak, as one does when the
- * distro cores turn out to be unmanageable, and every ROM in the library
- * becomes unplayable with "command not found" as the only clue.
- *
- * So the runner is resolved at launch time from the detected variant, and the
- * leading token of the template is rewritten to match. Templates stay portable:
- * the same library works on either installation, and switching between them
- * needs no edit to 56 presets.
- */
-function retroarchRunner() {
-    const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
-    if (variant === 'flatpak') return 'flatpak run org.libretro.RetroArch';
-    return 'retroarch';
-}
-
-// Only the leading `retroarch` token, and only when it is the command being
-// run — never a path that happens to contain the word.
-function withRetroarchRunner(cmd) {
-    const runner = retroarchRunner();
-    if (runner === 'retroarch') return cmd;
-    // ⚠️ Matches a bare `retroarch`, a quoted path, and an unquoted absolute
-    // path (/usr/bin/retroarch) — the last of which a saved launch override is
-    // very likely to contain, and which an earlier version of this missed.
-    // ⚠️ Three shapes, all of which occur in real launch overrides: a bare
-    // `retroarch`, an unquoted absolute path (/usr/bin/retroarch), and a quoted
-    // path that may contain spaces ("/opt/my apps/retroarch"). And none of the
-    // near-misses: retroarch32 is a different binary, and a rom path that
-    // merely contains the word is not the command.
-    return String(cmd)
-        .replace(/^\s*"([^"]*\/)?retroarch"(?=\s|$)/, runner)
-        .replace(/^\s*([^"\s]*\/)?retroarch(?=\s|$)/, runner);
-}
+// Which core this game would run on, as a bare filename ('' when the system names none).
+const coreNameFor = (game) => String(game.core_override || game.default_core || '').trim();
 
 function baseLaunchCommand(game) {   // the command WITHOUT EmuLatte's --appendconfig overrides
     let cmd = game.launch_override;
     if (!cmd && game.launch_template && game.rom_path) {
-        const core = game.core_override || game.default_core || '';
+        // ⚠️ Resolved to an absolute path rather than passed through as the bare filename it is
+        // stored as. A bare -L leaves RetroArch to find the core under its own
+        // libretro_directory, so one wrong line in a config file means nothing launches at all.
+        // We know where the core is; say so. The bare name stays as the fallback.
+        const core = resolveCoreFile(coreNameFor(game)) || coreNameFor(game);
         cmd = game.launch_template
             .replace('{rom}',      `"${game.rom_path}"`)
             .replace('{core}',     core                  ? `"${core}"`                  : '')
             .replace('{emulator}', game.default_emulator ? `"${game.default_emulator}"` : '');
     }
-    cmd = (cmd && cmd.trim()) ? cmd.trim() : '';
-    return cmd ? withRetroarchRunner(cmd) : '';
+    return (cmd && cmd.trim()) ? cmd.trim() : '';
 }
 function buildLaunchCommand(game) {
     let cmd = baseLaunchCommand(game);
@@ -874,19 +1322,55 @@ const gameWithSystem = (gameId) => db.prepare(`
     WHERE g.id=?
 `).get(gameId);
 
-ipcMain.handle('launch-game', (_, gameId) => {
+/*
+ * Play a game by id. One implementation, reached from the library, from Couch Mode and from
+ * `--play=<id>` on the command line.
+ *
+ * ⚠️ The deeplink calls THIS rather than building a command of its own. A desktop launcher
+ * that spawned the emulator itself would be a second implementation of the template
+ * resolution, the ScummVM safety net, the RetroArch config overrides and the last-played
+ * write: correct on the day it was written and wrong by the next release.
+ */
+/*
+ * Everything that makes a launch impossible before it starts, in one place.
+ *
+ * A missing ROM and a missing core both used to end as a RetroArch window that flashed and
+ * vanished with nothing said. Named here instead, with what the renderer needs to offer the
+ * fix. Shared by playGame and launch-game-ex so resuming a save cannot skip the checks that
+ * starting fresh performs.
+ */
+function launchPreflight(game) {
+    ensureScummvmTarget(game.rom_path);   // safety net for ScummVM games with an empty .scummvm
+    if (game.rom_path && !fs.existsSync(game.rom_path)) {
+        return { ok: false, missingRom: true, romPath: game.rom_path,
+                 error: `The file for this game is not there any more:\n${game.rom_path}` };
+    }
+    const wantsCore = coreNameFor(game);
+    if (wantsCore && !game.launch_override && !resolveCoreFile(wantsCore)) {
+        const base = path.basename(wantsCore).replace(/\.so$/, '');
+        return { ok: false, needCore: base, coreName: prettyCoreName(base),
+                 error: `${game.title || 'This game'} needs the ${prettyCoreName(base)} core, which is not installed.` };
+    }
+    return null;
+}
+
+function playGame(gameId) {
     if (!db) return { ok: false, error: 'DB not ready' };
     const game = gameWithSystem(gameId);
     if (!game) return { ok: false, error: 'Game not found' };
 
-    ensureScummvmTarget(game.rom_path);   // safety net for already-imported ScummVM games with an empty .scummvm
+    const stop = launchPreflight(game);
+    if (stop) return stop;
+
     const cmd = buildLaunchCommand(game);
-    if (!cmd) return { ok: false, error: 'No launch command configured — set a Launch Template in System Manager or a Launch Override on this ROM.' };
+    if (!cmd) return { ok: false, error: 'No launch command configured. Set a Launch Template in System Manager, or a Launch Override on this ROM.' };
 
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
-    spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+    launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
     return { ok: true };
-});
+}
+
+ipcMain.handle('launch-game', (_, gameId) => playGame(gameId));
 
 // ── RETROARCH SETTINGS (override editor) ──────────────────────────────────────
 ipcMain.handle('get-ra-override', (_, scope, refId) => {
@@ -1015,15 +1499,21 @@ ipcMain.handle('launch-game-ex', (_, gameId, opts = {}) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     const game = gameWithSystem(gameId);
     if (!game) return { ok: false, error: 'Game not found' };
+    const stop = launchPreflight(game);
+    if (stop) return stop;
     let cmd = baseLaunchCommand(game);
     if (!cmd) return { ok: false, error: 'No launch command configured.' };
     if (/retroarch/i.test(cmd)) {
-        const extra = opts.fresh ? { savestate_auto_load: 'false' } : {};
+        // Start Fresh has to override auto-resume, and picking the auto save has to override it
+        // being off, or the choice the user just made is silently ignored either way.
+        const extra = opts.fresh ? { savestate_auto_load: 'false' }
+                    : opts.slot === 'auto' ? { savestate_auto_load: 'true' }
+                    : {};
         cmd += ` --config "${launchConfigFile(game, extra)}"${shaderArg(game)}`;
         if (opts.slot != null && opts.slot !== 'auto') cmd += ` --entryslot ${Number(opts.slot)}`;
     }
     db.prepare('UPDATE games SET last_played=? WHERE id=?').run(Date.now(), gameId);
-    spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
+    launchEmulator(cmd);   // the one choke point: idle inhibitor, power profile, window rule
     return { ok: true };
 });
 
@@ -1064,6 +1554,10 @@ ipcMain.handle('launch-retroarch-config', () => {
     const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
     const exec = variant === 'flatpak' ? 'flatpak run org.libretro.RetroArch' : 'retroarch';
     const cmd = `${exec} --config "${ensureOwnedRaCfg()}" --menu`;
+    // ⚠️ Deliberately NOT launchEmulator(): this opens RetroArch's own settings menu, which is
+    // a configuration tool, not play. Holding the screen awake and switching a laptop to the
+    // performance profile for it would be wrong on both counts. The window rule still applies,
+    // since that is matched on class by the compositor rather than applied by us here.
     spawn('bash', ['-c', cmd], { detached: true, stdio: 'ignore' }).unref();
     return { ok: true };
 });
@@ -1100,53 +1594,30 @@ ipcMain.handle('ra-browse-shaders', (_, rel = '') => {
 });
 
 // Download a URL to a file, following GitHub redirects, reporting progress.
-/*
- * ⚠️ A network error must arrive with something a person can read.
- *
- * Node's socket errors often carry an empty `message` and put the useful part
- * in `code` — ETIMEDOUT, ECONNRESET, ENOTFOUND. Rejecting with the raw error
- * meant the face showed "INSTALL FAILED" and nothing else, which is precisely
- * the kind of dead end this project keeps running into. A timeout is also set
- * explicitly: without one, a stalled connection hangs the install forever with
- * a progress bar that never moves.
- */
-function netMessage(err) {
-    if (err && err.message) return err.message;
-    const code = err && err.code;
-    if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') return 'The download timed out. The core server may be busy — try again.';
-    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'Could not reach the core server. Check the network.';
-    if (code === 'ECONNRESET') return 'The connection dropped part-way through.';
-    return code ? `Network error (${code}).` : 'The download failed.';
-}
-
 function httpsDownload(url, dest, onProgress) {
     return new Promise((resolve, reject) => {
         const file = fs.createWriteStream(dest);
-        const fail = (err) => { try { fs.unlinkSync(dest); } catch {} reject(new Error(netMessage(err))); };
-        file.on('error', fail);
         const get = (u, redirects = 0) => {
-            const req = https.get(u, { headers: { 'User-Agent': 'EmuLatte' } }, res => {
+            https.get(u, { headers: { 'User-Agent': 'EmuLatte' } }, res => {
                 if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirects < 6) {
                     res.resume(); return get(res.headers.location, redirects + 1);
                 }
-                if (res.statusCode !== 200) { res.resume(); return fail(new Error('The core server answered HTTP ' + res.statusCode + '.')); }
+                if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
                 const total = parseInt(res.headers['content-length'] || '0', 10); let got = 0;
                 res.on('data', c => { got += c.length; onProgress && onProgress(got, total); });
                 res.pipe(file);
                 file.on('finish', () => file.close(() => resolve()));
-            });
-            req.on('error', fail);
-            // A stalled connection is the common failure here, and it has to end.
-            req.setTimeout(60000, () => { req.destroy(new Error('The download timed out. The core server may be busy — try again.')); });
+            }).on('error', err => { try { fs.unlinkSync(dest); } catch {} reject(err); });
         };
         get(url);
     });
 }
-const shaderDir = () => readRaCfgKey('video_shader_dir') || path.join(getRetroArchCfgDir(), 'shaders');
+// EmuLatte's own shader folder wins over anything a host config says, so a download has
+// somewhere writable to land and the collection belongs to this app.
+const shaderDir = () => (library && library.shaderRoot()) || readRaCfgKey('video_shader_dir') || path.join(getRetroArchCfgDir(), 'shaders');
 
 // Download libretro's official slang-shaders into <shaders>/shaders_slang (same layout RetroArch's updater uses).
-ipcMain.handle('download-shader-pack', async (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
+async function fetchShaderPack(win) {
     const dest = path.join(os.tmpdir(), 'emulatte-slang-shaders.zip');
     try {
         await httpsDownload('https://github.com/libretro/slang-shaders/archive/refs/heads/master.zip', dest,
@@ -1167,15 +1638,26 @@ ipcMain.handle('download-shader-pack', async (e) => {
         try { fs.unlinkSync(dest); } catch {}
         return { ok: true, files: n, dir: target };
     } catch (err) { return { ok: false, error: err.message }; }
-});
+}
+ipcMain.handle('download-shader-pack', async (e) => fetchShaderPack(BrowserWindow.fromWebContents(e.sender)));
 
-// Copy EmuLatte's bundled curated presets into the shader root (their relative refs resolve against the pack).
-ipcMain.handle('install-bundled-presets', () => {
+// Copy EmuLatte's bundled curated presets into the shader root.
+//
+// ⚠️ Each of these is a one-line `#reference` into libretro's slang pack, so copying them
+// on their own installs a menu of shaders that every one of them fails to load. The pack comes
+// first, or the presets are decoration.
+ipcMain.handle('install-bundled-presets', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
     const root = shaderDir(); fs.mkdirSync(root, { recursive: true });
+    let fetched = null;
+    if (!(library && library.hasShaderPack())) {
+        fetched = await fetchShaderPack(win);
+        if (!fetched.ok) return { ok: false, error: `The shader pack these presets build on could not be downloaded: ${fetched.error}` };
+    }
     const src = path.join(__dirname, 'assets', 'shaders');
     let names = [];
     for (const f of safeReaddir(src)) if (/\.(slangp|glslp|cgp)$/i.test(f)) { try { fs.copyFileSync(path.join(src, f), path.join(root, f)); names.push(f.replace(/\.[^.]+$/, '')); } catch {} }
-    return { ok: true, names };
+    return { ok: true, names, packFiles: fetched?.files || 0 };
 });
 
 // ── INPUT REMAPS (.rmp files) ─────────────────────────────────────────────────
@@ -1362,9 +1844,11 @@ ipcMain.handle('restore-ra-settings', async () => {
 });
 
 // ── FULL BACKUP / RESTORE (config folder + RetroArch saves) ───────────────────
-// scope 'emulatte' → just GameManagerConfig/EmuLatte; scope 'suite' → all of GameManagerConfig
-// (Clarity Suite, same as Clarity's own backup). Both bundle RetroArch save states +
-// savefiles (which live OUTSIDE GameManagerConfig) under a known prefix so restore can re-home them.
+// scope 'emulatte' → Emulatte_Stuff, everything EmuLatte owns; scope 'suite' → that plus the
+// sibling app's GameManagerConfig folder, for one archive of both. Both bundle RetroArch save
+// states + savefiles (which live outside either folder) under a known prefix so restore can
+// re-home them. ROMS and BIOS are deliberately NOT in the zip: a backup of a library is its
+// metadata, not tens of gigabytes of ROMs. The folder layout is what makes them replaceable.
 const BK_STATES = '__ra_saves__/states/';
 const BK_SAVES  = '__ra_saves__/saves/';
 ipcMain.handle('create-backup', async (_, scope = 'emulatte') => {
@@ -1378,8 +1862,17 @@ ipcMain.handle('create-backup', async (_, scope = 'emulatte') => {
     try {
         try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}            // flush WAL so emulatte.db is consistent in the zip
         const zip = new AdmZip();
-        if (isSuite) zip.addLocalFolder(path.join(baseDir, 'GameManagerConfig'), 'GameManagerConfig');
-        else         zip.addLocalFolder(configDir, 'GameManagerConfig/EmuLatte');
+        // ⚠️ adm-zip hands the filter the path INSIDE the zip, prefix and all, so the prefix has
+        // to come off before the first segment means anything. Getting this wrong is silent and
+        // expensive: it put the whole ROMS folder in the archive.
+        const skipBulk = (entry) => {
+            const rel = String(entry).replace(/\\/g, '/').replace(/^Emulatte_Stuff\/?/, '');
+            const top = rel.split('/')[0];
+            return top === 'ROMS' || top === 'BIOS';
+        };
+        zip.addLocalFolder(configDir, 'Emulatte_Stuff', e => !skipBulk(e));
+        if (isSuite && fs.existsSync(path.join(baseDir, 'GameManagerConfig')))
+            zip.addLocalFolder(path.join(baseDir, 'GameManagerConfig'), 'GameManagerConfig');
         const stateDir = savestateDir(), saveDir = savefileDir();
         let withSaves = false;
         if (stateDir && fs.existsSync(stateDir)) { zip.addLocalFolder(stateDir, BK_STATES.slice(0, -1)); withSaves = true; }
@@ -1397,7 +1890,9 @@ ipcMain.handle('restore-backup', async () => {
     try {
         const zip = new AdmZip(filePaths[0]);
         const entries = zip.getEntries();
-        if (!entries.some(e => e.entryName.startsWith('GameManagerConfig/'))) return { ok: false, error: 'This ZIP is not an EmuLatte or Clarity Suite backup.' };
+        const LEGACY_PREFIX = 'GameManagerConfig/EmuLatte/';
+        if (!entries.some(e => e.entryName.startsWith('Emulatte_Stuff/') || e.entryName.startsWith('GameManagerConfig/')))
+            return { ok: false, error: 'This ZIP is not an EmuLatte or Clarity Suite backup.' };
         const stateDir = savestateDir(), saveDir = savefileDir();
         // Finalize + close the DB before overwriting it, so a later WAL checkpoint can't clobber the restore.
         try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
@@ -1408,7 +1903,11 @@ ipcMain.handle('restore-backup', async () => {
             if (e.isDirectory) continue;
             const name = e.entryName;
             let out = null;
-            if (name.startsWith('GameManagerConfig/'))      { out = path.join(baseDir, name); cfgN++; }
+            // A zip written before EmuLatte moved out of the sibling app's folder carries the old
+            // prefix; it lands in the new home so an old backup restores into a current install.
+            if (name.startsWith('Emulatte_Stuff/'))          { out = path.join(configDir, name.slice('Emulatte_Stuff/'.length)); cfgN++; }
+            else if (name.startsWith(LEGACY_PREFIX))         { out = path.join(configDir, name.slice(LEGACY_PREFIX.length)); cfgN++; }
+            else if (name.startsWith('GameManagerConfig/'))  { out = path.join(baseDir, name); cfgN++; }
             else if (name.startsWith(BK_STATES) && stateDir) { out = path.join(stateDir, name.slice(BK_STATES.length)); saveN++; }
             else if (name.startsWith(BK_SAVES)  && saveDir)  { out = path.join(saveDir,  name.slice(BK_SAVES.length));  saveN++; }
             if (!out) continue;
@@ -1611,7 +2110,15 @@ async function ssApiCall(endpoint, params) {
     const text = body.toString('utf8');
     // ScreenScraper explains a refusal in the body ("Erreur de login", quota messages). A bare
     // status code hid which of those it was.
-    if (status !== 200) throw new Error(`HTTP ${status}${text.trim() ? ': ' + text.trim().slice(0, 160) : ''}`);
+    if (status !== 200) {
+        // ⚠️ A rejected login is not a missing game, and the difference decides where the
+        // user looks. ScreenScraper answers 403 with "Erreur de login : Verifier les
+        // identifiants utilisateurs" for a bad or empty account, which used to arrive in the
+        // interface as one more anonymous "failed" among dozens.
+        const err = new Error(`HTTP ${status}${text.trim() ? ': ' + text.trim().slice(0, 160) : ''}`);
+        if (status === 401 || status === 403 || /erreur de login|identifiants/i.test(text)) err.authFailed = true;
+        throw err;
+    }
     try { return JSON.parse(text); }
     catch { throw new Error(text.slice(0, 120) || 'Invalid JSON from ScreenScraper'); }
 }
@@ -1678,7 +2185,7 @@ async function scrapeGameById(gameId, ssUser, ssPass, win, metaOnly = false, sea
         catch (e) {
             // ScreenScraper returns HTTP 404 ("Rom/Iso/Dossier non trouvée") when nothing matches — soft "not found" so the UI can offer a name refine.
             if (/HTTP 404/.test(e.message)) return { ok: false, notFound: true, error: 'Not found on ScreenScraper — try refining the name.' };
-            return { ok: false, error: `API error: ${e.message}` };
+            return { ok: false, authFailed: !!e.authFailed, error: `API error: ${e.message}` };
         }
         jeu = apiResult.response?.jeu;
         if (!jeu) return { ok: false, notFound: true, error: apiResult.response?.msg || 'Not found on ScreenScraper — try refining the name.' };
@@ -1737,7 +2244,7 @@ ipcMain.handle('scrape-game', async (event, gameId, metaOnly = false, searchName
     if (!db) return { ok: false, error: 'DB not ready' };
     const ssUser = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_user')?.value;
     const ssPass = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_pass')?.value;
-    if (!ssUser || !ssPass) return { ok: false, error: 'ScreenScraper credentials not set. Go to Settings.' };
+    if (!ssUser || !ssPass) return { ok: false, authFailed: true, error: 'No ScreenScraper account saved. Settings \u203a Scrapers, enter it and press Test Credentials.' };
     return scrapeGameById(gameId, ssUser, ssPass, BrowserWindow.fromWebContents(event.sender), metaOnly, searchName);
 });
 
@@ -1745,7 +2252,7 @@ ipcMain.handle('scrape-batch', async (event, gameIds) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     const ssUser = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_user')?.value;
     const ssPass = db.prepare('SELECT value FROM settings WHERE key=?').get('ss_pass')?.value;
-    if (!ssUser || !ssPass) return { ok: false, error: 'ScreenScraper credentials not set. Go to Settings.' };
+    if (!ssUser || !ssPass) return { ok: false, authFailed: true, error: 'No ScreenScraper account saved. Settings \u203a Scrapers, enter it and press Test Credentials.' };
 
     batchScrapeCancel = false;
     const win   = BrowserWindow.fromWebContents(event.sender);
@@ -1820,32 +2327,16 @@ ipcMain.handle('fetch-ss-systems', async () => {
 });
 
 // ── RETROARCH DETECTION ───────────────────────────────────────────────────────
-function retroarchInstalls() {
+function detectRetroArch() {
     const which = spawnSync('which', ['retroarch'], { encoding: 'utf8' });
-    const native = which.status === 0 && !!which.stdout.trim();
-    const flatpak = [
+    if (which.status === 0 && which.stdout.trim()) return 'native';
+
+    const flatpakPaths = [
         '/var/lib/flatpak/app/org.libretro.RetroArch',
         path.join(os.homedir(), '.local', 'share', 'flatpak', 'app', 'org.libretro.RetroArch'),
-    ].some(p => fs.existsSync(p));
-    return { native, flatpak };
-}
+    ];
+    if (flatpakPaths.some(p => fs.existsSync(p))) return 'flatpak';
 
-/*
- * ⚠️ A stored choice wins over detection.
- *
- * Both can be installed at once — a distro package left behind after a Flatpak
- * is added, which is exactly the state this machine was in — and detection
- * alone would silently pick the native one and keep using its cores. Whatever
- * the user chose in Settings is the answer; detection only decides when there
- * is no choice on record.
- */
-function detectRetroArch() {
-    const chosen = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value;
-    const { native, flatpak } = retroarchInstalls();
-    if (chosen === 'flatpak' && flatpak) return 'flatpak';
-    if (chosen === 'native' && native) return 'native';
-    if (native) return 'native';
-    if (flatpak) return 'flatpak';
     return 'none';
 }
 
@@ -1856,67 +2347,17 @@ ipcMain.handle('detect-retroarch', () => {
     return variant;
 });
 
-// What is actually on the machine, and which one is in use — so a face can
-// offer the choice instead of making the user guess why nothing launches.
-ipcMain.handle('retroarch-installs', () => {
-    const installs = retroarchInstalls();
-    return {
-        ...installs,
-        active: detectRetroArch(),
-        runner: retroarchRunner(),
-        configDir: getRetroArchCfgDir(),
-        coresDir: coresInstallDir(),
-    };
-});
-
-ipcMain.handle('set-retroarch-variant', (_, variant) => {
-    if (!db) return { ok: false };
-    if (!['native', 'flatpak'].includes(variant)) return { ok: false, error: 'Unknown RetroArch type.' };
-    const installs = retroarchInstalls();
-    if (!installs[variant]) return { ok: false, error: `That RetroArch is not installed.` };
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('retroarch_variant', variant);
-    // ⚠️ The core list belongs to the variant: the two installs have separate
-    // core directories, and leaving the old rows would offer cores that the
-    // newly-chosen RetroArch cannot load.
-    try { scanCoresNow(); } catch (e) {}
-    return { ok: true, variant, runner: retroarchRunner() };
-});
-
-/*
- * A directory listing, for choosing a ROM folder without a desktop dialog.
- *
- * ⚠️ Electron's own folder picker is a desktop window: it appears at a size a
- * 720x480 screen cannot show properly and it is driven with a mouse. A face
- * that is meant to replace the desktop entirely needs to browse directories as
- * rows, like everything else it does.
- */
-ipcMain.handle('list-dir', (_, dirPath) => {
-    const start = dirPath && String(dirPath).trim() ? String(dirPath) : os.homedir();
-    try {
-        const entries = fs.readdirSync(start, { withFileTypes: true });
-        const dirs = entries
-            .filter(e => {
-                if (e.name.startsWith('.')) return false;         // dotfiles are noise on a TV
-                try { return e.isDirectory() || fs.statSync(path.join(start, e.name)).isDirectory(); }
-                catch { return false; }                            // a broken symlink is not a folder
-            })
-            .map(e => ({ name: e.name, path: path.join(start, e.name) }))
-            .sort((a, b) => a.name.localeCompare(b.name));
-        // How many files are here, so "is this the right folder" is answerable
-        // without opening it.
-        const fileCount = entries.filter(e => e.isFile()).length;
-        return { ok: true, path: start, parent: path.dirname(start) === start ? null : path.dirname(start), dirs, fileCount };
-    } catch (e) {
-        return { ok: false, error: 'Cannot read that folder.', path: start };
-    }
-});
-
 // ── SYSTEM PRESETS ────────────────────────────────────────────────────────────
-ipcMain.handle('get-system-presets', () => {
-    try {
-        return JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'systems.json'), 'utf8'));
-    } catch { return []; }
-});
+// Every system EmuLatte ships, with the folder its ROMs go in. Read once: seeding, the folder
+// names and the Systems manager all work off the same list.
+let _systemPresets = null;
+function systemPresets() {
+    if (_systemPresets) return _systemPresets;
+    try { _systemPresets = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'systems.json'), 'utf8')); }
+    catch { _systemPresets = []; }
+    return _systemPresets;
+}
+ipcMain.handle('get-system-presets', () => systemPresets());
 
 // ── CORES ─────────────────────────────────────────────────────────────────────
 // Pull a "key = value" / 'key = "value"' field out of a RetroArch .info file.
@@ -1927,48 +2368,74 @@ function infoField(txt, key) {
     return u ? u[1].trim() : '';
 }
 
+// ── WHERE THE CORES ARE ───────────────────────────────────────────────────────
+// Not one folder. RetroArch's own `libretro_directory`, the per-user folder, the Flatpak
+// sandbox, and the system-wide folders a package manager uses.
+//
+// ⚠️ That last group is the one that matters on Arch and its derivatives: `pacman -S
+// libretro-nestopia` puts cores in /usr/lib/libretro, which no amount of looking in
+// ~/.config/retroarch/cores will ever find. Searching only the per-user folder meant a machine
+// with 42 working cores installed reported zero and could not launch a single game.
+const SYSTEM_CORE_DIRS = [
+    '/usr/lib/libretro', '/usr/lib64/libretro', '/usr/local/lib/libretro',
+    '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib/aarch64-linux-gnu/libretro',
+];
+const SYSTEM_CORE_INFO_DIRS = ['/usr/share/libretro/info', '/usr/local/share/libretro/info'];
+// ⚠️ Deduped by REAL path, not the written one: /usr/lib64 is a symlink to /usr/lib on Arch,
+// so the naive version found every core twice and the core list came out doubled.
+const uniqExisting = (dirs) => {
+    const out = [], seen = new Set();
+    for (const d of dirs) {
+        if (!d) continue;
+        let r;
+        try { r = fs.realpathSync(path.resolve(d.replace(/^~(?=[/\\])/, os.homedir()))); } catch { continue; }
+        if (seen.has(r)) continue;
+        seen.add(r);
+        try { if (fs.statSync(r).isDirectory()) out.push(r); } catch {}
+    }
+    return out;
+};
+const dirHas = (dir, test) => {
+    try { return fs.readdirSync(dir).some(test); } catch { return false; }
+};
+const hasCores = d => dirHas(d, f => f.endsWith('_libretro.so'));
+const hasCoreInfo = d => dirHas(d, f => f.endsWith('.info'));
+const userCoresDir = () => path.join(os.homedir(), '.config', 'retroarch', 'cores');
+const flatpakCoresDir = () => path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores');
+function coreSearchDirs() {
+    return uniqExisting([
+        readRaCfgKey('libretro_directory'),
+        userCoresDir(), flatpakCoresDir(),
+        path.join(getRetroArchCfgDir(), 'cores'),
+        ...SYSTEM_CORE_DIRS,
+    ]);
+}
+function coreInfoSearchDirs() {
+    return uniqExisting([
+        readRaCfgKey('libretro_info_path'),
+        path.join(os.homedir(), '.config', 'retroarch', 'info'),
+        path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'info'),
+        path.join(getRetroArchCfgDir(), 'info'),
+        ...SYSTEM_CORE_INFO_DIRS,
+    ]);
+}
+// A system's `default_core` is a bare filename like "nestopia_libretro.so". Turn it into the
+// absolute path of a core that is really on this machine, or '' when there is none.
+function resolveCoreFile(nameOrPath) {
+    const raw = String(nameOrPath || '').trim();
+    if (!raw) return '';
+    if (raw.includes('/')) return fs.existsSync(raw) ? raw : (resolveCoreFile(path.basename(raw)) || '');
+    const file = /\.so$/.test(raw) ? raw : `${raw}.so`;
+    for (const d of coreSearchDirs()) {
+        const p = path.join(d, file);
+        try { if (fs.existsSync(p)) return p; } catch {}
+    }
+    return '';
+}
+
 function scanCoresNow() {
     if (!db) return { ok: false, error: 'DB not ready' };
-    /*
-     * ⚠️ Where cores actually live depends entirely on how RetroArch was
-     * installed, and guessing only the Flatpak and self-managed layouts meant
-     * this machine reported zero cores while RetroArch had 42 of them.
-     *
-     *   distro package (pacman, apt)  /usr/lib/libretro — root-owned, and the
-     *                                 one this scan used to miss completely
-     *   flatpak                       ~/.var/app/org.libretro.RetroArch/…
-     *   self-managed / downloaded     ~/.config/retroarch/cores
-     *
-     * The configured libretro_directory comes first, because it is the answer
-     * RetroArch itself is using, and the rest are added so a mixed setup — a
-     * distro RetroArch plus cores downloaded here — sees both halves.
-     */
-    // ⚠️ Deduplicated by *real* path: /usr/lib64 is a symlink to /usr/lib on
-    // most distributions, so listing both found every core twice and would
-    // have filled the core list with pairs that differ only by spelling.
-    // ⚠️ EmuLatte's own directory first, because those cores are the ones it
-    // installed and the ones it guarantees. The rest are read-only
-    // conveniences: a distro package's 42 cores are perfectly usable while
-    // they exist, and a machine that has them should not be made to download
-    // them again — but nothing here depends on them, and none of these
-    // directories is ever written to.
-    const coreDirs = [...([
-        ownedCoresDir(),
-        readRaCfgKey('libretro_directory'),
-        path.join(os.homedir(), '.config', 'retroarch', 'cores'),
-        path.join(os.homedir(), '.var', 'app', 'org.libretro.RetroArch', 'config', 'retroarch', 'cores'),
-        '/usr/lib/libretro',
-        '/usr/lib64/libretro',
-        '/usr/local/lib/libretro',
-    ].filter(Boolean).reduce((seen, dir) => {
-        let real = dir;
-        try { real = fs.realpathSync(dir); } catch { /* missing dirs keep their own name */ }
-        // ⚠️ First spelling wins. /usr/lib64 resolves to /usr/lib, and letting
-        // the later one overwrite meant every distro core was recorded under a
-        // symlinked path that only exists on some distributions.
-        if (!seen.has(real)) seen.set(real, dir);
-        return seen;
-    }, new Map())).values()];
+    const coreDirs = coreSearchDirs();
     // RetroArch keeps the .info files in a sibling `info/` dir, NOT next to the .so. Look there first
     // (then next to the .so as a fallback) — otherwise no core metadata is found at all.
     const insert = db.prepare(`INSERT OR REPLACE INTO cores
@@ -1983,24 +2450,16 @@ function scanCoresNow() {
         for (const p of dead) prune.run(p);
     });
     const found = [];
+    const infoDirs = coreInfoSearchDirs();
     for (const dir of coreDirs) {
         if (!fs.existsSync(dir)) continue;
-        // RetroArch keeps .info files in a sibling `info/` dir for a
-        // self-managed install, but a distro package puts them under
-        // /usr/share/libretro/info. Both are tried, plus whatever the config
-        // says, or every core shows up with no system name and no extensions.
-        const infoDirs = [
-            ownedInfoDir(),
-            readRaCfgKey('libretro_info_path'),
-            path.join(path.dirname(dir), 'info'),
-            '/usr/share/libretro/info',
-        ].filter(Boolean);
+        const infoDir = path.join(path.dirname(dir), 'info');
         let files;
         try { files = fs.readdirSync(dir); } catch { continue; }
         for (const file of files.filter(f => f.endsWith('_libretro.so'))) {
             const corePath = path.join(dir, file);
             const base     = file.replace(/\.so$/, '.info');
-            const infoPath = [...infoDirs.map(d => path.join(d, base)), path.join(dir, base)]
+            const infoPath = [path.join(infoDir, base), path.join(dir, base), ...infoDirs.map(d => path.join(d, base))]
                 .find(p => fs.existsSync(p));
             const rec = {
                 path: corePath,
@@ -2029,6 +2488,48 @@ function scanCoresNow() {
 }
 ipcMain.handle('scan-cores', () => scanCoresNow());
 
+// ── CAN THIS LIBRARY ACTUALLY PLAY? ───────────────────────────────────────────
+// Everything that stands between the user and a game starting, answered in one call: is there
+// a RetroArch at all, can its config see the cores, and does every system holding games have
+// the core it names. The renderer turns this into one button.
+ipcMain.handle('play-readiness', () => {
+    if (!db) return { ok: false, error: 'DB not ready' };
+    const variant = db.prepare("SELECT value FROM settings WHERE key='retroarch_variant'").get()?.value || detectRetroArch();
+    const rows = db.prepare(`
+        SELECT s.id, s.name, s.short_name, s.default_core, s.launch_template, COUNT(g.id) AS games
+        FROM systems s JOIN games g ON g.system_id = s.id
+        GROUP BY s.id HAVING games > 0 ORDER BY games DESC`).all();
+    const missing = [], ready = [];
+    for (const r of rows) {
+        const core = String(r.default_core || '').trim();
+        const usesRa = /retroarch/i.test(r.launch_template || '');
+        if (!usesRa) { ready.push({ ...r, core: '', standalone: true }); continue; }
+        if (!core) { missing.push({ ...r, core: '', reason: 'no core set' }); continue; }
+        const found = resolveCoreFile(core);
+        if (found) ready.push({ ...r, core, path: found });
+        else missing.push({ ...r, core, base: path.basename(core).replace(/\.so$/, ''), reason: 'core not installed' });
+    }
+    const raCfg = parseRaCfg(ensureOwnedRaCfg());
+    return {
+        ok: true, retroarch: variant,
+        // What EmuLatte is actually telling RetroArch to render with, and whether it has its
+        // own shaders yet. Both decide whether a game looks and runs the way it should.
+        videoDriver: raCfg.video_driver || '(RetroArch default)',
+        recommendedDriver: detectVideoDriver(),
+        shaderDir: library ? library.shaderRoot() : '',
+        hasShaders: library ? library.hasShaderPack() : false,
+        shader: shaderStatus(null),
+        autoShaders: (raCfg.auto_shaders_enable || 'false') === 'true',
+        coreDirs: coreSearchDirs(), coresFound: coreSearchDirs().reduce((n, d) => {
+            try { return n + fs.readdirSync(d).filter(f => f.endsWith('_libretro.so')).length; } catch { return n; }
+        }, 0),
+        installDir: coresInstallDir(),
+        ready, missing,
+        // One entry per core to fetch, so the UI can offer a single button for the lot.
+        needed: [...new Set(missing.filter(m => m.base).map(m => m.base))],
+    };
+});
+
 ipcMain.handle('get-cores', () => {
     if (!db) return [];
     return db.prepare('SELECT * FROM cores ORDER BY name').all();
@@ -2040,62 +2541,25 @@ function buildbotCoreBase() {
     const arch = { x64: 'x86_64', ia32: 'i686', arm64: 'arm64', arm: 'armhf' }[process.arch] || 'x86_64';
     return `https://buildbot.libretro.com/nightly/linux/${arch}/latest`;
 }
-/*
- * ⚠️ Where a downloaded core can actually be written.
- *
- * These used to be RetroArch's configured directories, full stop — which is
- * correct for a self-managed install and impossible for a distro package,
- * where libretro_directory is /usr/lib/libretro and owned by root. Every
- * install failed with EACCES, and the failure was reported as an error the
- * user never saw. On this machine that is exactly what happened.
- *
- * So: use the configured directory when it is writable, and otherwise fall
- * back to RetroArch's per-user directory, which we may create. Nothing is
- * lost by doing so — EmuLatte launches cores by absolute path, so a core here
- * works whether or not RetroArch's own menu lists it.
- */
-function writableDir(preferred, fallback) {
-    for (const dir of [preferred, fallback].filter(Boolean)) {
-        try {
-            fs.mkdirSync(dir, { recursive: true });
-            fs.accessSync(dir, fs.constants.W_OK);
-            return dir;
-        } catch { /* try the next one */ }
-    }
-    return fallback;
+// ⚠️ NOT simply `libretro_directory`: on a packaged install that is /usr/lib/libretro, which
+// is root-owned, so a download there fails with EACCES. Cores we fetch go somewhere this user
+// can actually write, and coreSearchDirs() looks there too, so they are found either way.
+const writableDir = (d) => {
+    try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return true; }
+    catch { return false; }
+};
+function coresInstallDir() {
+    const cfg = readRaCfgKey('libretro_directory');
+    if (cfg && writableDir(cfg)) return cfg;
+    const user = getRetroArchCfgDir() === path.join(os.homedir(), '.config', 'retroarch')
+        ? userCoresDir() : path.join(getRetroArchCfgDir(), 'cores');
+    return writableDir(user) ? user : userCoresDir();
 }
-/*
- * ⚠️ A Flatpak must get its cores in its own directory.
- *
- * Not for want of access — the Flatpak has host filesystem permission and can
- * read /usr/lib/libretro perfectly well — but because a distro core is built
- * against the distro's libraries and the Flatpak runs on its own runtime. It
- * loads, or it does not, depending on glibc. Its own cores directory is the
- * only one that is certain to match, and it is user-writable, which the
- * distro's is not.
- */
-/*
- * ⚠️ EmuLatte's own cores, in EmuLatte's own directory.
- *
- * RetroArch is the vessel: it runs on the config EmuLatte hands it and takes
- * the core EmuLatte names. Everything EmuLatte manages lives under its own
- * config directory, so that
- *
- *   - installing a core never writes into someone else's install. The distro
- *     package's directory is root-owned and every download failed with EACCES;
- *     the Flatpak's is writable and writing there would quietly modify an
- *     application EmuLatte does not own.
- *   - the host's RetroArch keeps working exactly as its user configured it,
- *     and EmuLatte keeps working when that RetroArch is replaced — which is
- *     precisely what happened here, distro package swapped for the Flatpak.
- *   - moving the library to another machine brings the cores with it, because
- *     they sit beside the database rather than in /usr.
- */
-const ownedCoresDir = () => path.join(configDir, 'retroarch', 'cores');
-const ownedInfoDir  = () => path.join(configDir, 'retroarch', 'info');
-
-const coresInstallDir    = () => writableDir(ownedCoresDir(), ownedCoresDir());
-const coreInfoInstallDir = () => writableDir(ownedInfoDir(), ownedInfoDir());
+function coreInfoInstallDir() {
+    const cfg = readRaCfgKey('libretro_info_path');
+    if (cfg && writableDir(cfg)) return cfg;
+    return path.join(path.dirname(coresInstallDir()), 'info');
+}
 const prettyCoreName = base => base.replace(/_libretro$/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 let _coreIndexCache = null;
@@ -2149,7 +2613,7 @@ ipcMain.handle('install-core', async (e, coreArg) => {
         return { ok: true, so, path: path.join(dir, so) };
     } catch (err) {
         try { fs.unlinkSync(tmp); } catch {}
-        return { ok: false, error: err.message || 'The core could not be installed.' };
+        return { ok: false, error: err.message };
     }
 });
 
@@ -2411,9 +2875,8 @@ ipcMain.handle('igdb-search-art', async (_, gameName, assetType, systemShortName
 let biosDb = {};
 try { biosDb = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'bios_db.json'), 'utf8')); } catch {}
 
-function md5File(p) {
-    try { return crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex'); } catch { return null; }
-}
+// One copy of each of these lives in rom-library.js.
+const { md5File, walkFiles } = romLib;
 
 function getRetroArchSystemDir() {
     const variant = db?.prepare('SELECT value FROM settings WHERE key=?').get('retroarch_variant')?.value || detectRetroArch();
@@ -2430,30 +2893,12 @@ function getRetroArchSystemDir() {
     return path.join(cfgDir, 'system');
 }
 
-function walkFiles(dir, depth = 0, acc = []) {
-    if (depth > 4 || acc.length > 8000) return acc;
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
-    for (const e of entries) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) walkFiles(full, depth + 1, acc);
-        else acc.push(full);
-    }
-    return acc;
-}
-
-ipcMain.handle('bios-status', (_, shortName) => {
-    const entry = biosDb[shortName];
-    if (!entry || !entry.files) return { ok: true, files: [], note: '' };
-    const sysDir = getRetroArchSystemDir();
-    const files = entry.files.map(b => {
-        const dest = path.join(sysDir, b.file);
-        let status = 'missing';
-        if (fs.existsSync(dest)) status = (b.md5 && md5File(dest) === b.md5.toLowerCase()) ? 'verified' : 'present';
-        return { file: b.file, required: !!b.required, region: b.region || '', status };
-    });
-    return { ok: true, files, note: entry.note || '', systemDir: sysDir };
-});
+// The BIOS folder in Emulatte_Stuff IS the system directory EmuLatte's RetroArch config points
+// at, so every one of these reads and writes the folder the user drops files into.
+ipcMain.handle('bios-status', (_, shortName) => library
+    ? library.biosStatus(shortName)
+    : { ok: false, error: 'DB not ready', files: [] });
+ipcMain.handle('bios-overview', () => library ? library.biosOverview() : { ok: false, error: 'DB not ready' });
 
 ipcMain.handle('bios-add-file', async (event, shortName, biosFile) => {
     const spec = biosDb[shortName]?.files?.find(b => b.file === biosFile);
@@ -2462,7 +2907,7 @@ ipcMain.handle('bios-add-file', async (event, shortName, biosFile) => {
     const res = await dialog.showOpenDialog(win, { title: `Select ${biosFile}`, properties: ['openFile'] });
     if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
     const verified = spec.md5 ? (md5File(res.filePaths[0]) === spec.md5.toLowerCase()) : null;
-    const sysDir = getRetroArchSystemDir();
+    const sysDir = library.biosRoot();
     try {
         fs.mkdirSync(sysDir, { recursive: true });
         fs.copyFileSync(res.filePaths[0], path.join(sysDir, biosFile));
@@ -2482,7 +2927,7 @@ ipcMain.handle('bios-scan-folder', async (event) => {
             byName[b.file.toLowerCase()] = b.file;
         }
     }
-    const sysDir = getRetroArchSystemDir();
+    const sysDir = library.biosRoot();
     try { fs.mkdirSync(sysDir, { recursive: true }); } catch (e) { return { ok: false, error: e.message }; }
 
     const installed = new Set();
@@ -3023,198 +3468,106 @@ ipcMain.handle('select-directory', async () => {
     return canceled ? null : filePaths[0];
 });
 
-// ── Disc-image aware scanning ─────────────────────────────────────────────────
-// Disc games arrive as an "index" file (.cue/.gdi/.ccd/.mds) that points at data
-// "sidecar" tracks (.bin/.img/.sub/.raw), or as a self-contained image
-// (.chd/.iso/.pbp/.cso/...). A .m3u playlist groups the discs of one game so
-// RetroArch can swap them mid-play. We offer the index/playlist/image to import —
-// never a bare sidecar — and collapse multi-disc sets into one entry.
-const DISC_PLAYLIST_EXTS = new Set(['m3u']);
-const DISC_INDEX_EXTS    = new Set(['cue', 'gdi', 'ccd', 'mds', 'toc']);
-const DISC_SIDECAR_EXTS  = new Set(['bin', 'img', 'sub', 'raw', 'ecm']);
-const DISC_FORMAT_EXTS   = new Set([
-    ...DISC_PLAYLIST_EXTS, ...DISC_INDEX_EXTS, ...DISC_SIDECAR_EXTS,
-    'chd', 'iso', 'cdi', 'pbp', 'cso', 'nrg', 'mdf'
-]);
-const extOf = f => path.extname(f).replace(/^\./, '').toLowerCase();
-const stripExt = f => path.basename(f).replace(/\.[^.]+$/, '');
-// A (Disc 1), [CD2], Disk 3, Side A… token used to recognise & strip multi-disc names.
-const DISC_TOKEN_RE = /[\s._-]*[\(\[]?\s*(?:disc|disk|cd)\s*([0-9]+)\s*(?:of\s*[0-9]+)?\s*[\)\]]?/i;
-const discNumberOf  = base => { const m = base.match(DISC_TOKEN_RE); return m ? parseInt(m[1], 10) : null; };
-const discGameKey   = base => base.replace(DISC_TOKEN_RE, ' ').replace(/\s{2,}/g, ' ').trim().toLowerCase();
-const discCleanTitle = base => base.replace(DISC_TOKEN_RE, ' ').replace(/\s{2,}/g, ' ').replace(/[\s._-]+$/, '').trim();
-
-// Absolute paths of the files an index/playlist file points at.
-function discReferencedFiles(indexFile) {
-    const dir = path.dirname(indexFile);
-    const ext = extOf(indexFile);
-    const abs = r => path.resolve(path.isAbsolute(r) ? r : path.join(dir, r));
-    if (ext === 'ccd') { const b = stripExt(indexFile); return [abs(`${b}.img`), abs(`${b}.sub`)]; }
-    if (ext === 'mds') { return [abs(`${stripExt(indexFile)}.mdf`)]; }
-    let text = '';
-    try { text = fs.readFileSync(indexFile, 'utf8'); } catch { return []; }
-    const refs = [];
-    for (const raw of text.split(/\r?\n/)) {
-        const l = raw.trim();
-        if (!l || l.startsWith('#')) continue;
-        const q = l.match(/"([^"]+)"/);
-        if (q) { refs.push(q[1]); continue; }
-        if (ext === 'cue') { const m = l.match(/^FILE\s+(\S+)\s+\w+/i); if (m) refs.push(m[1]); }
-        else if (ext === 'gdi') { const m = l.match(/(\S+\.(?:bin|raw|iso))\b/i); if (m) refs.push(m[1]); }
-        else if (ext === 'm3u' || ext === 'toc') { refs.push(l); }
-    }
-    return refs.map(abs);
-}
-
-function scanFolderEntries(folderPath, extensions) {
-    const exts = new Set(
-        (extensions || '').split(',')
-            .map(e => e.trim().toLowerCase().replace(/^\./, ''))
-            .filter(Boolean)
-    );
-    const matched = [];
-    (function walk(dir) {
-        let entries;
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-        for (const e of entries) {
-            const full = path.join(dir, e.name);
-            if (e.isDirectory()) { walk(full); continue; }
-            const ext = extOf(e.name);
-            if (exts.size === 0 || exts.has(ext)) matched.push(full);
-        }
-    })(folderPath);
-
-    const single = p => ({ kind: 'single', path: p, title: stripExt(p) });
-    const discAware = [...exts].some(e => DISC_FORMAT_EXTS.has(e));
-    if (!discAware) return matched.map(single);
-
-    // 1. Suppress every track/disc referenced from inside an index or playlist.
-    const referenced = new Set();
-    for (const f of matched) {
-        if (DISC_INDEX_EXTS.has(extOf(f)) || DISC_PLAYLIST_EXTS.has(extOf(f)))
-            for (const r of discReferencedFiles(f)) referenced.add(r);
-    }
-    // 2. Launchable candidates: not referenced elsewhere, and never a bare sidecar.
-    const candidates = matched.filter(f =>
-        !referenced.has(path.resolve(f)) && !DISC_SIDECAR_EXTS.has(extOf(f)));
-
-    // 3. Group multi-disc sets (by game name + format); a lone disc stays single.
-    const entries = [];
-    const groups  = new Map();
-    const loose   = [];
-    for (const f of candidates) {
-        if (DISC_PLAYLIST_EXTS.has(extOf(f))) { entries.push({ kind: 'playlist', path: f, title: stripExt(f) }); continue; }
-        const disc = discNumberOf(stripExt(f));
-        if (disc == null) { loose.push(f); continue; }
-        const key = `${discGameKey(stripExt(f))}::${extOf(f)}`;
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push({ path: f, disc });
-    }
-    for (const discs of groups.values()) {
-        if (discs.length < 2) { loose.push(discs[0].path); continue; }
-        discs.sort((a, b) => a.disc - b.disc);
-        entries.push({
-            kind: 'multidisc',
-            path: discs[0].path,
-            discs: discs.map(d => d.path),
-            discCount: discs.length,
-            title: discCleanTitle(stripExt(discs[0].path))
-        });
-    }
-    for (const f of loose) entries.push(single(f));
-    entries.sort((a, b) => a.title.localeCompare(b.title));
-    return entries;
-}
+// ── FOLDER SCANNING & THE LIBRARY SCAN ────────────────────────────────────────
+// The disc-aware scanner, the folder names and the scan itself live in rom-library.js. What
+// stays here is the IPC surface and the one place that decides when a scan happens.
 ipcMain.handle('scan-rom-folder', (_, folderPath, extensions) => scanFolderEntries(folderPath, extensions));
 
-// ── RESCAN: find NEW ROMs in every current system's folder(s) ─────────────────
-// Infers each system's ROM folder(s) from its existing games' rom_paths, scans
-// them (disc-aware) with that system's extensions, and returns only entries that
-// aren't already in the library. Powers the Refresh button's "find new games".
-const commonAncestor = (dirs) => {
-    const parts = dirs.map(d => path.resolve(d).split(path.sep));
-    if (!parts.length) return null;
-    const first = parts[0]; let n = first.length;
-    for (const pr of parts) { let i = 0; while (i < n && i < pr.length && pr[i] === first[i]) i++; n = i; }
-    return n <= 1 ? null : (first.slice(0, n).join(path.sep) || null);
-};
-ipcMain.handle('rescan-new-games', () => {
-    if (!db) return { entries: [], folders: 0 };
-    const systems = db.prepare('SELECT * FROM systems').all();
-    const sysById = new Map(systems.map(s => [s.id, s]));
-    const games   = db.prepare('SELECT id, system_id, rom_path FROM games').all();
-    const playlistsDir = path.resolve(path.join(configDir, 'playlists'));
-
-    // Real ROM folder for a game (following a generated .m3u to where its discs live).
-    const discLines = (m3u) => {
-        try { return fs.readFileSync(m3u, 'utf8').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-            .map(l => path.isAbsolute(l) ? l : path.join(path.dirname(m3u), l)); } catch { return []; }
+// Read every system's folder and make the library match it: new files become games, rows whose
+// file has gone are dropped. The BIOS folder is filed at the same time, since both are "what is
+// on disk right now".
+function runLibraryScan(opts = {}) {
+    if (!library) return { ok: false, error: 'The library is not open yet.' };
+    // The scan is synchronous, but these reach the renderer as they are sent: it is a separate
+    // process and paints them while this one is still working.
+    const tell = (info) => {
+        const w = libraryWindow();
+        if (w && !w.isDestroyed()) w.webContents.send('library-scan-progress', info);
     };
+    tell({ phase: 'bios' });
+    let bios = null;
+    try { bios = library.biosScan(); } catch (e) { console.error('BIOS scan failed:', e.message); }
+    let res;
+    try { res = library.scan({ ...opts, onProgress: tell }); } catch (e) { res = { ok: false, error: e.message }; }
+    lastScan = { ...res, bios, at: Date.now(), startup: !!opts.startup };
+    return lastScan;
+}
+ipcMain.handle('scan-library', (_, opts) => runLibraryScan(opts || {}));
 
-    // Everything already in the library (resolved paths + discs referenced by .m3u games).
-    const known = new Set();
-    const gameDirs = [];   // [system_id, resolvedDir] — immediate ROM folder of each game
-    for (const g of games) {
-        if (!g.rom_path) continue;
-        known.add(path.resolve(g.rom_path));
-        let dirs;
-        if (extOf(g.rom_path) === 'm3u') { const d = discLines(g.rom_path); d.forEach(x => known.add(path.resolve(x))); dirs = d.map(x => path.dirname(x)); }
-        else dirs = [path.dirname(g.rom_path)];
-        for (const d of dirs) {
-            const rd = path.resolve(d);
-            if (rd === playlistsDir || !g.system_id) continue;
-            gameDirs.push([g.system_id, rd]);
-        }
-    }
+// ⚠️ The offer to scrape what was just imported is ONE SHOT. `lastScan` lives for the whole
+// session and every face that loads reads it, so leaving Couch Mode reloaded the desktop face,
+// which read the launch scan again and offered to scrape games that had been scraped half an
+// hour earlier. Handing the ids over consumes them; the counts stay, because they are a
+// description of what happened rather than a job to do.
+function takeScanOffer() {
+    if (!lastScan) return null;
+    const out = { ...lastScan };
+    if (lastScan.newIds?.length) lastScan = { ...lastScan, newIds: [] };
+    return out;
+}
+ipcMain.handle('get-last-scan', () => takeScanOffer());
 
-    // Scan roots per system: prefer the common ancestor (catches new per-game subfolders)
-    // unless it's too shallow or shared with another system — then use the immediate folders.
-    const roots = new Map();   // system_id -> Set(dir)
-    for (const [sysId] of sysById) {
-        const dirs = [...new Set(gameDirs.filter(([s]) => s === sysId).map(([, d]) => d))];
-        if (!dirs.length) continue;
-        const anc = commonAncestor(dirs);
-        const deepEnough = anc && anc.split(path.sep).filter(Boolean).length >= 2;
-        const sharedWithOther = anc && gameDirs.some(([s, d]) => s !== sysId && (d === anc || d.startsWith(anc + path.sep)));
-        roots.set(sysId, new Set(deepEnough && !sharedWithOther ? [anc] : dirs));
-    }
+// Every launch reads the folder, the way ES-DE and Batocera do, so the user never has to ask for
+// it. It runs just after createWindow so a large collection can never hold the window back: a
+// face that loads before the scan finishes hears about it through 'library-scanned', and one
+// that loads after it reads the result from get-last-scan.
+function startupLibraryScan() {
+    setTimeout(() => {
+        runLibraryScan({ startup: true });
+        // ⚠️ The event is only any use once a face is actually listening. Sent before that,
+        // it vanishes, and since delivery consumes the offer it would vanish WITH the ids. So
+        // it goes out only when a renderer has announced itself; otherwise the face claims the
+        // offer itself through get-last-scan as it initialises. Exactly one of the two.
+        const w = libraryWindow();
+        if (rendererReady && w && !w.isDestroyed()) w.webContents.send('library-scanned', takeScanOffer());
+    }, 250);
+}
 
-    const entries = [];
-    const seen = new Set();
-    let folders = 0;
-    for (const [sysId, dirSet] of roots) {
-        const sys = sysById.get(sysId); if (!sys) continue;
-        for (const dir of dirSet) {
-            if (!fs.existsSync(dir)) continue;   // drive not mounted, etc.
-            folders++;
-            for (const e of scanFolderEntries(dir, sys.extensions || '')) {
-                const dup = e.kind === 'multidisc'
-                    ? (e.discs || []).some(d => known.has(path.resolve(d)))
-                    : known.has(path.resolve(e.path));
-                if (dup) continue;
-                const key = path.resolve(e.path);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                entries.push({ ...e, system_id: sysId, system_name: sys.name });
-            }
-        }
-    }
-    entries.sort((a, b) => (a.system_name || '').localeCompare(b.system_name || '') || a.title.localeCompare(b.title));
-    return { entries, folders };
+// ── WHERE THE FOLDERS ARE ─────────────────────────────────────────────────────
+ipcMain.handle('library-folders', () => library ? library.folderReport() : { ok: false, error: 'DB not ready' });
+ipcMain.handle('open-library-folder', (_, which) => {
+    if (!library) return { ok: false };
+    const dir = which === 'bios' ? library.biosRoot() : library.romsRoot();
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    shell.openPath(dir);
+    return { ok: true, path: dir };
+});
+// Point EmuLatte at a collection that already exists somewhere else (an external drive, a NAS
+// mount) instead of moving it. The folders are created there and the library is re-read at once.
+ipcMain.handle('set-library-root', async (event, which) => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: which === 'bios' ? 'Choose the BIOS folder' : 'Choose the ROMS folder',
+        properties: ['openDirectory', 'createDirectory'],
+        defaultPath: which === 'bios' ? library.biosRoot() : library.romsRoot(),
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const dir = res.filePaths[0];
+    if (which === 'bios') { library.setBiosRoot(dir); library.pinBiosDir(); }
+    else { library.setRomsRoot(dir); library.ensureFolders(); }
+    return { ok: true, path: dir, scan: runLibraryScan({}) };
+});
+ipcMain.handle('reset-library-root', (_, which) => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    if (which === 'bios') { library.setBiosRoot(''); library.pinBiosDir(); }
+    else { library.setRomsRoot(''); library.ensureFolders(); }
+    return { ok: true, path: which === 'bios' ? library.biosRoot() : library.romsRoot() };
+});
+// A default system the user deleted stays deleted (see rom-library.js); this takes them all back.
+ipcMain.handle('restore-default-systems', () => {
+    if (!library) return { ok: false, error: 'DB not ready' };
+    library.undismissAll();
+    const seeded = library.seedSystems();
+    library.ensureFolders();
+    return { ok: true, ...seeded, scan: runLibraryScan({}) };
 });
 
 // Write a .m3u playlist (one disc path per line, absolute) into EmuLatte's own data
 // dir so it works even when the ROM folder is read-only (e.g. an external SSD).
 ipcMain.handle('create-m3u', (_, { title, discs }) => {
-    try {
-        const dir = path.join(configDir, 'playlists');
-        fs.mkdirSync(dir, { recursive: true });
-        const safe = (String(title || 'game').replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '')) || 'game';
-        let file = path.join(dir, `${safe}.m3u`);
-        for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${safe}_${n}.m3u`);
-        fs.writeFileSync(file, (discs || []).join('\n') + '\n', 'utf8');
-        return { ok: true, path: file };
-    } catch (e) { return { ok: false, error: e.message }; }
+    try { return { ok: true, path: library.createM3u(title, discs) }; }
+    catch (e) { return { ok: false, error: e.message }; }
 });
 
 // ── REPAIR DISC REFERENCES ────────────────────────────────────────────────────
@@ -3738,6 +4091,227 @@ ipcMain.handle('download-trailer', (event, title, videoId) => {
 });
 
 // ── MISC ──────────────────────────────────────────────────────────────────────
+// ── THE APP MENU ──────────────────────────────────────────────────────────────
+// A .desktop entry per face, written the same way the sibling app writes its own: one file in
+// ~/.local/share/applications, the icon beside the binary, and update-desktop-database told
+// about it afterwards so the launcher notices without a logout.
+const appsDir = () => path.join(os.homedir(), '.local', 'share', 'applications');
+// ⚠️ % is a field code in a desktop entry (%f, %U), so a path containing one has to write
+// it as %% or the launcher eats it.
+const desktopArg = a => '"' + String(a).replace(/(["$`\\])/g, '\\$1').replace(/%/g, '%%') + '"';
+function launcherContent(entry) {
+    const args = (entry.args || []).length ? ' ' + entry.args.map(desktopArg).join(' ') : '';
+    const lines = [
+        '[Desktop Entry]', 'Version=1.0', 'Type=Application',
+        `Name=${String(entry.name || '').replace(/[\r\n]/g, ' ')}`,
+    ];
+    if (entry.comment) lines.push(`Comment=${String(entry.comment).replace(/[\r\n]/g, ' ')}`);
+    lines.push(`Exec="${entry.exec}"${args}`);
+    if (entry.icon) lines.push(`Icon=${entry.icon}`);
+    lines.push('Terminal=false');
+    lines.push(`Categories=${(entry.categories || ['Game']).join(';')};`);
+    if (entry.keywords?.length) lines.push(`Keywords=${entry.keywords.join(';')};`);
+    if (entry.wmClass) lines.push(`StartupWMClass=${entry.wmClass}`);
+    return lines.join('\n') + '\n';
+}
+function writeLauncher(dir, entry) {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${entry.id}.desktop`);
+    fs.writeFileSync(file, launcherContent(entry));
+    try { fs.chmodSync(file, '755'); } catch {}
+    return file;
+}
+// Which file the menu should actually run. The AppImage we were launched from is the
+// authoritative answer; a directory scan is the fallback for a dev run.
+function selfLaunchTarget() {
+    if (process.env.APPIMAGE) return { exec: process.env.APPIMAGE, args: [] };
+    const hit = safeReaddir(baseDir).find(f => /^EmuLatte.*\.AppImage$/i.test(f));
+    if (hit) return { exec: path.join(baseDir, hit), args: [] };
+    if (app.isPackaged) return { exec: process.execPath, args: [] };
+    return { exec: process.execPath, args: [__dirname] };     // dev: Electron needs the app folder
+}
+ipcMain.handle('install-to-menu', () => {
+    try {
+        const dir = appsDir();
+        const { exec, args } = selfLaunchTarget();
+        if (!exec || !fs.existsSync(exec)) return { ok: false, error: 'Could not work out which file to launch.' };
+        try { fs.chmodSync(exec, '755'); } catch {}
+        const iconsDir = path.join(baseDir, 'icons');
+        let icon = '';
+        try {
+            fs.mkdirSync(iconsDir, { recursive: true });
+            const src = path.join(baseAssetPath, 'assets', 'icons', 'EmuLatte.svg');
+            if (fs.existsSync(src)) { icon = path.join(iconsDir, 'EmuLatte.svg'); fs.copyFileSync(src, icon); }
+        } catch {}
+        const made = [];
+        writeLauncher(dir, {
+            id: 'emulatte', name: 'EmuLatte',
+            comment: 'Your ROM library: scraping, art, RetroArch and Couch Mode in one.',
+            exec, args, icon, categories: ['Game', 'Emulator'],
+            wmClass: 'emulatte_electron_build',
+            keywords: ['emulator', 'rom', 'retroarch', 'retro', 'games', 'emulatte'],
+        });
+        made.push('EmuLatte');
+        writeLauncher(dir, {
+            id: 'emulatte-couch', name: 'EmuLatte Couch Mode',
+            comment: 'EmuLatte fullscreen and gamepad-first, made for the living room.',
+            exec, args: [...args, '--couch'], icon, categories: ['Game', 'Emulator'],
+            wmClass: 'emulatte_electron_build',
+            keywords: ['couch', 'tv', 'living room', 'gamepad', 'controller', 'fullscreen', 'emulatte'],
+        });
+        made.push('Couch Mode');
+        try { spawn('update-desktop-database', [dir], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+        return { ok: true, installed: made, dir };
+    } catch (err) { return { ok: false, error: err.message }; }
+});
+ipcMain.handle('remove-from-menu', () => {
+    const dir = appsDir(); let n = 0;
+    for (const id of ['emulatte', 'emulatte-couch']) {
+        try { fs.unlinkSync(path.join(dir, `${id}.desktop`)); n++; } catch {}
+    }
+    try { spawn('update-desktop-database', [dir], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+    return { ok: true, removed: n };
+});
+ipcMain.handle('menu-entries-present', () => {
+    const dir = appsDir();
+    const present = ['emulatte', 'emulatte-couch'].filter(id => { try { return fs.existsSync(path.join(dir, `${id}.desktop`)); } catch { return false; } });
+    return { ok: true, present, dir };
+});
+
+// ── THE LIBRARY ON A DRIVE ────────────────────────────────────────────────────
+// Everything that IS the library as opposed to the content it describes: the database, the
+// scraped artwork, the trailers, the manuals, the generated playlists and the RetroArch
+// configuration. ROMS, BIOS and the shader pack are deliberately not here. They have their
+// own roots, they are large, and they are replaceable.
+const LIBRARY_PARTS = ['emulatte.db', 'images', 'videos', 'manuals', 'playlists', 'retroarch', 'retroarch_overrides'];
+const looksLikeLibrary = dir => { try { return fs.existsSync(path.join(dir, 'emulatte.db')); } catch { return false; } };
+const dirBytes = (dir) => {
+    let n = 0;
+    (function walk(d) {
+        let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+        for (const e of es) {
+            const f = path.join(d, e.name);
+            if (e.isDirectory()) walk(f);
+            else { try { n += fs.statSync(f).size; } catch {} }
+        }
+    })(dir);
+    return n;
+};
+function writePointer(target) {
+    fs.mkdirSync(localHome, { recursive: true });
+    const file = path.join(localHome, LOCATION_FILE);
+    if (target) fs.writeFileSync(file, target + '\n', 'utf8');
+    else { try { fs.unlinkSync(file); } catch {} }
+}
+// Flush and let go of the database before its file is copied or left behind.
+function releaseDb() {
+    try { db?.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+    try { db?.close(); } catch {}
+    db = null;
+}
+const relaunchSoon = () => setTimeout(() => { app.relaunch(); app.exit(0); }, 700);
+
+ipcMain.handle('library-location', () => ({
+    ok: true,
+    dir: configDir,
+    localHome,
+    external: dataHome.external,
+    unreachable: !!dataHome.unreachable,
+    wanted: dataHome.wanted || '',
+    bytes: dirBytes(configDir) - dirBytes(path.join(configDir, 'ROMS')) - dirBytes(path.join(configDir, 'BIOS')) - dirBytes(path.join(configDir, 'shaders')),
+}));
+
+// Copy the library onto a drive and start using it from there.
+ipcMain.handle('move-library-to', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: 'Choose where to keep the library',
+        properties: ['openDirectory', 'createDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const target = res.filePaths[0];
+    const inside = p => path.resolve(p).startsWith(path.resolve(configDir) + path.sep);
+    if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is where the library already is.' };
+    if (inside(target)) return { ok: false, error: 'Pick a folder outside the current library, not one inside it.' };
+    if (looksLikeLibrary(target)) return { ok: false, error: 'There is already a library in that folder. Use "Use a library on a drive" to adopt it instead, which will not overwrite it.' };
+    try { fs.mkdirSync(target, { recursive: true }); fs.accessSync(target, fs.constants.W_OK); }
+    catch { return { ok: false, error: 'That folder cannot be written to.' }; }
+
+    // ⚠️ Pin the ROMS and BIOS folders to where they are NOW, before the move.
+    // Both default to "inside the library folder", so moving the library would silently drag
+    // them to the drive: the next scan would read an empty ROMS folder there while the real
+    // collection sat untouched on this machine. The user asked to move the artwork and the
+    // metadata, not their ROMs.
+    try {
+        if (library) {
+            if (!library.setting('roms_root')) library.setRomsRoot(library.romsRoot());
+            if (!library.setting('bios_root')) library.setBiosRoot(library.biosRoot());
+        }
+    } catch {}
+
+    releaseDb();
+    const stamp = dateStamp();
+    const copied = [];
+    try {
+        for (const part of LIBRARY_PARTS) {
+            const from = path.join(configDir, part);
+            if (!fs.existsSync(from)) continue;
+            fs.cpSync(from, path.join(target, part), { recursive: true });
+            copied.push(part);
+        }
+    } catch (e) { relaunchSoon(); return { ok: false, error: `Copy failed: ${e.message}. Nothing was removed; EmuLatte will restart where it was.` }; }
+
+    // ⚠️ Verified before anything is stood down. A half-copied library that the pointer is
+    // already aimed at would be worse than no move at all.
+    if (!looksLikeLibrary(target)) { relaunchSoon(); return { ok: false, error: 'The copy finished but no database arrived. Nothing was removed.' }; }
+
+    // The originals are renamed rather than deleted, and rather than left in place: left as
+    // they were, an unplugged drive would silently show a stale library that looks real.
+    let setAside = 0;
+    for (const part of copied) {
+        const from = path.join(configDir, part);
+        try { fs.renameSync(from, path.join(configDir, `${part}.moved-${stamp}`)); setAside++; } catch {}
+    }
+    writePointer(target);
+    relaunchSoon();
+    return { ok: true, target, copied: copied.length, setAside, restarting: true };
+});
+
+// Point at a library that is already on a drive, written by this or another machine.
+ipcMain.handle('use-library-at', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const res = await dialog.showOpenDialog(win, {
+        title: 'Choose the library folder on the drive',
+        properties: ['openDirectory'],
+    });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const target = res.filePaths[0];
+    if (!looksLikeLibrary(target)) return { ok: false, error: 'No emulatte.db in that folder, so it is not an EmuLatte library. Pick the folder that holds it.' };
+    if (path.resolve(target) === path.resolve(configDir)) return { ok: false, error: 'That is the library already in use.' };
+    releaseDb();
+    writePointer(target);
+    relaunchSoon();
+    return { ok: true, target, restarting: true };
+});
+
+// Stop using the drive and go back to the folder beside the binary.
+ipcMain.handle('library-back-home', () => {
+    if (!dataHome.external) return { ok: false, error: 'The library is already beside EmuLatte.' };
+    releaseDb();
+    writePointer('');
+    relaunchSoon();
+    return { ok: true, target: localHome, restarting: true };
+});
+
 ipcMain.handle('get-basedir',    () => baseDir);
 ipcMain.handle('get-config-dir', () => configDir);
 ipcMain.handle('open-path',  (_, p) => shell.openPath(p));
+// ⚠️ A separate channel from open-path: shell.openPath is for files and silently does
+// nothing with an https URL. Only http(s) is passed on, so a renderer cannot be talked into
+// handing the desktop an arbitrary scheme.
+ipcMain.handle('open-external', (_, url) => {
+    const u = String(url || '');
+    if (!/^https?:\/\//i.test(u)) return { ok: false };
+    shell.openExternal(u);
+    return { ok: true };
+});

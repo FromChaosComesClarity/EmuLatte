@@ -41,7 +41,7 @@ Both faces read and write the same database.
 
 ## Working with Clarity
 
-Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on a game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in CN's library with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
+Games reach Clarity by **exporting them from inside EmuLatte** — the `ADD TO CLARITY` button on a game page. Clarity does not read EmuLatte's database and has no "show emulation" toggle. An exported game becomes an ordinary row in Clarity's library with its **Store** set to `Emulation`, carrying a copy of its art and EmuLatte's own launch command, so it launches from Clarity or Couch Mode exactly as it does here.
 
 Export is one-directional and per-game; re-exporting updates in place. **Management of the ROM collection always stays in EmuLatte.**
 

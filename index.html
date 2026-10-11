@@ -18,6 +18,13 @@
     :root {
       --bg: #2C1E16; --bg_panel: rgba(67, 40, 24, 0.6); --bg_menu: #432818;
       --accent: #D4A373; --text_main: #FFE6A7;
+      /* Corner radius, as one scale rather than 60 literals. The desktop can set --radius:
+         Omarchy defaults to square corners, and rounded cards on a square desktop read as
+         foreign. Everything else is derived, so one value squares or rounds the whole app.
+         Decorative radii (the CRT bezel, circles, pills) are deliberately NOT on this scale:
+         they are artwork, not chrome, and squaring them would be wrong. */
+      --radius: 8px; --radius-sm: calc(var(--radius) * 0.5); --radius-md: calc(var(--radius) * 0.75);
+      --radius-lg: calc(var(--radius) * 1.5);
       --text_sec: #E6CC98; --text_dim: #A47148; --border: rgba(212, 163, 115, 0.2);
       --border_solid: #8B5A2B;
       --ui-font: 'Raleway', sans-serif;
@@ -41,7 +48,7 @@
        The delayed visibility transition keeps the fade-out animation intact. */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s, visibility 0s 0.2s; }
     .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity 0.2s; }
-    .modal-box { background: var(--bg_menu); padding: 30px; border-radius: 12px; border: 2px solid var(--border_solid); width: 480px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+    .modal-box { background: var(--bg_menu); padding: 30px; border-radius: var(--radius-lg); border: 2px solid var(--border_solid); width: 480px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
     .modal-box.wide { width: 700px; }
     .modal-box.tall { max-height: 80vh; overflow-y: auto; }
     /* Keep the scrollbar inset from the modal's rounded corners so it doesn't bleed past them. */
@@ -52,7 +59,7 @@
     .modal-title { font-size: 16px; font-weight: 900; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--border_solid); padding-bottom: 12px; margin-bottom: 5px; }
 
     #gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px; align-items: start; }
-    .gallery-item { background: var(--bg_panel); border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s, box-shadow 0.2s; text-align: center; display: flex; flex-direction: column;
+    .gallery-item { background: var(--bg_panel); border-radius: var(--radius); overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s, box-shadow 0.2s; text-align: center; display: flex; flex-direction: column;
       content-visibility: auto; contain-intrinsic-width: auto 150px; contain-intrinsic-height: auto 280px; }   /* skip layout/paint for off-screen cards → huge libraries stay smooth */
     .gallery-item:hover { border-color: var(--accent); box-shadow: 0 6px 16px rgba(0,0,0,0.45); }
     .gallery-cover { width: 100%; height: 100%; object-fit: cover; background: #111; display: block; }
@@ -62,7 +69,7 @@
        or cropped) over a blurred, scaled copy of itself — a soft backdrop in the cover's own
        predominant colors. */
     .gallery-cover-wrap { position: relative; width: 100%; aspect-ratio: 5 / 7; overflow: hidden;
-        border-radius: 6px; background: #111; display: flex; align-items: center; justify-content: center; }
+        border-radius: var(--radius-md); background: #111; display: flex; align-items: center; justify-content: center; }
     .gcover-bg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center;
         filter: blur(22px) brightness(0.55) saturate(1.3); transform: scale(1.2); }
     .cover-frame { position: relative; z-index: 1; width: 100%; height: 100%;
@@ -91,10 +98,10 @@
         content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
         background: url('assets/jewelcase.png') no-repeat center / 100% 100%;
     }
-    .gallery-system-badge { position: absolute; bottom: 6px; left: 6px; z-index: 2; background: rgba(0,0,0,0.7); color: var(--accent); font-size: 9px; font-weight: 900; letter-spacing: 1px; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; pointer-events: none; }
+    .gallery-system-badge { position: absolute; bottom: 6px; left: 6px; z-index: 2; background: rgba(0,0,0,0.7); color: var(--accent); font-size: 9px; font-weight: 900; letter-spacing: 1px; padding: 2px 6px; border-radius: var(--radius-sm); text-transform: uppercase; pointer-events: none; }
     .gallery-flag-btns { position: absolute; top: 7px; right: 7px; display: flex; flex-direction: column; gap: 4px; z-index: 3; opacity: 0; transition: opacity 0.15s; }
     .gallery-item:hover .gallery-flag-btns, .gallery-flag-btns.has-active { opacity: 1; }
-    .btn-gallery-fav, .btn-gallery-want, .btn-gallery-playlist { width: 26px; height: 26px; border-radius: 5px; border: none; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.35); transition: color 0.15s, background 0.15s; line-height: 1; padding: 0; }
+    .btn-gallery-fav, .btn-gallery-want, .btn-gallery-playlist { width: 26px; height: 26px; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); color: rgba(255,255,255,0.35); transition: color 0.15s, background 0.15s; line-height: 1; padding: 0; }
     .btn-gallery-fav:hover  { background: rgba(0,0,0,0.75); color: #ffeb3b; }
     .btn-gallery-want:hover { background: rgba(0,0,0,0.75); color: #ff9800; }
     .btn-gallery-playlist:hover { background: rgba(0,0,0,0.75); color: var(--accent); }
@@ -102,10 +109,40 @@
     .btn-gallery-want.active { color: #ff9800; background: rgba(0,0,0,0.65); }
     @keyframes gallery-flag-glow { 0% { transform: scale(1); } 45% { transform: scale(1.45); box-shadow: 0 0 10px 3px currentColor; } 100% { transform: scale(1); box-shadow: none; } }
     .gallery-title { padding: 10px 10px 6px; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text_sec); }
-    .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; cursor: pointer; font-family: var(--ui-font); transition: opacity 0.15s; }
+    .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; font-family: var(--ui-font); transition: opacity 0.15s; }
     .btn-play-gallery:hover { background: var(--accent); color: var(--bg); opacity: 0.8; transform: none; box-shadow: none; }
 
-    #icon-rail { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; background: var(--bg_menu); border-right: 1px solid var(--border_solid); overflow: hidden; }
+    #icon-rail { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: space-between; background: var(--bg_menu); border-right: 1px solid var(--border_solid); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+    /* ⚠️ The rail must never clip its own contents. It was `overflow: hidden`, so on a window
+       shorter than the rail the bottom buttons were unreachable with no way to scroll to them,
+       the Control Panel among them: the setting that fixes an oversized interface was hidden
+       BY the interface being oversized. A tiling desktop makes short windows ordinary, and
+       compact chrome adds a button to this rail, so this stopped being theoretical. */
+    #icon-rail::-webkit-scrollbar { width: 0; height: 0; }
+
+    /* ── Compact chrome, and the tiled window ──────────────────────────────────
+       Under a tiling compositor the title bar is 35px of nothing: you cannot drag a tiled
+       window, and the compositor owns close, minimise and maximise. On a tiled window that
+       row is a whole extra line of covers.
+       ⚠️ The fullscreen call-to-action is MOVED into the rail rather than deleted, by
+       relocating the node so it keeps its listeners. The rules below are only its size in
+       its new home. */
+    body.compact-chrome #titlebar { display: none; }
+    #icon-rail .rail-cta { width: 48px; height: 44px; flex-shrink: 0; border: none; background: transparent;
+      color: var(--accent); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      padding: 0; font-size: 14px; font-weight: 900; letter-spacing: 0; border-radius: 0; }
+    #icon-rail .rail-cta:hover { background: transparent; color: var(--text_main); box-shadow: none; transform: none; }
+
+    /* ⚠️ Driven by a ResizeObserver on the window, NOT by a CSS media query. A media query
+       reads the SCREEN, and on a tiling desktop the window and the screen are different
+       numbers: half of a 1440px screen is 720px and a third is 480px, so a narrow window is
+       the ordinary case here rather than an exception. */
+    body.narrow #gallery-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 10px; }
+    /* ⚠️ Overlaid, not collapsed. The side panel is opened from the rail, so giving it zero
+       width would leave those buttons doing nothing at all. Floating it over the list keeps
+       every route working and still gives the width back to the games. */
+    body.tight #side-panel.open { position: absolute; left: 48px; top: 0; bottom: 0; z-index: 50;
+      width: 200px; background: var(--bg_menu); box-shadow: 12px 0 30px rgba(0,0,0,0.45); }
     #rail-top, #rail-bottom { display: flex; flex-direction: column; align-items: center; padding: 6px 0; }
     .rail-btn { width: 48px; height: 44px; border: none; background: transparent; color: var(--text_dim); cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; transition: color 0.15s; padding: 0; text-transform: none; letter-spacing: 0; border-radius: 0; }
     .rail-btn:hover { color: var(--accent); background: transparent; box-shadow: none; transform: none; }
@@ -122,7 +159,7 @@
 
     #gallery-search-wrap { display: flex; align-items: center; gap: 14px; padding: 0 0 18px; }
     #gallery-search-inner { position: relative; flex: 1; }
-    #gallery-search { width: 100%; box-sizing: border-box; padding: 13px 44px 13px 46px; background: rgba(0,0,0,0.35); border: 1.5px solid var(--border_solid); border-radius: 12px; color: var(--text_main); font-family: var(--ui-font); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: border-color 0.2s, box-shadow 0.2s; }
+    #gallery-search { width: 100%; box-sizing: border-box; padding: 13px 44px 13px 46px; background: rgba(0,0,0,0.35); border: 1.5px solid var(--border_solid); border-radius: var(--radius-lg); color: var(--text_main); font-family: var(--ui-font); font-size: 14px; font-weight: 700; letter-spacing: 0.5px; transition: border-color 0.2s, box-shadow 0.2s; }
     #gallery-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--border), 0 6px 24px rgba(0,0,0,0.4); }
     #gallery-search::placeholder { color: var(--text_dim); font-weight: 400; font-style: italic; letter-spacing: 0; }
     .gsearch-icon { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text_dim); pointer-events: none; transition: color 0.2s; }
@@ -132,22 +169,22 @@
     #gallery-search-count { font-size: 10px; font-weight: 900; color: var(--text_dim); letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; min-width: 64px; text-align: right; transition: color 0.2s; }
     #gallery-search-wrap .cust-sel { width: 158px; flex-shrink: 0; }
     #gallery-search-wrap #gallery-category + .cust-sel { width: 132px; }
-    #gallery-search-wrap .cust-sel-btn { padding: 12px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; }
+    #gallery-search-wrap .cust-sel-btn { padding: 12px 12px; border-radius: var(--radius-lg); font-size: 12px; font-weight: 700; }
 
     .row { display: flex; gap: 10px; }
-    button { background-color: var(--bg_panel); color: var(--text_main); border: 1px solid var(--border_solid); padding: 10px 12px; font-family: var(--ui-font); font-weight: 900; cursor: pointer; border-radius: 6px; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; text-transform: uppercase; letter-spacing: 1px; }
+    button { background-color: var(--bg_panel); color: var(--text_main); border: 1px solid var(--border_solid); padding: 10px 12px; font-family: var(--ui-font); font-weight: 900; cursor: pointer; border-radius: var(--radius-md); transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease; text-transform: uppercase; letter-spacing: 1px; }
     button:hover { background-color: var(--text_main); color: var(--bg); }
     button.primary { background-color: var(--accent); color: var(--bg); border: none; }
     button.primary:hover { background-color: var(--text_main); color: var(--bg); }
     button.danger { background: transparent; border-color: #c62828; color: #ef5350; }
     button.danger:hover { background: #c62828; color: #fff; }
 
-    fieldset { border: 2px solid var(--border); border-radius: 12px; padding: 20px 15px 15px 15px; margin: 5px 0; background: var(--bg_panel); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    legend { font-weight: 900; padding: 4px 12px; color: var(--bg); background-color: var(--accent); border-radius: 6px; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+    fieldset { border: 2px solid var(--border); border-radius: var(--radius-lg); padding: 20px 15px 15px 15px; margin: 5px 0; background: var(--bg_panel); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    legend { font-weight: 900; padding: 4px 12px; color: var(--bg); background-color: var(--accent); border-radius: var(--radius-md); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
 
     input[type="text"], input[type="password"], input[type="number"], textarea, select {
       background-color: rgba(0,0,0,0.3); color: var(--text_main); border: 1px solid var(--border_solid);
-      padding: 10px; width: 100%; box-sizing: border-box; border-radius: 6px; font-family: var(--ui-font);
+      padding: 10px; width: 100%; box-sizing: border-box; border-radius: var(--radius-md); font-family: var(--ui-font);
     }
     select { cursor: pointer; }
     select option, select optgroup { background-color: var(--bg_menu); color: var(--text_main); }
@@ -157,7 +194,7 @@
     .cust-sel { position: relative; width: 100%; }
     .cust-sel-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
       background-color: rgba(0,0,0,0.3); color: var(--text_main); border: 1px solid var(--border_solid);
-      padding: 10px 12px; border-radius: 6px; font-family: var(--ui-font); font-size: 13px;
+      padding: 10px 12px; border-radius: var(--radius-md); font-family: var(--ui-font); font-size: 13px;
       cursor: pointer; text-align: left; transition: border-color 0.15s, box-shadow 0.15s; }
     .cust-sel-btn:hover { border-color: var(--accent); }
     .cust-sel.open .cust-sel-btn { border-color: var(--accent); box-shadow: 0 0 10px var(--border); }
@@ -165,9 +202,9 @@
     .cust-sel-arrow { color: var(--text_dim); font-size: 9px; flex-shrink: 0; transition: transform 0.15s, color 0.15s; }
     .cust-sel.open .cust-sel-arrow { transform: rotate(180deg); color: var(--accent); }
     .cust-sel-list { position: fixed; z-index: 100000; max-height: 260px; overflow-y: auto;
-      background: var(--bg_menu); border: 1px solid var(--accent); border-radius: 6px; padding: 4px;
+      background: var(--bg_menu); border: 1px solid var(--accent); border-radius: var(--radius-md); padding: 4px;
       box-shadow: 0 12px 30px rgba(0,0,0,0.6); }
-    .cust-sel-item { padding: 8px 10px; border-radius: 4px; color: var(--text_sec); font-size: 13px;
+    .cust-sel-item { padding: 8px 10px; border-radius: var(--radius-sm); color: var(--text_sec); font-size: 13px;
       cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cust-sel-item:hover { background: var(--bg_panel); color: var(--text_main); }
     .cust-sel-item.sel { background: var(--accent); color: var(--bg); font-weight: 700; }
@@ -190,7 +227,7 @@
        Edit Details modal and every sub-modal it spawns open on top of the game page, not under it. */
     #view-gamepage.active { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
       width: min(1100px, 94%); height: 90%; padding: 20px 30px 30px;
-      background: var(--bg); border: 1px solid var(--border_solid); border-radius: 16px;
+      background: var(--bg); border: 1px solid var(--border_solid); border-radius: var(--radius-lg);
       box-shadow: 0 30px 90px rgba(0,0,0,0.75); z-index: 81; animation: gp-pop 0.18s ease; }
     /* Keep the scrollbar clear of the rounded corners so it doesn't bleed past them */
     #view-gamepage.active::-webkit-scrollbar { width: 10px; }
@@ -232,7 +269,7 @@
     .stat-label { font-size: 10px; font-weight: 900; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
     .stat-val { font-size: 13px; font-weight: bold; color: var(--text_main); }
 
-    .btn-hero { background: var(--bg_menu); border: 1px solid var(--border_solid); color: var(--text_sec); padding: 12px 20px; border-radius: 8px; font-weight: 900; font-family: var(--ui-font); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: background 0.2s, color 0.2s, border-color 0.2s; white-space: nowrap; }
+    .btn-hero { background: var(--bg_menu); border: 1px solid var(--border_solid); color: var(--text_sec); padding: 12px 20px; border-radius: var(--radius); font-weight: 900; font-family: var(--ui-font); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: background 0.2s, color 0.2s, border-color 0.2s; white-space: nowrap; }
     .btn-hero:hover { background: var(--accent); color: var(--bg); border-color: var(--accent); box-shadow: 0 0 14px var(--accent); }
     .btn-hero.active { background: var(--text_main); color: var(--bg); border-color: var(--text_main); }
     .btn-hero-sq { width: 38px; height: 38px; padding: 0; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -243,28 +280,28 @@
     .btn-hero.working { pointer-events: none; animation: btnpulse 1s ease-in-out infinite; }
     @keyframes btnpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-    .screenshots-banner { position: relative; height: 160px; background-size: cover; background-position: center; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border_solid); box-shadow: 0 5px 15px rgba(0,0,0,0.3); transition: box-shadow 0.2s, border-color 0.2s; cursor: pointer; overflow: hidden; }
+    .screenshots-banner { position: relative; height: 160px; background-size: cover; background-position: center; border-radius: var(--radius); margin-bottom: 20px; border: 1px solid var(--border_solid); box-shadow: 0 5px 15px rgba(0,0,0,0.3); transition: box-shadow 0.2s, border-color 0.2s; cursor: pointer; overflow: hidden; }
     .screenshots-banner:hover { box-shadow: 0 10px 25px rgba(0,0,0,0.5); border-color: var(--accent); }
     .screenshots-banner-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; transition: background 0.2s; z-index: 1; }
     .screenshots-banner:hover .screenshots-banner-overlay { background: rgba(0,0,0,0.2); }
     .screenshots-banner-text { font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 4px; text-shadow: 0 4px 10px rgba(0,0,0,0.9); }
 
-    .tool-card { background-color: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+    .tool-card { background-color: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: var(--radius); padding: 15px; display: flex; flex-direction: column; gap: 10px; }
     .tool-card-title { color: var(--accent); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid var(--border_solid); padding-bottom: 5px; margin-bottom: 2px; }
 
     /* Settings as a Control-Panel hub (mirrors Clarity): wide modal, category rail + panes */
-    .cp-panel { width: min(1080px, 95vw); height: 88vh; max-height: 88vh; background: var(--bg_menu); border-radius: 14px; border: 2px solid var(--border_solid); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.85); overflow: hidden; }
+    .cp-panel { width: min(1080px, 95vw); height: 88vh; max-height: 88vh; background: var(--bg_menu); border-radius: var(--radius-lg); border: 2px solid var(--border_solid); display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.85); overflow: hidden; }
     .cp-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border_solid); flex-shrink: 0; }
     .cp-title { margin: 0; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; font-size: 15px; font-weight: 900; white-space: nowrap; }
     .cp-search-wrap { position: relative; flex: 1; }
     .cp-search-wrap > span { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text_dim); pointer-events: none; display: flex; }
-    .cp-search-wrap input { width: 100%; padding: 9px 10px 9px 34px; background: var(--bg); border: 1px solid var(--border_solid); border-radius: 8px; font-size: 12px; box-sizing: border-box; color: var(--text_main); }
-    .cp-save { flex-shrink: 0; padding: 9px 20px; background: var(--accent); color: var(--bg); border: none; border-radius: 8px; font-weight: 900; cursor: pointer; }
-    .cp-close { width: 36px; height: 36px; flex-shrink: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border_solid); color: var(--text_sec); border-radius: 8px; cursor: pointer; }
+    .cp-search-wrap input { width: 100%; padding: 9px 10px 9px 34px; background: var(--bg); border: 1px solid var(--border_solid); border-radius: var(--radius); font-size: 12px; box-sizing: border-box; color: var(--text_main); }
+    .cp-save { flex-shrink: 0; padding: 9px 20px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius); font-weight: 900; cursor: pointer; }
+    .cp-close { width: 36px; height: 36px; flex-shrink: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border_solid); color: var(--text_sec); border-radius: var(--radius); cursor: pointer; }
     .cp-close:hover { color: var(--accent); border-color: var(--accent); }
     .cp-body { flex: 1; display: flex; min-height: 0; }
     .cp-rail { width: 190px; flex-shrink: 0; border-right: 1px solid var(--border_solid); padding: 12px 10px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; background: var(--bg_panel); }
-    .cp-rail-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 11px 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: var(--text_sec); cursor: pointer; transition: background-color 0.15s, color 0.15s; font-family: inherit; }
+    .cp-rail-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 11px 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; background: transparent; border: 1px solid transparent; border-radius: var(--radius); color: var(--text_sec); cursor: pointer; transition: background-color 0.15s, color 0.15s; font-family: inherit; }
     .cp-rail-item svg { flex-shrink: 0; }
     .cp-rail-item:hover { background: rgba(255,255,255,0.06); color: var(--text_main); }
     .cp-rail-item.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
@@ -290,7 +327,7 @@
     .ra-simple-label { font-size: 13px; font-weight: 700; color: var(--text_main); margin-bottom: 9px; display: flex; align-items: center; gap: 8px; }
     .ra-simple-sub { font-size: 11px; color: var(--text_dim); font-weight: 400; margin-top: 6px; }
     .ra-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .ra-chip { font-size: 11px; padding: 6px 11px; border-radius: 14px; border: 1px solid var(--border_solid); background: rgba(0,0,0,0.25); color: var(--text_sec); cursor: pointer; white-space: nowrap; }
+    .ra-chip { font-size: 11px; padding: 6px 11px; border-radius: var(--radius-lg); border: 1px solid var(--border_solid); background: rgba(0,0,0,0.25); color: var(--text_sec); cursor: pointer; white-space: nowrap; }
     .ra-chip:hover { border-color: var(--accent); color: var(--text_main); }
     .ra-chip.sel { background: var(--accent); color: var(--bg); border-color: var(--accent); }
     .ra-chip.star { padding: 6px 9px; }
@@ -304,9 +341,9 @@
     .exp-shader-chip .ra-chip { border-top-right-radius: 0; border-bottom-right-radius: 0; }
     .exp-fav { font-size: 12px; line-height: 1; padding: 0 9px; border: 1px solid var(--border_solid); border-left: none; border-radius: 0 14px 14px 0; background: rgba(0,0,0,0.25); color: var(--text_dim); cursor: pointer; }
     .exp-fav:hover, .exp-fav.on { color: #ffcf6b; }
-    .ra-shader-item .exp-fav { border: 1px solid var(--border_solid); border-radius: 4px; margin-left: auto; padding: 3px 8px; }
+    .ra-shader-item .exp-fav { border: 1px solid var(--border_solid); border-radius: var(--radius-sm); margin-left: auto; padding: 3px 8px; }
     /* Core downloader */
-    .core-dl-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); }
+    .core-dl-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--border); }
     .core-dl-item.rec { border-color: var(--accent); background: rgba(212,163,115,0.10); }
     .core-dl-item .cdl-name { font-size: 13px; font-weight: 700; color: var(--text_main); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .core-dl-item .cdl-id { font-size: 10px; color: var(--text_dim); font-family: monospace; }
@@ -314,9 +351,9 @@
     .core-dl-installed { font-size: 10px; font-weight: 900; color: #66bb6a; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
     .core-dl-rec-hdr { font-size: 9px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin: 2px 2px 5px; }
     /* Duplicate finder */
-    .dup-group { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: rgba(0,0,0,0.15); }
+    .dup-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: rgba(0,0,0,0.15); }
     .dup-group-title { font-size: 13px; font-weight: 900; color: var(--text_main); margin-bottom: 8px; }
-    .dup-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; border-radius: 4px; }
+    .dup-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; border-radius: var(--radius-sm); }
     .dup-row:hover { background: rgba(255,255,255,0.04); }
     .dup-row .dup-title { font-size: 13px; color: var(--text_sec); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dup-row .dup-meta { font-size: 10px; color: var(--text_dim); white-space: nowrap; flex-shrink: 0; }
@@ -324,35 +361,35 @@
     .ra-shader-crumbs { font-size: 12px; color: var(--text_dim); margin: 8px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
     .ra-shader-crumbs a { color: var(--accent); cursor: pointer; }
     .ra-shader-crumbs a:hover { text-decoration: underline; }
-    .ra-shader-browser { border: 1px solid var(--border_solid); border-radius: 8px; overflow: hidden; }
+    .ra-shader-browser { border: 1px solid var(--border_solid); border-radius: var(--radius); overflow: hidden; }
     .ra-shader-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; font-size: 13px; color: var(--text_sec); border-bottom: 1px solid var(--border); }
     .ra-shader-item:last-child { border-bottom: none; }
     .ra-shader-item:hover { background: rgba(255,255,255,0.05); color: var(--text_main); }
     .ra-shader-item.folder { font-weight: 700; color: var(--text_main); }
     .ra-shader-item.sel { background: var(--accent); color: var(--bg); }
     .ra-shader-item svg { flex-shrink: 0; }
-    .ra-shader-tag { font-size: 8px; font-weight: 900; letter-spacing: 1px; background: var(--bg_panel); color: var(--accent); border: 1px solid var(--border_solid); border-radius: 3px; padding: 2px 5px; flex-shrink: 0; }
+    .ra-shader-tag { font-size: 8px; font-weight: 900; letter-spacing: 1px; background: var(--bg_panel); color: var(--accent); border: 1px solid var(--border_solid); border-radius: var(--radius-sm); padding: 2px 5px; flex-shrink: 0; }
     .ra-shader-item.sel .ra-shader-tag { color: var(--bg); border-color: var(--bg); }
-    .yt-search-item { display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: 8px; background: var(--bg_panel); border: 2px solid transparent; cursor: pointer; transition: border-color 0.15s; }
+    .yt-search-item { display: flex; gap: 12px; align-items: center; padding: 8px; border-radius: var(--radius); background: var(--bg_panel); border: 2px solid transparent; cursor: pointer; transition: border-color 0.15s; }
     .yt-search-item:hover { border-color: var(--accent); }
 
     .form-row { display: flex; flex-direction: column; gap: 6px; }
     .form-row-inline { display: flex; gap: 10px; align-items: flex-end; }
     .form-row-inline .form-row { flex: 1; }
     .hint { font-size: 11px; color: var(--text_dim); margin-top: 2px; }
-    .core-desc { font-size: 11px; line-height: 1.5; color: var(--text_sec); background: rgba(0,0,0,0.22); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-top: 6px; max-height: 130px; overflow-y: auto; }
+    .core-desc { font-size: 11px; line-height: 1.5; color: var(--text_sec); background: rgba(0,0,0,0.22); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; margin-top: 6px; max-height: 130px; overflow-y: auto; }
     .core-all-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px; color: var(--text_dim); margin-top: 6px; }
     .core-all-toggle input { width: auto; margin: 0; }
 
     /* Save-state manager — retro console "BIOS / memory card" look on the app's theme colour,
        with a true 8-bit font (Press Start 2P) and pixelated artwork. */
-    #modal-save-manager .sm-box { position: relative; width: min(1000px, 95vw); height: 88vh; background: var(--bg); border: 3px solid var(--border_solid); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 70px rgba(0,0,0,0.9); font-family: 'PressStart2P', monospace; }
+    #modal-save-manager .sm-box { position: relative; width: min(1000px, 95vw); height: 88vh; background: var(--bg); border: 3px solid var(--border_solid); border-radius: var(--radius-md); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 70px rgba(0,0,0,0.9); font-family: 'PressStart2P', monospace; }
     #modal-save-manager .sm-box::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0; background-image: repeating-linear-gradient(to bottom, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px); }
     #modal-save-manager .sm-bar { position: relative; z-index: 1; background: var(--bg_menu); border: 2px solid; border-color: rgba(255,255,255,0.16) rgba(0,0,0,0.45) rgba(0,0,0,0.45) rgba(255,255,255,0.16); margin: 10px; padding: 14px 14px; color: var(--accent); text-transform: uppercase; letter-spacing: 0; font-size: 15px; line-height: 1.5; display: flex; align-items: center; gap: 14px; }
     #modal-save-manager .sm-dim { color: var(--text_dim); font-size: 11px; }
     #modal-save-manager #sm-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #modal-save-manager .sm-nav { background: rgba(0,0,0,0.3); border: 1px solid var(--border_solid); color: var(--accent); width: 30px; height: 30px; border-radius: 4px; cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 0; font-family: 'PressStart2P', monospace; }
-    #modal-save-manager .sm-search { font-family: 'PressStart2P', monospace; font-size: 9px; line-height: 1.4; height: auto; padding: 13px 10px 9px; background: rgba(0,0,0,0.3); border: 1px solid var(--border_solid); color: var(--text_main); border-radius: 4px; width: 190px; text-transform: uppercase; letter-spacing: 0; }
+    #modal-save-manager .sm-nav { background: rgba(0,0,0,0.3); border: 1px solid var(--border_solid); color: var(--accent); width: 30px; height: 30px; border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 0; font-family: 'PressStart2P', monospace; }
+    #modal-save-manager .sm-search { font-family: 'PressStart2P', monospace; font-size: 9px; line-height: 1.4; height: auto; padding: 13px 10px 9px; background: rgba(0,0,0,0.3); border: 1px solid var(--border_solid); color: var(--text_main); border-radius: var(--radius-sm); width: 190px; text-transform: uppercase; letter-spacing: 0; }
     #modal-save-manager .sm-search::placeholder { color: var(--text_dim); font-family: 'PressStart2P', monospace; font-size: 9px; line-height: 1.4; }
     #modal-save-manager .sm-sort { font-family: 'PressStart2P', monospace; font-size: 9px; padding: 9px 11px; text-transform: uppercase; letter-spacing: 0; flex-shrink: 0; }
     #modal-save-manager .sm-actions { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0; }
@@ -360,7 +397,7 @@
     /* Level 1 (games): fixed-height landscape rows so cards are uniform and the gap actually separates them */
     #modal-save-manager .sm-grid { position: relative; z-index: 1; flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); grid-auto-rows: 116px; gap: 16px; padding: 4px 14px 14px; align-content: start; }
     #modal-save-manager .sm-grid.slots { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: auto; }   /* per-game: big 4:3 screenshots */
-    #modal-save-manager .sm-card { background: var(--bg_menu); border: 2px solid; border-color: rgba(255,255,255,0.14) rgba(0,0,0,0.5) rgba(0,0,0,0.5) rgba(255,255,255,0.14); border-radius: 4px; position: relative; cursor: pointer; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+    #modal-save-manager .sm-card { background: var(--bg_menu); border: 2px solid; border-color: rgba(255,255,255,0.14) rgba(0,0,0,0.5) rgba(0,0,0,0.5) rgba(255,255,255,0.14); border-radius: var(--radius-sm); position: relative; cursor: pointer; overflow: hidden; display: flex; align-items: center; justify-content: center; }
     #modal-save-manager .sm-grid.slots .sm-card { aspect-ratio: 4 / 3; }
     #modal-save-manager .sm-card:hover { border-color: var(--accent); }
     #modal-save-manager .sm-card.sel { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent), 0 0 14px rgba(212,163,115,0.5); }
@@ -373,14 +410,14 @@
     #modal-save-manager .sm-card .sm-bg { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; filter: blur(16px) brightness(0.5) saturate(1.3); transform: scale(1.2); }
     #modal-save-manager .sm-card .sm-name { font-family: 'PressStart2P', monospace; font-size: 8px; line-height: 1.5; color: var(--text_dim); text-align: center; padding: 8px; }
     #modal-save-manager .sm-card .sm-tag { position: absolute; z-index: 2; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.8); color: #fff; font-family: 'PressStart2P', monospace; font-size: 7px; line-height: 1.6; letter-spacing: 0; padding: 4px 5px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #modal-save-manager .sm-card .sm-count { position: absolute; z-index: 2; top: 4px; right: 4px; background: var(--accent); color: var(--bg); font-family: 'PressStart2P', monospace; font-size: 7px; border-radius: 3px; padding: 3px 5px; }
+    #modal-save-manager .sm-card .sm-count { position: absolute; z-index: 2; top: 4px; right: 4px; background: var(--accent); color: var(--bg); font-family: 'PressStart2P', monospace; font-size: 7px; border-radius: var(--radius-sm); padding: 3px 5px; }
     #modal-save-manager .sm-card.empty { color: var(--text_dim); font-size: 30px; font-weight: 900; }
 
-    .scan-result-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 12px; }
+    .scan-result-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: var(--radius-md); background: rgba(0,0,0,0.2); border: 1px solid var(--border); font-size: 12px; }
     .scan-result-item .rom-name { color: var(--text_sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
     .scan-result-item select { width: auto; flex-shrink: 0; font-size: 11px; padding: 4px 8px; }
     #scan-results-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
-    .disc-badge { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: var(--bg); font-size: 9px; font-weight: 900; letter-spacing: 1px; vertical-align: middle; }
+    .disc-badge { display: inline-block; margin-left: 8px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--accent); color: var(--bg); font-size: 9px; font-weight: 900; letter-spacing: 1px; vertical-align: middle; }
 
     /* Screenshot viewer = a per-system display screen. Fixed 4:3 box so every shot is uniform in
        size/shape; the shot fills it (object-fit:fill), as these framebuffers were shown on the real
@@ -419,7 +456,7 @@
     #modal-slideshow .slide-prev { left: 20px; }
     #modal-slideshow .slide-next { right: 20px; }
 
-    .system-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); }
+    .system-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: var(--radius); background: rgba(0,0,0,0.2); border: 1px solid var(--border); }
     .system-list-item:hover { border-color: var(--border_solid); }
     .system-list-item .sys-name { font-weight: 900; color: var(--text_main); font-size: 13px; }
     .system-list-item .sys-meta { font-size: 11px; color: var(--text_dim); }
@@ -432,21 +469,62 @@
     .btn-modal-x:hover { background:#c62828; border-color:#c62828; color:#fff; transform:none; box-shadow:0 0 10px rgba(198,40,40,0.35); }
     .btn-modal-save-x { height:30px; padding:0 16px; border-radius:20px; border:1.5px solid var(--accent); background:transparent; color:var(--accent); font-size:10px; font-weight:900; letter-spacing:0.5px; cursor:pointer; font-family:var(--ui-font); white-space:nowrap; transition:background 0.15s, color 0.15s, box-shadow 0.15s; text-transform:uppercase; }
     .btn-modal-save-x:hover { background:var(--accent); color:var(--bg); transform:none; box-shadow:0 0 12px rgba(212,163,115,0.35); }
-    .seg-ctrl { display:flex; width:100%; border:1px solid var(--border_solid); border-radius:6px; overflow:hidden; margin-top:4px; }
+    .seg-ctrl { display:flex; width:100%; border:1px solid var(--border_solid); border-radius: var(--radius-md); overflow:hidden; margin-top:4px; }
     .seg-btn { flex:1; background:var(--bg_panel); color:var(--text_sec); border:none; border-right:1px solid var(--border_solid); padding:8px 0; font-size:11px; font-weight:900; cursor:pointer; transition:background 0.15s, color 0.15s; border-radius:0; font-family:var(--ui-font); letter-spacing:0; text-transform:none; }
     .seg-btn:last-child { border-right:none; }
     .seg-btn:hover { background:var(--border_solid); color:var(--text_main); transform:none; box-shadow:none; }
     .seg-btn.active { background:var(--accent); color:var(--bg); }
     #settings-search { width:100%; box-sizing:border-box; margin-bottom:4px; }
-    .theme-cat-btn { width:100%; text-align:left; padding:9px 12px; border-radius:6px; border:1px solid transparent; background:transparent; color:var(--text_sec); font-size:11px; font-weight:900; cursor:pointer; font-family:var(--ui-font); transition:0.15s; text-transform:uppercase; letter-spacing:0.5px; }
+    .theme-cat-btn { width:100%; text-align:left; padding:9px 12px; border-radius: var(--radius-md); border:1px solid transparent; background:transparent; color:var(--text_sec); font-size:11px; font-weight:900; cursor:pointer; font-family:var(--ui-font); transition:0.15s; text-transform:uppercase; letter-spacing:0.5px; }
     .theme-cat-btn:hover { border-color:var(--border_solid); background:rgba(0,0,0,0.2); transform:none; box-shadow:none; color:var(--text_main); }
     .theme-cat-btn.active { background:var(--accent); color:var(--bg); border-color:var(--accent); }
-    .theme-swatch { cursor:pointer; border-radius:8px; border:2px solid transparent; overflow:hidden; transition:border-color 0.15s, transform 0.15s; }
+    .theme-swatch { cursor:pointer; border-radius: var(--radius); border:2px solid transparent; overflow:hidden; transition:border-color 0.15s, transform 0.15s; }
     .theme-swatch:hover { transform:scale(1.04); border-color:var(--text_main); }
     .theme-swatch.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
 
     .modal-wrapper { position: relative; width: fit-content; }
     .modal-float-btns { position: absolute; top: 20px; right: 20px; display: flex; gap: 8px; z-index: 200; filter: drop-shadow(0 4px 18px rgba(0,0,0,0.85)); pointer-events: auto; }
+    /* ── Library report ─────────────────────────────────────────────────── */
+    #modal-report .rp-box { width: min(1480px, 95vw); height: 90vh; padding: 0; gap: 0; display: grid; grid-template-columns: 380px 1fr; overflow: hidden; }
+    #modal-report .rp-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border_solid); }
+    #modal-report .rp-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 22px 14px; }
+    #modal-report .rp-head h3 { margin: 0; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; font-size: 15px; }
+    #modal-report .rp-x { background: transparent; border: 1px solid var(--border_solid); color: var(--text_sec); width: 30px; height: 30px; padding: 0; border-radius: 6px; font-size: 16px; line-height: 1; }
+    #modal-report .rp-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 16px; display: flex; flex-direction: column; gap: 8px; }
+    /* A flex column shrinks its children when the panel is shorter than its content, and the
+       segmented controls clip their overflow, so without this they collapse to a 2px line. */
+    #modal-report .rp-scroll > * { flex-shrink: 0; }
+    #modal-report .rp-lbl { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text_dim); margin-top: 10px; display: block; }
+    #modal-report .rp-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    #modal-report .rp-link { background: none; border: 0; padding: 0 0 0 12px; color: var(--accent); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #modal-report .rp-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    #modal-report .rp-sec { display: flex; align-items: center; gap: 8px; padding: 6px 9px; line-height: 1.25; border: 1px solid var(--border_solid); border-radius: 6px; font-size: 12px; color: var(--text_main); cursor: pointer; user-select: none; background: rgba(0,0,0,0.15); }
+    #modal-report .rp-sec input { accent-color: var(--accent); margin: 0; }
+    #modal-report .rp-sec.on { border-color: var(--accent); }
+    #modal-report .rp-sec.off { opacity: 0.42; cursor: not-allowed; }
+    #modal-report .rp-styles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    #modal-report .rp-style { display: flex; flex-direction: column; gap: 6px; align-items: stretch; padding: 6px; border: 1px solid var(--border_solid); border-radius: 8px; background: transparent; color: var(--text_sec); font-size: 10px; letter-spacing: .5px; cursor: pointer; }
+    #modal-report .rp-style.active { border-color: var(--accent); color: var(--text_main); box-shadow: 0 0 0 1px var(--accent) inset; }
+    #modal-report .rp-swatch { height: 34px; border-radius: 5px; position: relative; overflow: hidden; }
+    #modal-report .rp-swatch i { position: absolute; left: 7px; bottom: 7px; width: 55%; height: 5px; border-radius: 3px; }
+    #modal-report .rp-hint { font-size: 11px; color: var(--text_dim); line-height: 1.5; margin: 4px 0 0; }
+    #modal-report .rp-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text_main); margin-top: 12px; cursor: pointer; }
+    #modal-report .rp-check input { accent-color: var(--accent); margin: 0; }
+    #modal-report .rp-actions { display: grid; gap: 8px; padding: 14px 22px 6px; border-top: 1px solid var(--border_solid); }
+    #modal-report .rp-actions button { width: 100%; font-size: 12px; padding: 11px; letter-spacing: 1px; }
+    #modal-report .rp-status { font-size: 11px; color: var(--text_sec); min-height: 30px; margin: 0; padding: 4px 22px 16px; line-height: 1.45; word-break: break-all; }
+    #modal-report .rp-status.err { color: #ef5350; }
+    #modal-report .rp-preview { position: relative; min-width: 0; min-height: 0; background: repeating-conic-gradient(rgba(255,255,255,0.025) 0 25%, transparent 0 50%) 0 0 / 22px 22px, rgba(0,0,0,0.35); }
+    #modal-report .rp-stage { position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center; }
+    #modal-report .rp-stage iframe { border: 0; background: transparent; transform-origin: 0 0; position: absolute; left: 0; top: 0; }
+    #modal-report .rp-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text_dim); font-size: 13px; padding: 40px; text-align: center; }
+    #modal-report .rp-busy { position: absolute; right: 16px; top: 14px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text_dim); }
+    #modal-report { z-index: 200; }
+    #modal-report .segmented-control { display: flex; width: 100%; border: 1px solid var(--border_solid); border-radius: 6px; overflow: hidden; margin-top: 5px; }
+    #modal-report .segmented-btn { flex: 1; background: transparent; border: 0; border-right: 1px solid var(--border_solid); color: var(--text_sec); padding: 8px 4px; font-size: 11px; letter-spacing: .5px; cursor: pointer; border-radius: 0; }
+    #modal-report .segmented-btn:last-child { border-right: 0; }
+    #modal-report .segmented-btn.active { background: var(--accent); color: var(--bg); font-weight: 700; }
+    #modal-report input[type="text"] { width: 100%; box-sizing: border-box; }
   </style>
   <script>
     try {
@@ -457,6 +535,11 @@
         Object.keys(c).forEach(k => { if (k !== 'font') r.style.setProperty(`--${k}`, c[k]); });
         r.style.setProperty('--ui-font', c.font ? `'${c.font}', 'Raleway', sans-serif` : `'Raleway', sans-serif`);
       }
+      // The desktop's corner radius, cached for the same reason the palette is: it arrives
+      // over an async round trip, and anything applied after that restructures a window the
+      // user is already looking at.
+      const rad = localStorage.getItem('el_radius_cache');
+      if (rad) document.documentElement.style.setProperty('--radius', rad);
     } catch(e) {}
   </script>
 </head>
@@ -517,7 +600,7 @@
         <button class="rail-btn" id="btn-add-rom" title="Add ROM">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         </button>
-        <button class="rail-btn" id="btn-refresh-library" title="Refresh Library">
+        <button class="rail-btn" id="btn-rescan-library" title="Rescan Library: read the ROMS folder again">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.56"/></svg>
         </button>
         <button class="rail-btn" id="btn-scan-folder" title="Scan ROM Folder">
@@ -530,7 +613,7 @@
         </button>
         <!-- Branding -->
         <div id="btn-about" class="rail-btn" title="EmuLatte by Clarity" style="cursor:pointer; height:38px; flex-direction:column; gap:1px; margin-top:6px; border-top:1px solid var(--border_solid);">
-          <span style="font-size:7px; font-weight:900; color:var(--text_dim); letter-spacing:1px; line-height:1;">CN</span>
+          <span style="font-size:7px; font-weight:900; color:var(--text_dim); letter-spacing:1px; line-height:1;">CL</span>
           <span style="font-size:9px; font-weight:900; color:var(--accent); letter-spacing:0.5px; line-height:1;">EL</span>
         </div>
       </div>
@@ -991,6 +1074,11 @@
       <div class="form-row"><label>Name</label><input type="text" id="edit-system-name" placeholder="e.g. Super Nintendo"></div>
       <div class="form-row"><label>Short Name</label><input type="text" id="edit-system-short" placeholder="e.g. snes"></div>
       <div class="form-row">
+        <label>ROMS Folder Name</label>
+        <input type="text" id="edit-system-folder" placeholder="e.g. snes">
+        <div class="hint" id="edit-system-folder-hint">The folder under your ROMS folder that this system's games are read from.</div>
+      </div>
+      <div class="form-row">
         <label>ROM Extensions (comma-separated)</label>
         <input type="text" id="edit-system-extensions" placeholder="e.g. sfc, smc, fig">
       </div>
@@ -1047,6 +1135,44 @@
     </div>
   </div>
 
+  <style>
+    /* Resume-or-restart picker, the desktop twin of Couch Mode's. Same idea, same cards. */
+    #sp-cards { display: flex; gap: 14px; overflow-x: auto; padding: 4px 2px 10px; }
+    .sp-card { flex: 0 0 220px; background: var(--bg_panel); border: 2px solid var(--border); border-radius: 10px;
+               overflow: hidden; cursor: pointer; transition: transform .12s, border-color .12s, box-shadow .12s; text-align: left; padding: 0; }
+    .sp-card:hover, .sp-card:focus-visible { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,0,0,0.5); outline: none; }
+    .sp-thumb { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #000; display: block; }
+    .sp-blank { width: 100%; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;
+                font-size: 34px; font-weight: 900; color: var(--accent); background: var(--bg); }
+    .sp-meta  { padding: 8px 10px; }
+    .sp-slot  { font-size: 11px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; color: var(--text_main); }
+    .sp-time  { font-size: 10px; color: var(--text_dim); margin-top: 2px; }
+  </style>
+
+  <!-- ── MODAL: RESCAN PROGRESS ────────────────────────────────────────────── -->
+  <div id="modal-scan" class="modal-overlay">
+    <div class="modal-box" style="max-width:560px; width:min(560px,94vw);">
+      <div class="modal-title" id="scan-modal-title">Rescanning the library</div>
+      <div id="scan-phase" style="font-size:12px; color:var(--text_sec); min-height:18px;">Starting&hellip;</div>
+      <div id="scan-detail" style="font-size:11px; color:var(--text_dim); min-height:16px; margin-top:2px;"></div>
+      <div style="width:100%; background:var(--bg); border:1px solid var(--border); border-radius:4px; height:8px; overflow:hidden; margin-top:10px;">
+        <div id="scan-bar" style="height:100%; width:0%; background:var(--accent); transition:width .15s linear;"></div>
+      </div>
+      <div id="scan-result" style="font-size:12px; color:var(--text_main); line-height:1.6; margin-top:12px; display:none;"></div>
+      <button id="btn-scan-close" class="btn-modal-x" style="width:100%; margin-top:12px; display:none;">Close</button>
+    </div>
+  </div>
+
+  <!-- ── MODAL: RESUME OR START FRESH ──────────────────────────────────────── -->
+  <div id="modal-save-pick" class="modal-overlay">
+    <div class="modal-box" style="max-width:760px; width:min(760px,94vw);">
+      <div class="modal-title" id="sp-title">Continue where you left off?</div>
+      <p id="sp-sub" style="font-size:12px; color:var(--text_sec); margin:0 0 10px;"></p>
+      <div id="sp-cards"></div>
+      <button id="btn-sp-cancel" class="btn-modal-x" style="width:100%;">Cancel</button>
+    </div>
+  </div>
+
   <!-- ── MODAL: SETTINGS ────────────────────────────────────────────────────── -->
   <div id="modal-settings" class="modal-overlay">
     <div class="cp-panel">
@@ -1061,8 +1187,14 @@
       </div>
       <div class="cp-body">
         <nav class="cp-rail" id="settings-rail">
-          <button class="cp-rail-item active" data-pane="general">
+          <button class="cp-rail-item active" data-pane="home">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Home</span>
+          </button>
+          <button class="cp-rail-item" data-pane="general">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg><span>General</span>
+          </button>
+          <button class="cp-rail-item" data-pane="library">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg><span>Library</span>
           </button>
           <button class="cp-rail-item" data-pane="systems">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg><span>Systems</span>
@@ -1076,14 +1208,45 @@
           <button class="cp-rail-item" data-pane="scrapers">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Scrapers</span>
           </button>
+          <!-- Only shown when the desktop is one this app can integrate with; wired in renderer.js. -->
+          <button class="cp-rail-item" data-pane="omarchy" id="settings-rail-omarchy" style="display:none;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Omarchy</span>
+          </button>
+          <button class="cp-rail-item" data-pane="report">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg><span>Library Report</span>
+          </button>
           <span class="cp-rail-spacer"></span>
+          <button class="cp-rail-item" id="btn-rail-cleanup">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Cleanup</span>
+          </button>
           <button class="cp-rail-item" data-pane="data">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg><span>Data</span>
           </button>
         </nav>
 
         <div class="cp-content" id="settings-content">
-          <section class="cp-pane active" data-pane="general">
+          <!-- The landing page: the same shape the sibling app's Control Panel opens on. No
+               settings here on purpose, it is a place to arrive at before choosing. -->
+          <section class="cp-pane active" data-pane="home">
+            <div id="cp-home" style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:420px; padding:40px 20px;">
+              <h1 style="margin:0; font-size:clamp(44px,7vw,86px); font-weight:900; letter-spacing:10px; line-height:1;
+                         background:linear-gradient(180deg, var(--text_main) 0%, var(--accent) 100%);
+                         -webkit-background-clip:text; background-clip:text; color:transparent;
+                         filter:drop-shadow(0 6px 26px rgba(0,0,0,0.5));">EMULATTE</h1>
+              <div style="width:min(340px,60%); height:1px; background:linear-gradient(90deg, transparent, var(--accent), transparent); margin:18px 0 14px;"></div>
+              <p style="margin:0; font-size:13px; font-weight:900; letter-spacing:8px; color:var(--text_sec); text-transform:uppercase;">ROM Library</p>
+              <div style="display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; justify-content:center;">
+                <span id="cp-home-version" style="display:inline-flex; align-items:center; gap:8px; font-size:11px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; padding:9px 15px; border:1px solid var(--border_solid); border-radius:6px; color:var(--text_sec);">
+                  <span style="width:8px; height:8px; background:var(--accent); display:inline-block;"></span>Version
+                </span>
+                <button id="btn-cp-home-updates" style="font-size:11px; letter-spacing:1.5px; padding:9px 15px;">Check for Updates</button>
+              </div>
+              <p id="cp-home-update-status" style="margin:14px 0 0; font-size:11px; color:var(--text_dim); min-height:14px;"></p>
+              <p style="margin:22px 0 0; font-size:12px; color:var(--text_dim); font-style:italic;">Pick a section on the left.</p>
+            </div>
+          </section>
+
+          <section class="cp-pane" data-pane="general">
             <div class="cp-pane-title">General</div>
             <div class="tool-card" data-search="manual help guide documentation handbook how to instructions">
               <div class="tool-card-title">User Manual</div>
@@ -1091,6 +1254,21 @@
                 <button id="btn-settings-user-manual" style="width:100%;">Open User Manual</button>
               </div>
               <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">Every feature, explained &mdash; including Couch Mode and exporting to Clarity.</p>
+            </div>
+            <div class="tool-card" data-search="app menu desktop entry launcher shortcut system menu install gnome kde">
+              <div class="tool-card-title">Application Menu</div>
+              <div class="form-row">
+                <button id="btn-settings-add-menu" style="width:100%;">Add to Application Menu</button>
+              </div>
+              <div id="settings-menu-status" style="font-size:11px; margin-top:4px; min-height:14px;"></div>
+              <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">Puts EmuLatte and Couch Mode in your launcher, so they open like any other installed app. Writes two desktop entries into ~/.local/share/applications and nothing else.</p>
+            </div>
+            <div class="tool-card" data-search="first run welcome setup check detect retroarch packages missing emulators onboarding">
+              <div class="tool-card-title">First Run</div>
+              <div class="form-row">
+                <button id="btn-settings-first-run" style="width:100%;">Show the First Run Check</button>
+              </div>
+              <p style="font-size:11px; color:var(--text_dim); margin:6px 0 0;">The check this app runs on a machine it has never opened on: the desktop, RetroArch, and the systems that need a standalone emulator. Everything is measured again each time it opens, so it is worth a second look after installing something.</p>
             </div>
             <div class="tool-card" data-search="appearance theme color palette ui scale zoom interface">
               <div class="tool-card-title">Appearance</div>
@@ -1141,6 +1319,70 @@
               <label class="core-all-toggle" style="margin-top:6px;"><input type="checkbox" id="couch-start-chk"> Start in Couch Mode on launch</label>
               <label class="core-all-toggle"><input type="checkbox" id="couch-cursor-chk"> Hide mouse cursor in Couch Mode</label>
               <button id="btn-enter-couch" style="width:100%; margin-top:10px; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">▶ Enter Couch Mode</button>
+            </div>
+          </section>
+
+          <section class="cp-pane" data-pane="library">
+            <div class="cp-pane-title">Library</div>
+            <div class="tool-card" data-search="play ready cores missing install emulator retroarch cannot launch plug and play">
+              <div class="tool-card-title">Ready to play</div>
+              <div id="play-ready-body" style="font-size:12px; line-height:1.6; color:var(--text_sec);">Checking...</div>
+              <button id="btn-install-missing-cores" style="width:100%; margin-top:8px; display:none;">Install the missing cores</button>
+              <button id="btn-download-shaders" style="width:100%; margin-top:8px; display:none;">Download the shader pack</button>
+              <div id="play-ready-progress" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
+            </div>
+            <div class="tool-card" data-search="library location external drive usb move transfer portable share between computers artwork metadata">
+              <div class="tool-card-title">Where the library is kept</div>
+              <div class="hint" style="margin-top:0;">The database, every piece of scraped artwork, trailers and manuals. Put it on an external drive and another computer can use the same library by pointing at the same folder, instead of scraping it all again. Your ROMS and BIOS folders are separate and stay where they are.</div>
+              <div class="form-row" style="margin-top:10px;">
+                <label>Library folder</label>
+                <code id="library-data-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
+              </div>
+              <div id="library-data-note" style="font-size:11px; margin-top:6px; min-height:14px;"></div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                <button id="btn-library-move" style="flex:1 1 170px;">Move It To A Drive&hellip;</button>
+                <button id="btn-library-use" style="flex:1 1 170px;">Use A Library On A Drive&hellip;</button>
+                <button id="btn-library-home" style="flex:1 1 150px; display:none;">Bring It Back Here</button>
+              </div>
+              <div id="library-data-status" style="font-size:11px; color:var(--text_dim); margin-top:8px; min-height:14px;"></div>
+            </div>
+            <div class="tool-card" data-search="library rescan scan roms folder rom directory add games refresh">
+              <div class="tool-card-title">Your ROMS folder</div>
+              <div class="hint" style="margin-top:0;">EmuLatte's library <b>is</b> this folder. There is one sub-folder per system; drop ROMs in and they are in the library the next time EmuLatte opens. Sub-folders inside a system folder are read too, and a multi-disc set is grouped into one entry.</div>
+              <div class="form-row" style="margin-top:10px;">
+                <label>ROMS folder</label>
+                <code id="library-roms-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                <button id="btn-library-rescan" style="flex:1 1 150px;">Rescan Library</button>
+                <button id="btn-library-open-roms" style="flex:1 1 110px;">Open Folder</button>
+                <button id="btn-library-set-roms" style="flex:1 1 110px;">Change…</button>
+                <button id="btn-library-reset-roms" style="flex:1 1 110px;">Use Default</button>
+              </div>
+              <div class="hint">Point this at a collection you already have, such as an external drive or a NAS mount, instead of moving it. Folders named the way ES-DE, Batocera, RetroBat or RetroPie name them are all recognised.</div>
+              <div id="library-scan-status" style="font-size:11px; color:var(--accent); margin-top:8px; min-height:14px;"></div>
+            </div>
+            <div class="tool-card" data-search="bios firmware folder scan missing required system directory">
+              <div class="tool-card-title">Your BIOS folder</div>
+              <div class="hint" style="margin-top:0;">Drop BIOS and firmware files in here, flat or in sub-folders. EmuLatte files them under the exact name each core expects, matching by checksum so a correct file with a wrong name still lands right. This folder is EmuLatte's RetroArch system directory, so what is in it is what the cores read.</div>
+              <div class="form-row" style="margin-top:10px;">
+                <label>BIOS folder</label>
+                <code id="library-bios-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px;">(reading)</code>
+              </div>
+              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                <button id="btn-library-open-bios" style="flex:1 1 110px;">Open Folder</button>
+                <button id="btn-library-set-bios" style="flex:1 1 110px;">Change…</button>
+                <button id="btn-library-reset-bios" style="flex:1 1 110px;">Use Default</button>
+              </div>
+              <div id="library-bios-status" style="font-size:11px; color:var(--text_dim); margin-top:8px; line-height:1.6;"></div>
+            </div>
+            <div class="tool-card" data-search="system folders list where roms go per system restore default systems deleted">
+              <div class="tool-card-title">Where each system reads from</div>
+              <div class="hint" style="margin-top:0;">Every system EmuLatte knows is here from the first launch, whether it has games or not. Browsing by system only lists the ones that do.</div>
+              <div id="library-folder-list" style="margin-top:10px; max-height:300px; overflow:auto; border:1px solid var(--border); border-radius:6px;"></div>
+              <div id="library-dismissed" style="font-size:11px; color:var(--text_dim); margin-top:8px;"></div>
+              <button id="btn-library-restore-systems" style="width:100%; margin-top:8px;">Restore Default Systems</button>
+              <div class="hint">Brings back every system shipped with EmuLatte, including any you deleted.</div>
             </div>
           </section>
 
@@ -1269,6 +1511,15 @@
             </div>
           </section>
 
+          <section class="cp-pane" data-pane="report">
+            <div class="cp-pane-title">Library Report</div>
+            <div class="tool-card" data-search="report stats statistics share social post export pdf image images poster cards carousel wrapped summary systems couch co-op achievements">
+              <div class="tool-card-title">Library Report</div>
+              <div class="hint">Turn your library into a report: games per system, recently played, genres, couch co-op, ratings and more. Save it as a web page, a PDF or images ready to post.</div>
+              <button id="btn-open-report" style="width:100%; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Create a Report</button>
+            </div>
+          </section>
+
           <section class="cp-pane" data-pane="data">
             <div class="cp-pane-title">Data</div>
             <div class="tool-card" data-search="data folder database config directory open">
@@ -1278,9 +1529,9 @@
             <div class="tool-card" data-search="backup restore zip export import save states credentials portable 1:1 copy machine suite clarity">
               <div class="tool-card-title">Backup &amp; Restore</div>
               <button id="btn-backup-emulatte" style="width:100%;">Back Up EmuLatte</button>
-              <div class="hint" style="margin-top:4px;">EmuLatte's library, art, trailers, credentials &amp; RetroArch config — plus your RetroArch save states.</div>
+              <div class="hint" style="margin-top:4px;">One zip holding the library database, every piece of scraped artwork, trailers, game manuals, your settings and credentials, the RetroArch config and your RetroArch save states. Your <b>ROMS and BIOS folders are left out on purpose</b>. The point of the folder layout is that those are replaceable, and a backup of a library is its metadata, not the ROMs you already have.</div>
               <button id="btn-backup-suite" style="width:100%; margin-top:10px; background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:900;">Back Up Clarity Suite</button>
-              <div class="hint" style="margin-top:4px;">Everything in GameManagerConfig (EmuLatte + Clarity + Couch Mode + Clock) + save states — a full 1:1 copy.</div>
+              <div class="hint" style="margin-top:4px;">Emulatte_Stuff plus Clarity's GameManagerConfig (Clarity + Couch Mode + Clock) + save states, as one archive of both apps. Your ROMS and BIOS folders are left out on purpose; see the manual, section 22.</div>
               <button id="btn-restore-backup" style="width:100%; margin-top:10px;">Restore from Backup…</button>
               <div id="backup-status" style="font-size:11px; color:var(--text_dim); margin-top:6px;"></div>
               <div class="hint">Restore overwrites the current data and restarts EmuLatte. ROM paths &amp; RetroArch folders are machine-specific — use “Re-import Paths” after restoring on another computer.</div>
@@ -1299,12 +1550,64 @@
               <div class="hint">Deletes downloaded art &amp; trailers no longer linked to any game, to free disk space.</div>
             </div>
           </section>
+
+          <section class="cp-pane" data-pane="omarchy">
+            <div class="cp-pane-title">Omarchy</div>
+            <div id="omarchy-pane"></div>
+          </section>
         </div>
       </div>
     </div>
   </div>
 
   <!-- ── MODAL: RETROARCH SETTINGS (full menu over EmuLatte's owned config) ──── -->
+  <div id="modal-report" class="modal-overlay">
+    <div class="modal-box rp-box" role="dialog" aria-labelledby="rp-heading">
+      <div class="rp-side">
+        <div class="rp-head"><h3 id="rp-heading">Library Report</h3><button id="rp-close" class="rp-x" aria-label="Close">&#10005;</button></div>
+        <div class="rp-scroll">
+          <label class="rp-lbl" for="rp-title">Title</label>
+          <input id="rp-title" type="text" maxlength="60">
+          <label class="rp-lbl" for="rp-subtitle">Subtitle</label>
+          <input id="rp-subtitle" type="text" maxlength="60" placeholder="Your name or @handle">
+          <span class="rp-lbl">Format</span>
+          <div class="segmented-control" id="rp-format">
+            <button class="segmented-btn" data-val="document">Document</button>
+            <button class="segmented-btn" data-val="poster">Poster</button>
+            <button class="segmented-btn" data-val="cards">Cards</button>
+          </div>
+          <p id="rp-format-hint" class="rp-hint"></p>
+          <div id="rp-size-wrap">
+            <span class="rp-lbl">Size</span>
+            <div class="segmented-control" id="rp-size">
+              <button class="segmented-btn" data-val="portrait">Portrait 4:5</button>
+              <button class="segmented-btn" data-val="square">Square</button>
+              <button class="segmented-btn" data-val="story">Story 9:16</button>
+              <button class="segmented-btn" data-val="landscape">Landscape 16:9</button>
+            </div>
+          </div>
+          <span class="rp-lbl">Style</span>
+          <div id="rp-styles" class="rp-styles"></div>
+          <div class="rp-row"><span class="rp-lbl">What to include</span><span><button id="rp-all" class="rp-link">All</button><button id="rp-none" class="rp-link">None</button></span></div>
+          <div id="rp-sections" class="rp-sections"></div>
+          <span class="rp-lbl">Lately looks back</span>
+          <div class="segmented-control" id="rp-recent">
+            <button class="segmented-btn" data-val="30">30</button>
+            <button class="segmented-btn" data-val="90">90</button>
+            <button class="segmented-btn" data-val="365">365</button>
+          </div>
+        </div>
+        <div class="rp-actions" id="rp-actions"></div>
+        <p id="rp-status" class="rp-status" aria-live="polite"></p>
+      </div>
+      <div class="rp-preview">
+        <div id="rp-stage" class="rp-stage"><iframe id="rp-frame" title="Preview"></iframe></div>
+        <div id="rp-empty" class="rp-empty" hidden></div>
+        <span id="rp-busy" class="rp-busy" hidden></span>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-ra-settings" class="modal-overlay" style="z-index:120;">
     <div class="cp-panel">
       <div class="cp-header">
@@ -1937,6 +2240,16 @@
       display: flex; align-items: center; justify-content: center; transition: 0.15s;
     }
     #np-close-btn:hover { background: rgba(0,0,0,0.75); color: var(--text_main); }
+    /* ── First run: what this machine has ─────────────────────────────────── */
+    .wlc-card      { border:1px solid var(--border_solid); border-radius:6px; padding:12px 14px; text-align:left; width:100%; box-sizing:border-box; }
+    .wlc-title     { font-size:10px; font-weight:900; letter-spacing:2px; color:var(--accent); margin-bottom:8px; }
+    .wlc-line      { display:flex; align-items:baseline; gap:8px; font-size:12px; color:var(--text_sec); padding:4px 0; line-height:1.5; }
+    .wlc-dot       { width:7px; height:7px; border-radius:50%; flex:0 0 auto; position:relative; top:-1px; }
+    .wlc-ok        { background:#4ade80; }
+    .wlc-warn      { background:#fbbf24; }
+    .wlc-off       { background:var(--text_dim); }
+    .wlc-detail    { color:var(--text_dim); }
+    .wlc-line b    { color:var(--text_main); font-weight:700; }
   </style>
   <div id="modal-now-playing" class="modal-overlay">
     <div id="np-card">
@@ -2021,6 +2334,82 @@
       </p>
 
       <button id="btn-close-about">Close</button>
+    </div>
+  </div>
+
+  <!-- ── MODAL: FIRST RUN ───────────────────────────────────────────────────── -->
+  <!-- Shown once, on a machine that has never opened this app. It leads with what the host
+       actually has rather than with a form, and every line is measured at open time. -->
+  <!-- First Run, laid out the way the sibling app's is: a sticky header, numbered steps that
+       scroll, the optional chores folded away, and one sticky footer. -->
+  <div id="modal-welcome" class="modal-overlay">
+    <div style="background: var(--bg_menu); border-radius: 14px; border: 2px solid var(--border_solid); width: 460px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.8); overflow: hidden;">
+
+      <div style="padding: 24px 20px 18px; flex-shrink: 0; border-bottom: 1px solid var(--border_solid); text-align: center;">
+        <p style="font-size: 9px; font-weight: 900; letter-spacing: 4px; color: var(--text_dim); margin: 0 0 8px; text-transform: uppercase;">EmuLatte</p>
+        <h3 style="margin: 0 0 10px; color: var(--accent); text-transform: uppercase; letter-spacing: 2px;">I use RetroArch BTW</h3>
+        <p style="margin: 0; color: var(--text_sec); line-height: 1.6;">One thing matters here: getting your ROMs into the folder. Everything else can wait.</p>
+        <p style="margin: 6px 0 0; color: var(--text_dim); font-size: 11px; line-height: 1.5; font-style: italic;">Nothing is mandatory, and everything here also lives in Settings.</p>
+      </div>
+
+      <div style="flex: 1; overflow-y: auto; padding: 14px 20px; display: flex; flex-direction: column; gap: 12px;">
+
+        <div class="tool-card" id="wlc-detect-card" style="display:none;">
+          <div class="tool-card-title"><span style="color:var(--accent);">&check;</span> &nbsp;What This Machine Has</div>
+          <div id="wlc-detect-body" style="display:flex; flex-direction:column; gap:7px; font-size:11.5px; line-height:1.5;"></div>
+          <div id="wlc-actions" style="margin-top:9px; display:flex; flex-direction:column; gap:6px;"></div>
+          <p id="wlc-detect-note" style="margin:7px 0 0; color:var(--text_dim); font-size:10.5px; line-height:1.5; font-style:italic; display:none;">
+            Opens a terminal and shows you the command. Nothing is installed behind your back, and you type your own password.
+          </p>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-title"><span style="color:var(--accent);">1</span> &nbsp;Drop In Your ROMs</div>
+          <p style="margin: 0 0 8px; color: var(--text_sec); font-size: 11px; line-height: 1.6;">Every system already has a folder waiting. Put a ROM in the folder for its system and it is in the library the next time EmuLatte opens, or the moment you press <strong style="color:var(--text_main);">Rescan Library</strong>.</p>
+          <code id="wlc-roms-path" style="display:block; font-size:11px; word-break:break-all; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:5px; text-align:left;">(reading)</code>
+          <div style="display:flex; gap:6px; margin-top:8px;">
+            <button id="btn-welcome-open-roms" class="primary" style="flex:1;">Open the ROMS Folder</button>
+            <button id="btn-welcome-set-roms" style="flex:1;">Mine Are Elsewhere&hellip;</button>
+          </div>
+          <p style="margin: 8px 0 0; color: var(--text_dim); font-size: 10.5px; line-height: 1.5; font-style: italic; text-align: center;">Folders are named the way ES-DE, Batocera, RetroBat and RetroPie name them, so a collection organised by one of those is read as it stands.</p>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-title"><span style="color:var(--accent);">2</span> &nbsp;Ready To Play</div>
+          <div id="wlc-play-body" style="font-size: 11px; color: var(--text_sec); line-height: 1.6;">Checking&hellip;</div>
+          <button id="btn-welcome-install-cores" class="primary" style="width:100%; margin-top:8px; display:none;">Install the missing cores</button>
+          <button id="btn-welcome-shaders" style="width:100%; margin-top:6px; display:none;">Download the shader pack</button>
+        </div>
+
+        <details id="wlc-more" style="margin-top:2px;">
+          <summary style="cursor:pointer; font-size:11px; color:var(--text_dim); padding:6px 0; letter-spacing:0.5px;">Optional setup, the app menu</summary>
+          <div style="padding-top:8px; display:flex; flex-direction:column; gap:12px;">
+            <div class="tool-card">
+              <div class="tool-card-title"><span style="color:var(--accent);">3</span> &nbsp;Add To Your App Menu</div>
+              <p style="margin: 0 0 10px; line-height: 1.6; color: var(--text_sec); font-size: 11px;">Puts <strong style="color: var(--text_main);">EmuLatte</strong> and <strong style="color: var(--text_main);">Couch Mode</strong> (the fullscreen, gamepad-first face) in your launcher: GNOME, KDE, Omarchy, anything that reads desktop entries.</p>
+              <button id="btn-welcome-add-menu" class="primary" style="width: 100%;">Add to Application Menu</button>
+              <div id="wlc-menu-status" style="font-size: 12px; font-weight: bold; min-height: 16px; text-align: center; margin-top: 4px;"></div>
+            </div>
+          </div>
+        </details>
+
+        <div style="background: rgba(102,187,106,0.06); border: 1px solid rgba(102,187,106,0.3); border-left: 4px solid #66bb6a; border-radius: 6px; padding: 12px 16px; text-align: center;">
+          <p style="margin: 0; color: var(--text_sec); line-height: 1.65; font-size: 11px;"><strong style="color: #66bb6a;">That&rsquo;s it.</strong> Grab a controller and press the fullscreen button any time for Couch Mode, same library, living-room edition. <strong style="color: var(--text_main);">L3 + R3</strong> opens RetroArch&rsquo;s own menu mid-game.</p>
+        </div>
+
+      </div>
+
+      <div style="padding: 12px 20px; border-top: 1px solid var(--border_solid); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; justify-content: center;">
+          <input type="checkbox" id="chk-welcome-noshow" checked style="accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer;">
+          <span style="font-size: 11px; color: var(--text_dim); user-select: none;">Don&rsquo;t show this again on startup</span>
+        </label>
+        <div style="display: flex; gap: 10px;">
+          <button id="btn-welcome-manual" style="flex: 1;">Open User Manual</button>
+          <button id="btn-welcome-done" class="primary" style="flex: 1; font-weight: 900; letter-spacing: 1px;">Let&rsquo;s Go &rarr;</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
