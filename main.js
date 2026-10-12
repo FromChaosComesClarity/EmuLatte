@@ -97,6 +97,56 @@ function getSavedBounds() {
     return null;
 }
 
+// ── SPLASH ────────────────────────────────────────────────────────────────────
+// The main window is deliberately hidden until the renderer says it is ready, so on a large
+// library there used to be nothing on screen at all for several seconds, then a window. This
+// puts something up straight away and says what is happening, and it is also where the startup
+// phases are reported from both processes.
+let splashWin = null;
+let splashDone = false;
+
+function openSplash() {
+    if (splashWin || splashDone) return;
+    splashWin = new BrowserWindow({
+        width: 460, height: 300, show: false,
+        frame: false, transparent: true, resizable: false, movable: true,
+        skipTaskbar: true, alwaysOnTop: true, center: true,
+        // No preload on purpose: the page takes its updates through executeJavaScript, so it
+        // needs no IPC surface and no node integration.
+        webPreferences: { contextIsolation: true, nodeIntegration: false },
+    });
+    splashWin.setMenu?.(null);
+    splashWin.loadFile('splash.html');
+    splashWin.once('ready-to-show', () => {
+        if (!splashWin || splashWin.isDestroyed() || splashDone) return;
+        splashWin.show();
+        try { splashWin.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+        splashSay({ version: app.getVersion?.() || '' });
+        splashSay(lastSplash);
+    });
+    splashWin.on('closed', () => { splashWin = null; });
+}
+
+let lastSplash = { phase: 'Starting up' };
+function splashSay(info) {
+    if (!info) return;
+    lastSplash = { ...lastSplash, ...info };
+    if (!splashWin || splashWin.isDestroyed()) return;
+    // Queued until the page exists; `ready-to-show` replays the latest state.
+    splashWin.webContents.executeJavaScript(
+        `window.setSplash && window.setSplash(${JSON.stringify(info)})`
+    ).catch(() => {});
+}
+
+function closeSplash() {
+    splashDone = true;
+    if (splashWin && !splashWin.isDestroyed()) { try { splashWin.close(); } catch {} }
+    splashWin = null;
+}
+
+// The renderer reports its own half of the startup, which is the half that actually takes time.
+ipcMain.on('splash-phase', (_, info) => splashSay(info));
+
 function createWindow() {
     const saved = getSavedBounds();
     const win = new BrowserWindow({
@@ -127,10 +177,13 @@ function createWindow() {
         }
     });
 
-    const showWin = () => { if (!win.isVisible()) win.show(); };
+    const showWin = () => { closeSplash(); if (!win.isVisible()) win.show(); };
     ipcMain.once('renderer-ready', showWin);
     ipcMain.on('renderer-ready', () => { rendererReady = true; });
-    win.once('ready-to-show', () => setTimeout(showWin, 3000));
+    // Safety net: if the renderer never announces itself, show the window anyway rather than
+    // leaving the splash up forever.
+    win.once('ready-to-show', () => setTimeout(showWin, 8000));
+    win.on('closed', () => closeSplash());
 }
 
 // --game=<id> opens straight to that game's page. Companion apps (the Clock) use it to
@@ -206,6 +259,9 @@ app.whenReady().then(() => {
             return new Response('error', { status: 500 });
         }
     });
+
+    openSplash();
+    splashSay({ phase: 'Opening the library' });
 
     if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
     ['covers', 'heroes', 'logos', 'screenshots'].forEach(d =>
@@ -380,6 +436,7 @@ app.whenReady().then(() => {
         console.error('DB error:', err);
     }
 
+    splashSay({ phase: 'Starting the interface' });
     createWindow();
     omarchyStartup();
     startupLibraryScan();
@@ -426,6 +483,7 @@ function enterCouch(win) {
     if (target) { win.setFullScreen(false); win.setBounds(target.bounds); }   // move first (honoured on X11/Win/macOS)
     win.setFullScreen(true);
     win.loadFile('couch.html');
+    closeSplash();
     win.show();   // show immediately (esp. start-in-couch) rather than waiting on couch.js's own 'renderer-ready'
 }
 function exitCouch(win) { couchMode = false; if (win) { win.setFullScreen(false); win.loadFile('index.html'); } }
@@ -3654,6 +3712,7 @@ ipcMain.handle('get-last-scan', () => takeScanOffer());
 // that loads after it reads the result from get-last-scan.
 function startupLibraryScan() {
     setTimeout(() => {
+        if (splashWin) splashSay({ phase: 'Reading your ROM folders' });
         runLibraryScan({ startup: true });
         // ⚠️ The event is only any use once a face is actually listening. Sent before that,
         // it vanishes, and since delivery consumes the offer it would vanish WITH the ids. So
@@ -4349,8 +4408,8 @@ ipcMain.handle('export-metadata-to', async (event, dir) => {
     if (!db) return { ok: false, error: 'DB not ready' };
     if (!dir) return { ok: false, canceled: true };
     const win = BrowserWindow.fromWebContents(event.sender);
-    const tell = (phase, done, total) => {
-        try { if (win && !win.isDestroyed()) win.webContents.send('import-progress', { phase, done, total }); } catch {}
+    const tell = (phase, done, total, detail) => {
+        try { if (win && !win.isDestroyed()) win.webContents.send('import-progress', { phase, done, total, detail }); } catch {}
     };
     try {
         const out = path.join(dir, 'EmuLatte_Artwork');
@@ -4361,7 +4420,8 @@ ipcMain.handle('export-metadata-to', async (event, dir) => {
         let art = 0, n = 0;
         for (const g of all) {
             n++;
-            if (n % 500 === 0) tell('exporting', n, all.length);
+            if (n % 100 === 0) tell('exporting', n, all.length,
+                `${games.length.toLocaleString()} scraped so far, ${art.toLocaleString()} artwork file${art !== 1 ? 's' : ''} copied`);
             if (!g.rom_path || !sys.get(g.system_id) || !isScraped(g)) continue;
             const rec = { system: sys.get(g.system_id), file: path.basename(g.rom_path) };
             for (const f of SCRAPED_FIELDS) if (g[f] !== null && g[f] !== '') rec[f] = g[f];
@@ -4382,9 +4442,10 @@ ipcMain.handle('export-metadata-to', async (event, dir) => {
             }
             games.push(rec);
         }
+        tell('writing', 0, 0, `${games.length.toLocaleString()} games`);
         fs.writeFileSync(path.join(out, 'metadata.json'),
             JSON.stringify({ app: 'EmuLatte', kind: 'artwork-bundle', created: Date.now(), games }, null, 1), 'utf8');
-        tell('exporting', all.length, all.length);
+        tell('writing', 1, 1, '');
         return { ok: true, dir: out, games: games.length, art, scanned: all.length };
     } catch (e) { return { ok: false, error: e.message }; }
 });
@@ -4455,12 +4516,15 @@ ipcMain.handle('import-metadata-from', async (event, dir, opts = {}) => {
         };
 
         const upd = db.prepare(`UPDATE games SET ${[...SCRAPED_FIELDS, ...Object.keys(ART_FIELDS)].map(f => `${f}=@${f}`).join(', ')} WHERE id=@id`);
-        let matched = 0, updated = 0, art = 0, n = 0;
+        let matched = 0, art = 0, n = 0;
         const fillOnlyEmpty = opts.overwrite !== true;
+        // Collected, then written in one transaction. One UPDATE per statement means one commit
+        // (and one fsync) per game, which on a thirty-thousand game library is most of the wait.
+        const pending = [];
 
         for (const g of mine) {
             n++;
-            if (n % 200 === 0) tell('matching', n, mine.length, '');
+            if (n % 100 === 0) tell('matching', n, mine.length, `${matched.toLocaleString()} matched, ${art.toLocaleString()} artwork file${art !== 1 ? 's' : ''} copied`);
             const sn = mySystems.get(g.system_id);
             if (!sn || !g.rom_path) continue;
             const hit = byKey.get(key(sn, g.rom_path));
@@ -4480,10 +4544,15 @@ ipcMain.handle('import-metadata-from', async (event, dir, opts = {}) => {
                 row[f] = copied || g[f] || null;
                 if (copied) { art += copied.split('|').length; touched = true; }
             }
-            if (touched) { upd.run(row); updated++; }
+            if (touched) pending.push(row);
         }
-        tell('matching', mine.length, mine.length, '');
-        return { ok: true, source: dir, sourceGames: byKey.size, myGames: mine.length, matched, updated, art };
+        tell('matching', mine.length, mine.length, `${matched.toLocaleString()} matched`);
+        if (pending.length) {
+            tell('writing', 0, pending.length, 'saving to the library');
+            db.transaction(rows => { for (const r of rows) upd.run(r); })(pending);
+            tell('writing', pending.length, pending.length, '');
+        }
+        return { ok: true, source: dir, sourceGames: byKey.size, myGames: mine.length, matched, updated: pending.length, art };
     } catch (e) {
         return { ok: false, error: e.message };
     } finally {

@@ -86,6 +86,7 @@ async function init() {
     const vRaw = await window.api.getSetting('couch_vol'); vol = vRaw == null ? 0.3 : (Number(vRaw) || 0);
     initAudio();
     [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+    indexVariants();
     gamesById = new Map(games.map(g => [g.id, g]));
     await loadPlaylists();
     buildCategories();
@@ -106,6 +107,7 @@ async function couchApplyScan(res) {
     _couchScanSeen = res.at || Date.now();
     if (!res.added && !res.removed) return;
     [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+    indexVariants();
     gamesById = new Map(games.map(g => [g.id, g]));
     buildCategories();
     renderCarousel(); renderTiles();
@@ -407,6 +409,7 @@ async function rescanFromMenu() {
     }
     if (changed) {
         [games, systems] = await Promise.all([window.api.getGames(), window.api.getSystems()]);
+    indexVariants();
         gamesById = new Map(games.map(g => [g.id, g]));
         buildCategories();
         renderCarousel(); renderTiles();
@@ -945,7 +948,7 @@ function renderList() {   // Couch Mode renderGameList
     if (!listList.length) { l.innerHTML = '<div class="couch-empty">NO GAMES</div>'; clearListDetail(); return; }
     l.innerHTML = listList.map((g, i) => {
         let p = ''; if (g.fav) p += '★ '; if (g.want) p += '♥ ';
-        return `<div class="game-item" id="game-${i}" data-i="${i}" data-id="${g.id}"><span class="gi-label"><span class="list-install-dot">●</span>${p}${escHtml(g.title)}</span></div>`;
+        return `<div class="game-item" id="game-${i}" data-i="${i}" data-id="${g.id}"><span class="gi-label"><span class="list-install-dot">●</span>${p}${escHtml(g.title)}${(() => { const v = variantFor(g); return v ? `<span class="gi-variant">${escHtml(v)}</span>` : ''; })()}</span></div>`;
     }).join('');
     [...l.querySelectorAll('.game-item')].forEach(el => el.onclick = () => { listSelect(Number(el.dataset.i)); openGamepage(Number(el.dataset.id)); });
 }
@@ -1202,11 +1205,41 @@ async function gpActivate() {
     else { gpGame[act] = gpGame[act] ? 0 : 1; await window.api.setGameFlag(gpGame.id, act, gpGame[act]); buildGpActions(); updateGpFocus(); }
 }
 
+// ── VARIANT LABELS ───────────────────────────────────────────────────────────
+// Same reasoning as the desktop face: once scraped, three releases of one game carry the same
+// title and the same art, so the release is read back out of the ROM filename. Shown only where
+// a title is not unique on its system, so it stays quiet on everything else.
+let _variantNeeded = new Set();
+const _normTitle = t => (t || '').toLowerCase().replace(/\([^)]*\)|\[[^\]]*\]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+
+function indexVariants() {
+    const byTitle = new Map();
+    for (const g of (games || [])) {
+        const n = _normTitle(g.title); if (!n) continue;
+        const k = n + '::' + g.system_id;
+        (byTitle.get(k) || byTitle.set(k, []).get(k)).push(g);
+    }
+    _variantNeeded = new Set();
+    for (const arr of byTitle.values())
+        if (arr.length > 1) for (const g of arr) _variantNeeded.add(g.id);
+}
+
+function variantFor(g, force) {
+    if (!g || (!force && !_variantNeeded.has(g.id))) return '';
+    if (!window.RomVariant) return '';
+    const tagged = window.RomVariant.variantLabel(g.rom_path || '');
+    if (tagged) return tagged;
+    const parts = String(g.rom_path || '').split('/').filter(Boolean);
+    const folder = parts.length > 1 ? parts[parts.length - 2] : '';
+    return folder && _normTitle(folder) !== _normTitle(g.title) ? folder : '';
+}
+
 // ── Info modal (full description + developer/publisher, big letters) ──────────
 let infoOpen = false;
 function openInfo() {
     const g = gpGame; if (!g) return;
-    $('info-title').textContent = g.title || '';
+    const _iv = variantFor(g, true);
+    $('info-title').textContent = _iv ? `${g.title || ''}  (${_iv})` : (g.title || '');
     const meta = [];
     if (g.developer) meta.push(['Developer', g.developer]);
     if (g.publisher) meta.push(['Publisher', g.publisher]);
@@ -1482,6 +1515,7 @@ async function scrapeArtwork(id) {
     }
     // reload games so the new artwork shows everywhere, then refresh the active view
     games = await window.api.getGames();
+    indexVariants();
     gamesById = new Map(games.map(x => [x.id, x]));
     if (gpGame) gpGame = gamesById.get(gpGame.id) || gpGame;
     n.classList.remove('scraping'); hideNow();

@@ -257,7 +257,24 @@
             <p>Multi-disc games are the usual sharp edge in any ROM collection. The system editor's <strong>disc-reference repair</strong> exists for exactly this: it fixes up <code>.m3u</code> and <code>.cue</code> files whose internal references point at paths that no longer exist, which is what normally breaks a disc-based game after you move or re-rip a collection.</p>
 
             <div class="tip-box">
-                <p><strong>Found duplicates?</strong> <strong>Settings &rarr; Data &rarr; Find Duplicate Games</strong> scans for repeated titles and lets you batch-remove the extras. It only ever removes library entries, and your ROM files are never touched.</p>
+                <p><strong>Titles that appear twice.</strong> <strong>Settings &rarr; Data &rarr; Find Duplicate Games</strong> lists every title that appears more than once on the same system, with each copy's release and filename, and lets you remove the ones you do not want. ROM files are never deleted, only library entries.</p>
+            <div class="warn-box">
+                <p><strong>A different region is not a duplicate.</strong> The tool knows the difference. Copies of the <em>same</em> release are ticked for you, keeping the most complete one. A group that turns out to be several different releases pre-selects nothing at all and says so, because a Japanese original and a translation patch are not spare copies of each other and cannot be scraped back once they are gone.</p>
+            </div>
+            </div>
+
+            <h3>Three copies of the same game</h3>
+            <p>A real collection holds the same game more than once: a USA release and a Japanese one, a revision, a fan translation, a prototype. Scraping replaces the filename with the game's proper name, so once it has run all of them read the same and wear the same cover. A Master System library ends up with three entries called <em>Action Fighter</em> and nothing to choose between them.</p>
+            <p>EmuLatte reads the release back out of the ROM's filename, where it was all along, and shows it under the title:</p>
+            <table class="controls-table">
+                <tr><th>File</th><th>Shown as</th></tr>
+                <tr><td><code>Action Fighter.zip</code></td><td>Action Fighter</td></tr>
+                <tr><td><code>Action Fighter (USA, Europe) (v1.2).zip</code></td><td>Action Fighter &middot; <b>USA/Europe &middot; v1.2</b></td></tr>
+                <tr><td><code>Action Fighter (Japan, Europe) (Rev 1) [T-BR]&hellip;</code></td><td>Action Fighter &middot; <b>Japan/Europe &middot; Rev 1 &middot; Portuguese (BR) translation</b></td></tr>
+            </table>
+            <p>Regions, revisions, prototypes, betas, unlicensed releases, hacks, bad dumps and translations are all recognised, in the shapes No-Intro, GoodTools and TOSEC write them. What is <em>not</em> recognised is left out rather than guessed at, which is why the handle of whoever made a translation patch does not end up on your shelf next to the title.</p>
+            <div class="tip-box">
+                <p><strong>Only where it is needed.</strong> A label appears only when another game on the same system has the same title. Everything else is left alone, so this is invisible until the moment it is useful. On a game's own page the release is always shown, as a badge next to the system, because there the question is always "which of these am I looking at". Two untagged copies of one game are told apart by the folder they sit in.</p>
             </div>
 
             <h2 id="man-5">5. The Library &amp; Gallery Views</h2>

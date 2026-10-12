@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
     setZoom:     (f) => webFrame.setZoomFactor(f),
     getAppVersion:  () => ipcRenderer.invoke('get-app-version'),
     openUserManual: () => ipcRenderer.invoke('open-user-manual'),
+    splashPhase:     (info) => ipcRenderer.send('splash-phase', info),
 
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
