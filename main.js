@@ -111,6 +111,8 @@ function openSplash() {
         width: 460, height: 300, show: false,
         frame: false, transparent: true, resizable: false, movable: true,
         skipTaskbar: true, alwaysOnTop: true, center: true,
+        // Matches the float rule in omarchy.js. Keep the two in step.
+        title: 'EmuLatte Starting',
         // No preload on purpose: the page takes its updates through executeJavaScript, so it
         // needs no IPC surface and no node integration.
         webPreferences: { contextIsolation: true, nodeIntegration: false },
@@ -260,9 +262,6 @@ app.whenReady().then(() => {
         }
     });
 
-    openSplash();
-    splashSay({ phase: 'Opening the library' });
-
     if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
     ['covers', 'heroes', 'logos', 'screenshots'].forEach(d =>
         fs.mkdirSync(path.join(imagesDir, d), { recursive: true })
@@ -273,6 +272,14 @@ app.whenReady().then(() => {
     try {
         db = new Database(dbPath);
         db.pragma('journal_mode = WAL');
+
+        // Here rather than at the very top of whenReady: the splash wants a float rule applied
+        // before its window exists, and whether to touch the compositor at all is the user's
+        // setting, which cannot be read until the database is open. Opening it is a few
+        // milliseconds; everything genuinely slow happens after this point.
+        try { if (settingFlag('omarchy_window_rules', true)) omarchy.applyStaticRules(); } catch {}
+        openSplash();
+        splashSay({ phase: 'Opening the library' });
 
         db.prepare(`CREATE TABLE IF NOT EXISTS systems (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
