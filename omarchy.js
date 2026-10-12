@@ -156,6 +156,14 @@ const APP_CLASSES = ['emulatte_electron_build', 'emulatte'];
 const APP_CLASS_RE = '(' + APP_CLASSES.join('|') + ')';
 
 const WINDOW_RULES = [
+    // The splash. A tiling compositor would tile a 460x300 frameless window into the layout and
+    // shove whatever is already on the workspace aside for the two seconds it lives, so it has
+    // to float. Its title is deliberately distinct from the library's: matching on "EmuLatte"
+    // alone would catch the main window too.
+    {
+        lua: `o.window({ class = "^${APP_CLASS_RE}$", title = "^EmuLatte Starting$" }, { float = true, center = true, size = { 460, 300 } })`,
+        keyword: ['float', `class:^${APP_CLASS_RE}$,title:^EmuLatte Starting$`],
+    },
     // Both manual windows carry "Manual" in their title, and both are readers opened beside
     // the library rather than panes of it.
     {
@@ -281,6 +289,16 @@ function applyGameWindowRule(cls, gameWindowMode = GAME_WINDOW_MODE_DEFAULT) {
  * far. `gameClasses` is the seed union whatever previous sessions learned, which the caller
  * persists; this module deliberately owns no storage.
  */
+// The static rules on their own, for the one case that cannot wait for applyWindowRules: the
+// splash is created before the emulator classes are known, and it needs its float rule to be in
+// place before the window exists or the compositor has already tiled it.
+function applyStaticRules() {
+    if (!isHyprland() || !hyprctlBin()) return { ok: false, applied: 0, total: WINDOW_RULES.length };
+    let applied = 0;
+    for (const r of WINDOW_RULES) if (applyRule(r)) applied++;
+    return { ok: applied > 0, applied, total: WINDOW_RULES.length };
+}
+
 function applyWindowRules({ gameWindowMode = GAME_WINDOW_MODE_DEFAULT, gameClasses = [] } = {}) {
     if (!isHyprland() || !hyprctlBin()) return { ok: false, applied: 0, total: 0 };
     let applied = 0;
@@ -877,7 +895,7 @@ module.exports = {
     EMULATORS, emulatorStatus, missingEmulators,
     INSTALLERS, installerStatus, missingInstallers, runInstaller,
     WINDOW_RULES, GAME_WINDOW_MODES, GAME_WINDOW_MODE_DEFAULT, APP_CLASSES, SEED_GAME_CLASSES,
-    applyWindowRules, applyGameWindowRule, learnGameClass, reloadConfig,
+    applyWindowRules, applyStaticRules, applyGameWindowRule, learnGameClass, reloadConfig,
     TUNING, systemTuning, tuningCommand, inhibitIdle, setGamingPower, powerProfile, hyprGeometry,
     installCommand, openInstallTerminal, openTerminalWith, terminalLauncher,
     isSupported, describe, which,
