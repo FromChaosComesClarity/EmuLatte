@@ -326,6 +326,9 @@
     .cover-frame.jewel::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: url('assets/jewelcase.png') no-repeat center / 100% 100%; }
 
     /* ── List item title: ellipsis normally; the selected long title scrolls gracefully in CRT ── */
+    /* The release that tells two same-titled games apart; only present when one is needed. */
+    .gi-variant { margin-left: .6em; font-size: .62em; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--accent); opacity: .8; }
     .gi-label { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; will-change: transform; }
     .game-item.selected .gi-label.marquee { max-width: none; overflow: visible; text-overflow: clip; animation: gi-marquee 6s ease-in-out infinite alternate; }
     @keyframes gi-marquee { 0%, 14% { transform: translateX(0); } 86%, 100% { transform: translateX(var(--gi-shift, 0)); } }
@@ -825,6 +828,7 @@
     </div>
   </div>
 
+  <script src="rom-variant.js"></script>
   <script src="couch.js"></script>
 </body>
 </html>

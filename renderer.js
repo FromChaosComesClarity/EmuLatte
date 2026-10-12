@@ -26,11 +26,17 @@ let _manualKept          = false; // whether the current game has a manual saved
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
+    // The splash is up until signalReady() at the bottom of this function, so these are what
+    // the user is actually waiting on. Reading the library is the slow one on a big collection.
+    const say = (phase, detail) => { try { window.api.splashPhase({ phase, detail }); } catch {} };
     applyZoom();
     currentSort = await window.api.getSetting('el_sort') || 'alpha';   // restore the last-used gallery sort
     document.getElementById('gallery-sort').value = currentSort;       // (before enhanceAllSelects so the widget shows it)
+    say('Reading your systems');
     await loadSystems();
+    say('Reading your games');
     await loadGames();
+    say('Finishing up');
     await loadPlaylists();
     await loadCores();
     await loadSystemPresets();
@@ -52,7 +58,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.api.onLibraryScanned(res => applyScanResult(res, { quiet: true }));
     window.api.onLibraryScanProgress(paintScanProgress);
     window.api.getLastScan().then(res => applyScanResult(res, { quiet: true })).catch(() => {});
-    window.api.signalReady();
+    window.api.signalReady();   // closes the splash and shows the window
 });
 
 async function applyZoom() {
@@ -71,6 +77,7 @@ let gamesById = new Map();   // O(1) id → game lookup (gallery/list event dele
 async function loadGames() {
     allGames = await window.api.getGames();
     gamesById = new Map(allGames.map(g => [g.id, g]));
+    indexVariants();
     renderSystemFilters();
     renderCurrentView();
     startHeroCycle();
@@ -1102,24 +1109,70 @@ async function smLaunch(opts) {
     else showLaunchToast(r.error || 'Launch failed', null);
 }
 
-function renderGallery(games) {
-    const grid = document.getElementById('gallery-grid');
-    if (!games.length) {
-        grid.innerHTML = `<div style="grid-column:1/-1; padding:60px; text-align:center; color:var(--text_dim); font-weight:900; letter-spacing:2px; font-size:14px;">NO ROMS FOUND</div>`;
-        document.getElementById('hero-icon').style.display = 'block';
-        return;
-    }
-    document.getElementById('hero-icon').style.display = 'none';
-    // Build the whole grid as one string. Interactions are handled by ONE delegated listener on the
-    // grid (wired once in wireUI) — not per-card listeners — and covers lazy-load + skip off-screen
-    // layout via CSS content-visibility, so even a multi-thousand-game library stays responsive.
+// ── Incremental rendering ────────────────────────────────────────────────────
+// A thirty-thousand game library is roughly 40 MB of HTML and half a million DOM nodes if it
+// goes in with one innerHTML, and Chromium parses and builds all of it before the window is
+// allowed to appear. content-visibility skips the *layout* of off-screen cards, but not the
+// parse and not the node creation, so it does nothing for the wait on startup.
+//
+// Only the first screenful matters. The rest is appended as it is scrolled towards. Clicks and
+// cover-load events are delegated to the container, so a card added later behaves exactly like
+// one from the first batch and nothing needs re-wiring.
+const FEED_FIRST = 120;    // comfortably more than fills a window
+const FEED_MORE  = 240;
+const FEED_AHEAD = 800;    // px below the fold to keep stocked
+
+let _feed = null;
+
+function stopFeed() {
+    _feed?.observer?.disconnect();
+    _feed = null;
+}
+
+function startFeed(container, items, card, sentinelHtml) {
+    stopFeed();
+    const first = items.slice(0, FEED_FIRST);
+    container.innerHTML = first.map(card).join('') + (items.length > first.length ? sentinelHtml : '');
+    if (items.length <= first.length) return;
+    const sentinel = container.querySelector('[data-feed-sentinel]');
+    if (!sentinel) return;
+    _feed = { items, next: first.length, card, sentinel, observer: null };
+    // The observer only fires when intersection *changes*, so a sentinel that is still on screen
+    // after a batch would never fire again. pumpFeed keeps topping up until it is out of sight.
+    _feed.observer = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) pumpFeed(); },
+                                             { rootMargin: `${FEED_AHEAD}px 0px` });
+    _feed.observer.observe(sentinel);
+    requestAnimationFrame(pumpFeed);
+}
+
+function growFeed() {
+    if (!_feed) return false;
+    const { items, next, card, sentinel } = _feed;
+    const slice = items.slice(next, next + FEED_MORE);
+    if (!slice.length) { sentinel.remove(); stopFeed(); return false; }
+    sentinel.insertAdjacentHTML('beforebegin', slice.map(card).join(''));
+    _feed.next = next + slice.length;
+    if (_feed.next >= items.length) { sentinel.remove(); stopFeed(); return false; }
+    return true;
+}
+
+function pumpFeed() {
+    if (!_feed) return;
+    const r = _feed.sentinel.getBoundingClientRect();
+    // getBoundingClientRect reads 0s while the container is display:none (switching views), which
+    // would pull the whole library in. Only top up a sentinel that is actually laid out.
+    if (r.top === 0 && r.bottom === 0) return;
+    if (r.top > window.innerHeight + FEED_AHEAD) return;
+    if (growFeed()) requestAnimationFrame(pumpFeed);
+}
+
+function galleryCardHtml(g) {
     const fbStyle  = 'align-items:center; justify-content:center; color:var(--text_dim); font-size:11px; font-weight:900; letter-spacing:1px; text-align:center;';
-    grid.innerHTML = games.map(g => {
-        const hasCover = g.cover && g.cover !== '';
-        const sysLabel = g.system_short || g.system_name || '';
-        const special  = hasSpecialCover(g.system_short);
-        const jewel    = isJewel(g.system_short);
-        return `<div class="gallery-item" data-id="${g.id}"${jewel ? ' data-jewel="1"' : ''}>
+    const hasCover = g.cover && g.cover !== '';
+    const sysLabel = g.system_short || g.system_name || '';
+    const special  = hasSpecialCover(g.system_short);
+    const jewel    = isJewel(g.system_short);
+    return `<div class="gallery-item" data-id="${g.id}"${jewel ? ' data-jewel="1"' : ''}>
             <div class="gallery-cover-wrap${special ? ' special' : ''}">
                 ${special && hasCover ? `<div class="gcover-bg" style="background-image:url('${g.cover}')"></div>` : ''}
                 <div class="cover-frame">
@@ -1137,9 +1190,22 @@ function renderGallery(games) {
                 </div>
             </div>
             <div class="gallery-title">${escHtml(g.title)}</div>
+            ${(() => { const v = variantFor(g); return v ? `<div class="gallery-variant" title="${escHtml(v)}">${escHtml(v)}</div>` : ''; })()}
             <button class="btn-play-gallery">▶ PLAY</button>
         </div>`;
-    }).join('');
+}
+
+function renderGallery(games) {
+    const grid = document.getElementById('gallery-grid');
+    if (!games.length) {
+        stopFeed();
+        grid.innerHTML = `<div style="grid-column:1/-1; padding:60px; text-align:center; color:var(--text_dim); font-weight:900; letter-spacing:2px; font-size:14px;">NO ROMS FOUND</div>`;
+        document.getElementById('hero-icon').style.display = 'block';
+        return;
+    }
+    document.getElementById('hero-icon').style.display = 'none';
+    startFeed(grid, games, galleryCardHtml,
+        '<div data-feed-sentinel style="grid-column:1/-1; height:1px;"></div>');
 }
 
 // Wired ONCE (wireUI). Delegated click + lazy-image jewel measuring — O(1) per render regardless of size.
@@ -1191,24 +1257,66 @@ function wireGalleryDelegation() {
     });
 }
 
-function renderList(games) {
-    const tbody = document.getElementById('list-tbody');
-    if (!games.length) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text_dim);">No ROMs found</td></tr>`;
-        return;
-    }
-    tbody.innerHTML = games.map(g => `
-        <tr data-id="${g.id}">
+function listRowHtml(g) {
+    return `<tr data-id="${g.id}">
             <td><button class="btn-launch-list" data-id="${g.id}" style="padding:6px 14px; font-size:11px; background:#e65100; border:none; color:#fff; border-radius:4px; cursor:pointer; font-family:inherit; font-weight:900;">▶</button></td>
             <td><span style="color:${g.fav ? '#ffeb3b' : 'var(--text_dim)'}; cursor:pointer;" data-fav="${g.id}">${g.fav ? '★' : '☆'}</span></td>
-            <td>${escHtml(g.title)}</td>
+            <td>${escHtml(g.title)}${(() => { const v = variantFor(g); return v ? ` <span style="color:var(--text_dim); font-size:11px;">${escHtml(v)}</span>` : ''; })()}</td>
             <td>${escHtml(g.system_name || '')}</td>
             <td>${escHtml(g.year || '')}</td>
             <td>${escHtml(g.genre || '')}</td>
-        </tr>
-    `).join('');
+        </tr>`;
+}
 
-    // Row interactions handled by one delegated listener on #list-tbody (wired once in wireUI).
+function renderList(games) {
+    const tbody = document.getElementById('list-tbody');
+    if (!games.length) {
+        stopFeed();
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--text_dim);">No ROMs found</td></tr>`;
+        return;
+    }
+    // Row interactions are handled by one delegated listener on #list-tbody (wired once in wireUI),
+    // so appended rows need no wiring of their own.
+    startFeed(tbody, games, listRowHtml, '<tr data-feed-sentinel><td colspan="6" style="padding:0; height:1px;"></td></tr>');
+}
+
+// ── VARIANT DISAMBIGUATION ───────────────────────────────────────────────────
+// Three ROMs of one game scrape to the same title and the same cover, so a Master System
+// library shows "Action Fighter" three times with nothing to choose between them. Everything
+// that told them apart is still in the filename, so it is read back from there by rom-variant.js
+// and shown next to the title.
+//
+// Only where it is needed. A label on every game would be noise on a library where almost every
+// title appears once, so a game carries one only when something else on the same system has the
+// same title. That is the whole trick: the interface stays clean and gets specific exactly where
+// it was ambiguous.
+let _variantNeeded = new Set();
+
+function indexVariants() {
+    const byTitle = new Map();
+    for (const g of allGames) {
+        const norm = _normDupTitle(g.title); if (!norm) continue;
+        const k = norm + '::' + g.system_id;
+        (byTitle.get(k) || byTitle.set(k, []).get(k)).push(g);
+    }
+    _variantNeeded = new Set();
+    for (const arr of byTitle.values())
+        if (arr.length > 1) for (const g of arr) _variantNeeded.add(g.id);
+}
+
+const romFolderOf = (p) => {
+    const parts = String(p || '').split('/').filter(Boolean);
+    return parts.length > 1 ? parts[parts.length - 2] : '';
+};
+
+// The label for a game, or '' when it needs none. Falls back to the containing folder, which is
+// what separates two untagged copies of the same game in a library organised into collections.
+function variantFor(g, { force = false } = {}) {
+    if (!g || (!force && !_variantNeeded.has(g.id))) return '';
+    const tagged = window.RomVariant ? window.RomVariant.variantLabel(g.rom_path || '') : '';
+    if (tagged) return tagged;
+    const folder = romFolderOf(g.rom_path);
+    return folder && _normDupTitle(folder) !== _normDupTitle(g.title) ? folder : '';
 }
 
 // ── HERO CYCLE ────────────────────────────────────────────────────────────────
@@ -1363,9 +1471,14 @@ function openGamePage(game) {
     titleEl.style.display = game.logo ? 'none' : 'block';
 
     const sysBadge = document.getElementById('gamepage-system-badge');
-    if (game.system_name) {
+    // On the game page the release is always worth stating, collision or not: you are looking at
+    // one game and "which of the three is this" is exactly the question.
+    const pill = (text, strong) => `<span style="background:rgba(0,0,0,0.6); color:${strong ? 'var(--accent)' : 'var(--text_sec)'}; font-size:11px; font-weight:900; letter-spacing:2px; padding:4px 10px; border-radius:20px; text-transform:uppercase; border:1px solid var(--border_solid);">${escHtml(text)}</span>`;
+    const vLabel = variantFor(game, { force: true });
+    if (game.system_name || vLabel) {
         sysBadge.style.display = 'flex';
-        sysBadge.innerHTML = `<span style="background:rgba(0,0,0,0.6); color:var(--accent); font-size:11px; font-weight:900; letter-spacing:2px; padding:4px 10px; border-radius:20px; text-transform:uppercase; border:1px solid var(--border_solid);">${escHtml(game.system_name)}</span>`;
+        sysBadge.innerHTML = (game.system_name ? pill(game.system_name, true) : '')
+                           + (vLabel ? pill(vLabel, false) : '');
     } else {
         sysBadge.style.display = 'none';
     }
@@ -1408,7 +1521,7 @@ function openGamePage(game) {
         if (localUrl && currentGame?.title === capturedTitle) {
             trailerBtn.style.display = 'flex';
             trailerBtn.onclick = () => {
-                document.getElementById('modal-trailer-player').classList.add('active');
+                showOverlay(document.getElementById('modal-trailer-player'));
                 const vid = document.getElementById('detail-video-player');
                 vid.src = localUrl; vid.play();
             };
@@ -1606,7 +1719,7 @@ function showNowPlaying(game) {
         artWrap.style.display = 'none';
     }
 
-    modal.classList.add('active');
+    showOverlay(modal);
     clearTimeout(_npTimer);
     _npTimer = setTimeout(closeNowPlaying, 5000);
 }
@@ -1626,6 +1739,9 @@ function closeTrailerPlayer() {
 // state that a bare hide would strand — a playing <video>, a pending confirm Promise, a timer.
 // Anything not listed here holds no such state and is fine to simply hide.
 const MODAL_CLOSERS = {
+    // Escape must not hide the transfer modal while it is still working: the outcome is only
+    // readable here, and hiding it is how the whole thing looked inert in the first place.
+    'modal-transfer':       () => { if (!_transferOpen) closeModal('modal-transfer'); },
     'modal-trailer-player': closeTrailerPlayer,
     'modal-now-playing':    closeNowPlaying,
     // Resolve the awaiting caller as a cancel, exactly like the backdrop click does.
@@ -1773,7 +1889,7 @@ function openAchievementsModal() {
     _achFilter = 'all';
     document.querySelectorAll('.ach-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === 'all'));
     _renderAchGrid();
-    modal.classList.add('active');
+    showOverlay(modal);
 }
 
 function _renderAchGrid() {
@@ -1832,7 +1948,7 @@ function openSlideshow(urls, startIndex = 0) {
     const screen = document.querySelector('#modal-slideshow .crt-screen');   // pick the per-system display profile
     if (screen) screen.className = `crt-screen ${displayType(currentGame?.system_short)}`;
     showSlide();
-    document.getElementById('modal-slideshow').classList.add('active');
+    showOverlay(document.getElementById('modal-slideshow'));
 }
 
 function showSlide() {
@@ -1848,13 +1964,47 @@ function showSlide() {
 }
 
 // ── MODALS ────────────────────────────────────────────────────────────────────
+// ── Modal stacking ───────────────────────────────────────────────────────────
+// Every overlay shares one z-index in the stylesheet, so when two were open at once the winner
+// was decided by whichever sat later in index.html. The folder picker, the scan progress and the
+// move progress all sit *before* the Settings window they are opened from, so they rendered
+// underneath it, which reads as "the button did nothing".
+//
+// This is stateless on purpose: it reads the overlays that are actually open and goes one step
+// above the highest, so there is no stack to leak and nothing to keep in sync with the markup.
+// It only ever raises, so a modal with a deliberately high layer of its own keeps it.
+const MODAL_LAYER_BASE = 100;
+const MODAL_LAYER_STEP = 10;
+const MODAL_LAYER_TOP  = 50000;   // alerts and confirms outrank whatever asked the question
+
+const layerOf = (el) => parseInt(getComputedStyle(el).zIndex, 10) || MODAL_LAYER_BASE;
+
+function raiseModal(el, { top = false } = {}) {
+    if (!el) return;
+    el.style.zIndex = '';                                   // fall back to the stylesheet before measuring
+    const highest = [...document.querySelectorAll('.modal-overlay.active')]
+        .filter(o => o !== el)
+        .reduce((m, o) => Math.max(m, layerOf(o)), MODAL_LAYER_BASE);
+    const want = (top ? Math.max(highest, MODAL_LAYER_TOP) : highest) + MODAL_LAYER_STEP;
+    el.style.zIndex = String(Math.max(layerOf(el), want));
+}
+
+// Open an overlay that does not go through openModal (it already holds its own element).
+function showOverlay(el, opts) { raiseModal(el, opts); el?.classList.add('active'); }
+
 function openModal(id) {
-    document.getElementById(id)?.classList.add('active');
+    const el = document.getElementById(id);
+    if (!el) return;
+    raiseModal(el);
+    el.classList.add('active');
 }
 function closeModal(id) {
     _openCustSel?.close();                                                  // dismiss any open themed dropdown…
     document.querySelectorAll('.cust-sel-list').forEach(el => el.remove()); // …and sweep an orphaned portaled list (z-100000) so it can't linger and block clicks
-    document.getElementById(id)?.classList.remove('active');
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('active');
+    el.style.zIndex = '';                                   // hand the layer back
 }
 
 // ── Themed confirm / alert dialogs (replaces the native window.confirm) ───────
@@ -1874,7 +2024,7 @@ function _openDialog(body, okLabel, isDanger, showCancel, title) {
             ? 'flex:1; background:rgba(198,40,40,0.15); border:1px solid #c62828; color:#ef5350;'
             : 'flex:1;';
         cancel.style.display = showCancel ? '' : 'none';
-        dlg.classList.add('active');
+        showOverlay(dlg, { top: true });
         const done = r => {
             dlg.classList.remove('active');
             okE.onclick = cancel.onclick = dlg.onclick = null;
@@ -3444,7 +3594,7 @@ function wireUI() {
         if (!_trailerTitle) return;
         const localUrl = await window.api.checkLocalTrailer(_trailerTitle);
         if (localUrl) {
-            document.getElementById('modal-trailer-player').classList.add('active');
+            showOverlay(document.getElementById('modal-trailer-player'));
             const vid = document.getElementById('detail-video-player');
             vid.src = localUrl; vid.play();
         } else {
@@ -4525,6 +4675,7 @@ function wireUI() {
     });
     document.getElementById('btn-sp-cancel').addEventListener('click', () => closeModal('modal-save-pick'));
     document.getElementById('btn-scan-close').addEventListener('click', () => closeModal('modal-scan'));
+    document.getElementById('btn-tr-close').addEventListener('click', () => closeModal('modal-transfer'));
     document.getElementById('btn-install-missing-cores').addEventListener('click', () => installMissingCores());
     document.getElementById('btn-download-shaders')?.addEventListener('click', downloadShaders);
     document.getElementById('btn-welcome-shaders')?.addEventListener('click', downloadShaders);
@@ -4604,45 +4755,36 @@ function wireUI() {
         if (!r?.ok) { libStatus(r?.error || 'That did not work.', true); return; }
         libStatus('Going back to the local library. Restarting\u2026', false);
     });
-    window.api.onImportProgress(info => {
-        const el = document.getElementById('import-status');
-        if (!el || !info) return;
-        el.style.color = 'var(--text_dim)';
-        el.textContent = info.phase === 'reading' ? 'Reading the other library\u2026'
-            : info.phase === 'exporting' ? `Gathering what has been scraped\u2026 ${info.done} of ${info.total}`
-            : `Matching games\u2026 ${info.done} of ${info.total}`;
-    });
+    window.api.onImportProgress(paintTransferProgress);
     document.getElementById('btn-export-meta').addEventListener('click', async () => {
         const dir = await pickFolder('Where should the bundle go?', null,
             'A USB stick, or anywhere you can carry it from. Only the games you have actually scraped go in it.');
         if (!dir) return;
-        const el = document.getElementById('import-status');
-        const btn = document.getElementById('btn-export-meta');
-        btn.disabled = true; el.style.color = 'var(--text_dim)'; el.textContent = 'Gathering\u2026';
+        openTransferModal('Exporting your artwork');
         const r = await window.api.exportMetadataTo(dir);
-        btn.disabled = false;
-        if (!r?.ok) { el.style.color = '#ef5350'; el.textContent = r?.error || 'That did not work.'; return; }
-        el.style.color = 'var(--accent)';
-        el.textContent = r.games
-            ? `Exported ${r.games} scraped game${r.games !== 1 ? 's' : ''} and ${r.art} artwork file${r.art !== 1 ? 's' : ''} to ${r.dir}. The other ${r.scanned - r.games} games had nothing scraped, so they were left out.`
-            : `Nothing to export: none of your ${r.scanned} games have been scraped yet.`;
+        if (!r?.ok) { finishTransfer(null, r?.error || 'That did not work.'); return; }
+        finishTransfer(r.games
+            ? [`<b>${r.games.toLocaleString()}</b> scraped game${r.games !== 1 ? 's' : ''} and <b>${r.art.toLocaleString()}</b> artwork file${r.art !== 1 ? 's' : ''} written to:`,
+               `<code style="word-break:break-all;">${escHtml(r.dir)}</code>`,
+               `The other ${(r.scanned - r.games).toLocaleString()} games had nothing scraped on them, so they were left out.`,
+               `Take this folder to the other computer and press <b>Import Artwork</b> there.`].join('<br>')
+            : `None of your ${r.scanned.toLocaleString()} games have been scraped yet, so there was nothing to export.`);
     });
     document.getElementById('btn-import-meta').addEventListener('click', async () => {
         const dir = await pickFolder('Where is the artwork coming from?', null,
             'An EmuLatte_Artwork bundle, or the whole Emulatte_Stuff folder from the other computer.');
         if (!dir) return;
-        const el = document.getElementById('import-status');
-        const btn = document.getElementById('btn-import-meta');
-        btn.disabled = true;
-        el.style.color = 'var(--text_dim)'; el.textContent = 'Opening\u2026';
         const overwrite = document.getElementById('chk-import-overwrite').checked;
+        openTransferModal('Importing artwork');
         const r = await window.api.importMetadataFrom(dir, { overwrite });
-        btn.disabled = false;
-        if (!r?.ok) { el.style.color = '#ef5350'; el.textContent = r?.error || 'That did not work.'; return; }
-        el.style.color = 'var(--accent)';
-        el.textContent = r.matched
-            ? `Matched ${r.matched} of your ${r.myGames} games against ${r.sourceGames} there. Updated ${r.updated}, copied ${r.art} artwork file${r.art !== 1 ? 's' : ''}.`
-            : `No games matched. Those ${r.sourceGames} games have different filenames or sit under different systems, so there was nothing to copy across.`;
+        if (!r?.ok) { finishTransfer(null, r?.error || 'That did not work.'); return; }
+        finishTransfer(r.matched
+            ? [`Matched <b>${r.matched.toLocaleString()}</b> of your ${r.myGames.toLocaleString()} games against the ${r.sourceGames.toLocaleString()} scraped game${r.sourceGames !== 1 ? 's' : ''} over there.`,
+               `Updated <b>${r.updated.toLocaleString()}</b>, copied <b>${r.art.toLocaleString()}</b> artwork file${r.art !== 1 ? 's' : ''}.`,
+               overwrite ? 'Existing details were replaced, as asked.' : 'Only details you did not already have were filled in.'].join('<br>')
+            : [`Nothing matched.`,
+               `There ${r.sourceGames === 1 ? 'is' : 'are'} ${r.sourceGames.toLocaleString()} scraped game${r.sourceGames !== 1 ? 's' : ''} in that folder, but none of them share a system and a filename with anything in your library, which is how games are paired up.`,
+               `Check you picked the right folder, and that it is the <b>EmuLatte_Artwork</b> folder itself rather than the drive it sits on.`].join('<br>'));
         await loadGames();
     });
     document.getElementById('btn-library-open-roms').addEventListener('click', () => window.api.openLibraryFolder('roms'));
@@ -4964,7 +5106,7 @@ async function runManualFetch() {
 
 // ── TRAILER HELPERS ───────────────────────────────────────────────────────────
 function openTrailerProgress(title, videoId) {
-    document.getElementById('modal-trailer-progress').classList.add('active');
+    showOverlay(document.getElementById('modal-trailer-progress'));
     document.getElementById('dl-progress-game').textContent = title;
     document.getElementById('dl-progress-fill').style.width = '0%';
     document.getElementById('dl-progress-text').textContent = '0%';
@@ -4978,7 +5120,7 @@ function openTrailerProgress(title, videoId) {
                     if (!url) return;
                     btn.style.display = 'flex';
                     btn.onclick = () => {
-                        document.getElementById('modal-trailer-player').classList.add('active');
+                        showOverlay(document.getElementById('modal-trailer-player'));
                         const vid = document.getElementById('detail-video-player');
                         vid.src = url; vid.play();
                     };
@@ -5101,29 +5243,73 @@ function findDuplicateGroups() {
     return groups.sort((a, b) => (a[0].title || '').localeCompare(b[0].title || ''));
 }
 
+// Same title on the same system is not the same thing as the same release. A Master System
+// library holds three "Action Fighter": a USA/Europe v1.2, a Japan/Europe Rev 1 with a Brazilian
+// translation patch, and an untagged one. Offering two of those for deletion as "duplicates",
+// which is what this did, throws away something that cannot be scraped back.
+//
+// So a group is split by release first. Only copies of the SAME release are pre-ticked, keeping
+// the most complete one. Anything that is the only copy of its release is never pre-selected,
+// and the group says so.
+function variantKeyOf(g) {
+    return window.RomVariant ? window.RomVariant.variantKey(g.rom_path || '') : String(g.id);
+}
+
 function openDuplicatesModal() {
     const groups = findDuplicateGroups();
     const body = document.getElementById('dup-list');
     const removeBtn = document.getElementById('btn-dup-remove');
     if (!groups.length) {
-        body.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim);">No duplicate games found. 🎉</div>`;
+        body.innerHTML = `<div style="text-align:center; padding:30px; color:var(--text_dim);">Nothing shares a title on the same system. 🎉</div>`;
         removeBtn.style.display = 'none';
-    } else {
-        removeBtn.style.display = '';
-        body.innerHTML = groups.map(grp => {
-            const sys = grp[0].system_name || grp[0].system_short || '';
-            const rows = grp.map((g, i) => {
-                const keep = i === 0;
-                const meta = `${escHtml(sys)}${g.year ? ' · ' + escHtml(g.year) : ''} · ${g.cover ? 'has art' : 'no art'}${keep ? ' · <b style="color:var(--accent)">keep</b>' : ''}`;
-                return `<label class="dup-row">
-                    <input type="checkbox" class="dup-cb" data-id="${g.id}" ${keep ? '' : 'checked'}>
-                    <span class="dup-title">${escHtml(g.title)}</span>
-                    <span class="dup-meta">${meta}</span>
-                </label>`;
-            }).join('');
-            return `<div class="dup-group"><div class="dup-group-title">${escHtml(grp[0].title)} <span style="color:var(--text_dim); font-weight:400;">— ${grp.length} copies</span></div>${rows}</div>`;
-        }).join('');
+        openModal('modal-duplicates');
+        return;
     }
+
+    let trueDupes = 0;
+    const html = groups.map(grp => {
+        const sys = grp[0].system_name || grp[0].system_short || '';
+        // Bucket by release. Within a bucket the most complete is kept (findDuplicateGroups has
+        // already sorted the group that way, so the first of each bucket wins).
+        const buckets = new Map();
+        for (const g of grp) {
+            const k = variantKeyOf(g);
+            (buckets.get(k) || buckets.set(k, []).get(k)).push(g);
+        }
+        const redundant = new Set();
+        for (const arr of buckets.values())
+            if (arr.length > 1) arr.slice(1).forEach(g => redundant.add(g.id));
+        trueDupes += redundant.size;
+
+        const rows = grp.map(g => {
+            const drop = redundant.has(g.id);
+            const label = variantFor(g, { force: true });
+            const file = window.RomVariant ? window.RomVariant.baseName(g.rom_path || '') : '';
+            const bits = [
+                label ? `<b style="color:var(--accent)">${escHtml(label)}</b>` : '<span style="opacity:.6">no release tags</span>',
+                g.year ? escHtml(g.year) : null,
+                g.cover ? 'has art' : 'no art',
+                drop ? '<b style="color:#ef5350">same release</b>' : null,
+            ].filter(Boolean).join(' · ');
+            return `<label class="dup-row">
+                    <input type="checkbox" class="dup-cb" data-id="${g.id}" ${drop ? 'checked' : ''}>
+                    <span class="dup-title">${escHtml(g.title)}</span>
+                    <span class="dup-meta">${bits}<br><span style="opacity:.55; font-size:10px;">${escHtml(file)}</span></span>
+                </label>`;
+        }).join('');
+
+        const note = redundant.size
+            ? `${redundant.size} of these ${grp.length} are another copy of a release already here`
+            : `${grp.length} different releases, nothing pre-selected`;
+        return `<div class="dup-group"><div class="dup-group-title">${escHtml(grp[0].title)}
+                <span style="color:var(--text_dim); font-weight:400;">${escHtml(sys)} · ${escHtml(note)}</span></div>${rows}</div>`;
+    }).join('');
+
+    const lead = trueDupes
+        ? `${groups.length} title${groups.length !== 1 ? 's' : ''} appear more than once. ${trueDupes} entr${trueDupes !== 1 ? 'ies are' : 'y is'} a repeat of a release already in the library and ${trueDupes !== 1 ? 'are' : 'is'} ticked.`
+        : `${groups.length} title${groups.length !== 1 ? 's' : ''} appear more than once, but every copy is a different release, so nothing is ticked. Tick only what you actually want gone.`;
+    body.innerHTML = `<div class="ra-pane-hint" style="margin:0 0 4px;">${lead}</div>` + html;
+    removeBtn.style.display = '';
     openModal('modal-duplicates');
 }
 
@@ -5512,7 +5698,7 @@ function scanProgressText(info) {
 }
 function paintScanProgress(info) {
     if (!info) return;
-    if (_scanInlineEl) { _scanInlineEl.textContent = scanProgressText(info); return; }
+    if (_scanInlineEl) _scanInlineEl.textContent = scanProgressText(info);
     if (!_scanModalOpen) return;
     const phase = document.getElementById('scan-phase');
     const detail = document.getElementById('scan-detail');
@@ -5524,23 +5710,73 @@ function paintScanProgress(info) {
     if (bar) bar.style.width = info.total ? `${Math.round((info.step / info.total) * 100)}%` : '';
 }
 
+// ── Artwork transfer progress ────────────────────────────────────────────────
+// Export and import both run in the main process and both can take a while on a large library.
+// The status used to be one line inside Settings, which is invisible the moment you close
+// Settings, so the whole thing looked inert. This is its own modal, and it stays up to show the
+// outcome rather than vanishing and leaving you guessing.
+const TRANSFER_PHASES = {
+    reading:  'Reading the other library',
+    exporting:'Gathering what has been scraped',
+    matching: 'Matching games against yours',
+    copying:  'Copying artwork',
+    writing:  'Writing the bundle',
+};
+let _transferOpen = false;
+
+function openTransferModal(title) {
+    _transferOpen = true;
+    document.getElementById('tr-title').textContent = title;
+    document.getElementById('tr-phase').textContent = 'Starting\u2026';
+    document.getElementById('tr-detail').textContent = '';
+    document.getElementById('tr-bar').style.width = '0%';
+    const res = document.getElementById('tr-result');
+    res.style.display = 'none'; res.innerHTML = '';
+    document.getElementById('btn-tr-close').style.display = 'none';
+    openModal('modal-transfer');
+}
+
+function paintTransferProgress(info) {
+    if (!_transferOpen || !info) return;
+    const phase = document.getElementById('tr-phase');
+    const detail = document.getElementById('tr-detail');
+    const bar = document.getElementById('tr-bar');
+    phase.textContent = (TRANSFER_PHASES[info.phase] || 'Working') + '\u2026';
+    detail.textContent = info.total
+        ? `${Number(info.done).toLocaleString()} of ${Number(info.total).toLocaleString()}${info.detail ? '  ' + info.detail : ''}`
+        : (info.detail || '');
+    bar.style.width = info.total ? `${Math.min(100, Math.round((info.done / info.total) * 100))}%` : '';
+}
+
+// `html` is the success summary, `error` the failure. Exactly one of them.
+function finishTransfer(html, error) {
+    _transferOpen = false;
+    const res = document.getElementById('tr-result');
+    document.getElementById('tr-phase').textContent = error ? 'That did not work.' : 'Done.';
+    document.getElementById('tr-detail').textContent = '';
+    document.getElementById('tr-bar').style.width = '100%';
+    if (error) { document.getElementById('tr-bar').style.background = '#ef5350'; res.innerHTML = escHtml(error); }
+    else { document.getElementById('tr-bar').style.background = 'var(--accent)'; res.innerHTML = html; }
+    res.style.display = 'block';
+    document.getElementById('btn-tr-close').style.display = 'block';
+}
+
 async function rescanLibrary(btnId = 'btn-rescan-library', inlineStatusId = null) {
     const btn = document.getElementById(btnId);
     if (btn) { btn.disabled = true; btn.style.animation = 'spin 0.6s linear infinite'; }
-    const settingsOpen = document.getElementById('modal-settings')?.classList.contains('active');
-    _scanInlineEl = settingsOpen && inlineStatusId ? document.getElementById(inlineStatusId) : null;
-
-    if (!_scanInlineEl) {
-        // Show what is happening rather than freezing a button: a big collection is several
-        // seconds of nothing otherwise, and nothing looks like a hang.
-        _scanModalOpen = true;
-        document.getElementById('scan-result').style.display = 'none';
-        document.getElementById('btn-scan-close').style.display = 'none';
-        document.getElementById('scan-phase').textContent = 'Starting\u2026';
-        document.getElementById('scan-detail').textContent = '';
-        document.getElementById('scan-bar').style.width = '0%';
-        openModal('modal-scan');
-    }
+    // The modal shows regardless of whether Settings is open. It used to be suppressed there,
+    // because every overlay shared one z-index and this one sits earlier in the document than
+    // Settings, so it opened *underneath* it. raiseModal() settles that, and a progress window
+    // beats a one-line status that scrolls out of view. The inline line is still fed when a
+    // caller asks for one.
+    _scanInlineEl = inlineStatusId ? document.getElementById(inlineStatusId) : null;
+    _scanModalOpen = true;
+    document.getElementById('scan-result').style.display = 'none';
+    document.getElementById('btn-scan-close').style.display = 'none';
+    document.getElementById('scan-phase').textContent = 'Starting\u2026';
+    document.getElementById('scan-detail').textContent = '';
+    document.getElementById('scan-bar').style.width = '0%';
+    openModal('modal-scan');
 
     let res = null;
     try { res = await window.api.scanLibrary({}); } catch (e) { res = { ok: false, error: String(e) }; }
@@ -5828,7 +6064,7 @@ const REPORT_UI = {
         catch { prefs = defaults(); }
         $('rp-title').value = prefs.title; $('rp-subtitle').value = prefs.subtitle;
         setStatus('');
-        modal.classList.add('active');
+        showOverlay(modal);
         const r = await window.api.reportSections(payload());
         sectionInfo = r && r.ok ? r.sections : [];
         renderSections(); renderStyles(); syncSegments();

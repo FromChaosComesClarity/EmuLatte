@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EmuLatte</title>
+<style>
+  /* Defaults match the built-in theme, so the window is never unstyled for a frame. The real
+     palette is applied below from el_theme_cache, the same cache index.html boots from. */
+  :root {
+    --bg: #1A120B; --bg_panel: #231812; --bg_menu: #2C1E16;
+    --text_main: #F5EBE0; --text_sec: #D5C3B3; --text_dim: #9A8878;
+    --accent: #D4A373; --border: rgba(212,163,115,0.22); --border_solid: #4A3528;
+    --ui-font: 'Raleway', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+  body { display: flex; align-items: center; justify-content: center;
+         font-family: var(--ui-font); -webkit-app-region: drag; }
+
+  .card {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding: 34px 30px 26px;
+    background:
+      radial-gradient(120% 90% at 50% -10%, rgba(212,163,115,0.16) 0%, transparent 60%),
+      linear-gradient(180deg, var(--bg_menu) 0%, var(--bg) 100%);
+    border: 1px solid var(--border_solid); border-radius: 16px;
+    box-shadow: 0 30px 90px rgba(0,0,0,0.75);
+    position: relative; overflow: hidden;
+  }
+  /* A faint sheen across the top, so the panel reads as lit rather than flat. */
+  .card::before {
+    content: ''; position: absolute; inset: 0 0 auto; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  }
+
+  h1 {
+    margin: 0; font-size: 58px; font-weight: 900; letter-spacing: 10px; line-height: 1;
+    background: linear-gradient(180deg, var(--text_main) 0%, var(--accent) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 6px 26px rgba(0,0,0,0.5));
+  }
+  .rule { width: min(340px, 70%); height: 1px; margin: 16px 0 13px;
+          background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+  .sub { margin: 0; font-size: 11px; font-weight: 900; letter-spacing: 8px;
+         color: var(--text_sec); text-transform: uppercase; }
+
+  .pill { margin-top: 22px; display: inline-flex; align-items: center; gap: 8px;
+          font-size: 10px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;
+          padding: 7px 13px; border: 1px solid var(--border_solid); border-radius: 6px;
+          color: var(--text_sec); }
+  .dot { width: 7px; height: 7px; background: var(--accent); display: inline-block; }
+
+  .foot { margin-top: auto; width: 100%; }
+  #phase { font-size: 11px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase;
+           color: var(--text_dim); min-height: 14px; }
+  #detail { font-size: 10px; color: var(--text_dim); opacity: .8; min-height: 12px; margin-top: 3px; }
+  .track { margin-top: 10px; width: 100%; height: 3px; border-radius: 2px;
+           background: rgba(0,0,0,0.45); overflow: hidden; }
+  #bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px;
+         transition: width .25s ease; box-shadow: 0 0 10px var(--accent); }
+  /* Before there is anything to count, the bar sweeps rather than sitting at zero. */
+  #bar.sweep { width: 34% !important; animation: sweep 1.15s ease-in-out infinite; }
+  @keyframes sweep { 0% { margin-left: -34%; } 100% { margin-left: 100%; } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>EMULATTE</h1>
+    <div class="rule"></div>
+    <p class="sub">ROM Library</p>
+    <span class="pill"><span class="dot"></span><span id="ver">Starting</span></span>
+    <div class="foot">
+      <div id="phase">Starting up</div>
+      <div id="detail"></div>
+      <div class="track"><div id="bar" class="sweep"></div></div>
+    </div>
+  </div>
+<script>
+  try {
+    const c = JSON.parse(localStorage.getItem('el_theme_cache') || 'null');
+    if (c) {
+      const r = document.documentElement;
+      Object.keys(c).forEach(k => { if (k !== 'font') r.style.setProperty('--' + k, c[k]); });
+      r.style.setProperty('--ui-font', c.font ? "'" + c.font + "', 'Raleway', sans-serif" : "'Raleway', sans-serif");
+    }
+  } catch (e) {}
+
+  // Driven from the main process by executeJavaScript, so the splash needs no preload and no
+  // IPC surface of its own.
+  window.setSplash = function (info) {
+    if (!info) return;
+    if (info.version) document.getElementById('ver').textContent = 'v' + info.version;
+    if (info.phase)  document.getElementById('phase').textContent = info.phase;
+    document.getElementById('detail').textContent = info.detail || '';
+    const bar = document.getElementById('bar');
+    if (typeof info.pct === 'number') { bar.classList.remove('sweep'); bar.style.width = Math.max(0, Math.min(100, info.pct)) + '%'; }
+    else { bar.classList.add('sweep'); }
+  };
+</script>
+</body>
+</html>

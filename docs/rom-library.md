@@ -574,6 +574,90 @@ The IPC surface left with them: `add-game`, `scan-rom-folder`, `create-m3u`, `se
 `rom-locations`, `rom-relocate-preview`, `rom-relocate-apply`. `insertGame` and
 `library.createM3u` stay, because the scanner calls both.
 
+## Overlays stack by what is open, not by document order
+
+Every `.modal-overlay` shared `z-index: 100`, so when two were open the winner was whichever sat
+later in `index.html`. The folder picker, the scan progress and the move progress all sit
+*before* the Settings window they are opened from, so they rendered underneath it. Pressing
+"Export My Artwork" appeared to do nothing at all, and the only readout was a line of text
+inside the Settings pane that was no longer on screen once you closed Settings to find the
+picker.
+
+`raiseModal()` settles it at open time. It is stateless on purpose: it reads the overlays that
+are *actually* open, takes the highest layer among them and goes one step above, so there is no
+stack to leak and nothing to keep in sync with the markup. It only ever raises, so an overlay
+with a deliberately high layer of its own keeps it, and the alert dialog is raised into a band
+above everything so a confirm can never hide behind the thing that asked.
+
+Eleven overlays used to carry their layer in a `style` attribute. Those moved into the
+stylesheet, because `raiseModal()` clears the inline value to measure the authored one; an
+inline layer would have been destroyed on first open. Anything added later must do the same.
+
+Two consequences worth knowing: the rescan modal no longer suppresses itself when Settings is
+open (that was a workaround for this bug), and artwork export/import has its own progress window
+rather than a status line, so the outcome is readable wherever you are.
+
+## Why the import was slow
+
+The matching loop ran one `UPDATE` per game with no transaction around it, which is one commit
+and one fsync per row. On a 32,829-game library that is most of the wait. The updates are now
+collected and applied in a single `db.transaction`.
+
+## The library is rendered a screenful at a time
+
+`renderGallery` built the whole grid as one string and assigned it to `innerHTML`. For 32,829
+games that is roughly 40 MB of HTML and about half a million DOM nodes, and Chromium parses and
+builds all of it before the window is allowed to appear. `content-visibility` was already in the
+stylesheet, but it only skips *layout* of off-screen cards; the parse and the node creation
+happen regardless, so it did nothing for the wait on startup.
+
+`startFeed()` renders the first 120 and appends in batches of 240 as the bottom is scrolled
+towards. The list view goes through the same path. Clicks and cover-load events were already
+delegated to the container, so a card appended later needs no wiring.
+
+`IntersectionObserver` only fires when intersection *changes*, so a sentinel still on screen
+after a batch would never fire again and the feed would stall. `pumpFeed()` keeps topping up
+until the sentinel is clear of the stock line, which also covers a first batch too short to fill
+a tall window. It refuses to act on a sentinel whose rect is all zeroes, which is what
+`getBoundingClientRect` returns while the container is `display:none` during a view switch; the
+whole library would otherwise be pulled in at once.
+
+## The splash
+
+The main window is hidden until the renderer announces itself, with a timed fallback, so a slow
+start used to mean an empty screen and then a window. `splash.html` goes up immediately and
+reports the phases from both processes: the main process says when it is opening the library and
+reading the ROM folders, and the renderer reports its own half through `splash-phase`, which is
+the half that actually takes time. It carries no preload and no IPC surface; the main process
+drives it with `executeJavaScript`, and it takes its palette from the same `el_theme_cache` that
+`index.html` boots from, so it is never unstyled and never the wrong theme.
+
+## Releases are not duplicates
+
+See `rom-variant.js`. Scraping replaces a ROM's filename with the canonical game name, which is
+right until a system holds three of the same game: a Master System library has
+`Action Fighter.zip`, `Action Fighter (USA, Europe) (v1.2).zip` and
+`Action Fighter (Japan, Europe) (Rev 1) [T-BR] [T-Patryck] [V-1.0 A-2016].zip`, and after a
+scrape all three read "Action Fighter" with the same cover. Everything that told them apart is
+still in the filename.
+
+Tags are *classified*, not printed. Across this library there are 1,339 distinct tags and most
+are noise: dump years, shop names, the handle of whoever made a translation patch. Classifying
+yields 225 labels covering 51.6% of the library, in 40 ms for all 32,829 filenames, and
+`[T-Patryck]` and `[V-1.0 A-2016]` never reach the interface. A label is shown only when
+something else on the same system has the same title, so the library stays quiet and gets
+specific exactly where it was ambiguous. Where a colliding game has no tags at all, the
+containing folder is used, which is what separates two untagged copies in a collection-organised
+library.
+
+`variantKey()` is the same classification reduced to an identity, and it is what makes the
+duplicate finder safe. It used to group by title and pre-tick everything but the most complete
+copy: on this library that selected **5,515** entries for deletion, of which only 1,278 were
+genuinely another copy of a release already present. The other 4,237 were distinct regions,
+revisions, prototypes and translations, one click from gone. Groups are now split by release
+first, only repeats of the same release are pre-ticked, and a group of genuinely different
+releases pre-selects nothing and says so.
+
 ## Traps
 
 - `rom-library.js` is on `package.json` `build.files`. A root module that is not listed is simply

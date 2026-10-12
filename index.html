@@ -47,6 +47,22 @@
        pointer-events:none alone can leave a backdrop-filtered layer still catching clicks in Chromium.
        The delayed visibility transition keeps the fade-out animation intact. */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.2s, visibility 0s 0.2s; }
+    /* Authored layers for the overlays that must outrank particular others. These live here,
+       not in a style attribute, because raiseModal() clears the inline z-index to measure the
+       stylesheet value before deciding whether it needs to raise one. An inline value would be
+       destroyed on the first open; a stylesheet value is read and respected. */
+    #modal-slideshow { z-index: 100; }
+    #modal-trailer-player { z-index: 110; }
+    #modal-ra-settings { z-index: 120; }
+    #modal-manual-fetch { z-index: 120; }
+    #modal-ss-systems { z-index: 150; }
+    #modal-art-picker { z-index: 200; }
+    #modal-themes { z-index: 200; }
+    #modal-ra-override { z-index: 20000; }
+    #modal-save-manager { z-index: 20000; }
+    #modal-refine-scrape { z-index: 30000; }
+    #modal-dialog { z-index: 30000; }
+
     .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity 0.2s; }
     .modal-box { background: var(--bg_menu); padding: 30px; border-radius: var(--radius-lg); border: 2px solid var(--border_solid); width: 480px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
     .modal-box.wide { width: 700px; }
@@ -108,7 +124,12 @@
     .btn-gallery-fav.active  { color: #ffeb3b; background: rgba(0,0,0,0.65); }
     .btn-gallery-want.active { color: #ff9800; background: rgba(0,0,0,0.65); }
     @keyframes gallery-flag-glow { 0% { transform: scale(1); } 45% { transform: scale(1.45); box-shadow: 0 0 10px 3px currentColor; } 100% { transform: scale(1); box-shadow: none; } }
-    .gallery-title { padding: 10px 10px 6px; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text_sec); }
+    /* Shown only on a game whose title is not unique on its system: the release that tells it
+       apart from its siblings. See variantFor() in renderer.js. */
+    .gallery-variant { padding: 0 10px 8px; font-size: 10px; font-weight: 900; letter-spacing: .6px;
+      text-transform: uppercase; color: var(--accent); opacity: .85;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .gallery-title { padding: 10px 10px 4px; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text_sec); }
     .btn-play-gallery { margin: 0 8px 8px; padding: 5px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm); cursor: pointer; font-family: var(--ui-font); transition: opacity 0.15s; }
     .btn-play-gallery:hover { background: var(--accent); color: var(--bg); opacity: 0.8; transform: none; box-shadow: none; }
 
@@ -1114,6 +1135,20 @@
     </div>
   </div>
 
+  <!-- ── MODAL: ARTWORK TRANSFER PROGRESS ──────────────────────────────────── -->
+  <div id="modal-transfer" class="modal-overlay">
+    <div class="modal-box" style="max-width:580px; width:min(580px,94vw);">
+      <div class="modal-title" id="tr-title">Working</div>
+      <div id="tr-phase" style="font-size:12px; color:var(--text_sec); min-height:18px;">Starting&hellip;</div>
+      <div id="tr-detail" style="font-size:11px; color:var(--text_dim); min-height:16px; margin-top:2px;"></div>
+      <div style="width:100%; background:var(--bg); border:1px solid var(--border); border-radius:4px; height:8px; overflow:hidden; margin-top:10px;">
+        <div id="tr-bar" style="height:100%; width:0%; background:var(--accent); transition:width .15s linear;"></div>
+      </div>
+      <div id="tr-result" style="font-size:12px; color:var(--text_main); line-height:1.7; margin-top:14px; display:none;"></div>
+      <button id="btn-tr-close" class="btn-modal-x" style="width:100%; margin-top:14px; display:none;">Close</button>
+    </div>
+  </div>
+
   <!-- ── MODAL: RESUME OR START FRESH ──────────────────────────────────────── -->
   <div id="modal-save-pick" class="modal-overlay">
     <div class="modal-box" style="max-width:760px; width:min(760px,94vw);">
@@ -1573,7 +1608,7 @@
     </div>
   </div>
 
-  <div id="modal-ra-settings" class="modal-overlay" style="z-index:120;">
+  <div id="modal-ra-settings" class="modal-overlay">
     <div class="cp-panel">
       <div class="cp-header">
         <h3 class="cp-title">RetroArch</h3>
@@ -1771,7 +1806,7 @@
       <div class="modal-hdr">
         <div class="modal-title">Duplicate Games</div>
       </div>
-      <div class="ra-pane-hint">Same title on the same system. The most complete copy is kept by default. Tick the ones to remove. ROM files are never deleted.</div>
+      <div class="ra-pane-hint">Titles that appear more than once on the same system. Regions, revisions, translations and hacks are <b>different releases</b>, not duplicates, so they are never pre-selected. Only a repeat of a release already in the library is ticked for you. ROM files are never deleted.</div>
       <div id="dup-list" style="max-height:440px; overflow-y:auto; margin-top:6px; display:flex; flex-direction:column; gap:14px;"></div>
       <div class="row" style="margin-top:12px;">
         <button id="btn-dup-remove" class="danger" style="flex:1; font-weight:900;">Remove Selected</button>
@@ -1856,7 +1891,7 @@
   </div>
 
   <!-- ── MODAL: SCREENSCRAPER SYSTEM BROWSER ──────────────────────────────── -->
-  <div id="modal-ss-systems" class="modal-overlay" style="z-index:150;">
+  <div id="modal-ss-systems" class="modal-overlay">
     <div class="modal-wrapper">
     <div class="modal-box wide tall">
       <div class="modal-hdr">
@@ -1872,7 +1907,7 @@
   </div>
 
   <!-- ── MODAL: ART PICKER (SGDB) ─────────────────────────────────────────── -->
-  <div id="modal-art-picker" class="modal-overlay" style="z-index:200;">
+  <div id="modal-art-picker" class="modal-overlay">
     <div class="modal-box" style="width:min(840px,95vw); max-height:88vh; display:flex; flex-direction:column; gap:10px;">
       <div class="modal-hdr">
         <div class="modal-title" id="art-picker-title" style="border:none; padding:0; margin:0;">Select Artwork</div>
@@ -1925,7 +1960,7 @@
   </div>
 
   <!-- ── MODAL: REFINE SCREENSCRAPER SEARCH ────────────────────────────────── -->
-  <div id="modal-refine-scrape" class="modal-overlay" style="z-index:30000;">
+  <div id="modal-refine-scrape" class="modal-overlay">
     <div class="modal-box" style="width:440px;">
       <div class="modal-hdr">
         <div class="modal-title">Refine ScreenScraper Search</div>
@@ -1965,7 +2000,7 @@
   </div>
 
   <!-- ── MODAL: THEMES ─────────────────────────────────────────────────────── -->
-  <div id="modal-themes" class="modal-overlay" style="z-index:200;">
+  <div id="modal-themes" class="modal-overlay">
     <div class="modal-box" style="width:min(820px,95vw); max-height:90vh; display:flex; flex-direction:column; gap:0; padding:0; overflow:hidden;">
       <div class="modal-hdr" style="padding:20px 24px 16px; border-bottom:1px solid var(--border_solid); margin-bottom:0; flex-shrink:0;">
         <div class="modal-title" style="border:none; padding:0; margin:0;">Choose Theme</div>
@@ -1994,7 +2029,7 @@
   </div>
 
   <!-- ── MODAL: TRAILER PLAYER ─────────────────────────────────────────────── -->
-  <div id="modal-trailer-player" class="modal-overlay" style="z-index:110;">
+  <div id="modal-trailer-player" class="modal-overlay">
     <div class="modal-box" style="width:min(900px,95vw); padding:15px; background:#000; border:2px solid var(--accent);">
       <div class="modal-hdr" style="margin-bottom:12px;">
         <div class="modal-title" style="border:none; padding:0; margin:0; color:var(--accent);">Trailer</div>
@@ -2007,7 +2042,7 @@
   </div>
 
   <!-- ── MODAL: SLIDESHOW ───────────────────────────────────────────────────── -->
-  <div id="modal-slideshow" class="modal-overlay" style="z-index:100;">
+  <div id="modal-slideshow" class="modal-overlay">
     <button class="slide-nav slide-prev" id="slide-prev">&#8249;</button>
     <div class="crt-screen"><img class="slideshow-img" id="slideshow-img" src="" alt=""><img class="crt-bloom" id="slideshow-img-bloom" src="" alt="" aria-hidden="true"></div>
     <button class="slide-nav slide-next" id="slide-next">&#8250;</button>
@@ -2051,7 +2086,7 @@
   </div>
 
   <!-- ── MODAL: RETROARCH LAUNCH SETTINGS (override editor) ──────────────────── -->
-  <div id="modal-ra-override" class="modal-overlay" style="z-index:20000;">
+  <div id="modal-ra-override" class="modal-overlay">
     <div class="modal-box" style="width:520px; max-width:94vw; max-height:88vh; padding:0; display:flex; flex-direction:column; overflow:hidden;">
       <div class="modal-hdr" style="padding:18px 24px 14px; border-bottom:1px solid var(--border_solid); margin-bottom:0; flex-shrink:0;">
         <div class="modal-title" id="ra-override-title">RetroArch Launch Settings</div>
@@ -2123,7 +2158,7 @@
   </div>
 
   <!-- ── MODAL: SAVE STATE MANAGER (memory-card style) ──────────────────────── -->
-  <div id="modal-save-manager" class="modal-overlay" style="z-index:20000;">
+  <div id="modal-save-manager" class="modal-overlay">
     <div class="sm-box">
       <div class="sm-bar">
         <button class="sm-nav" id="sm-back" title="Back" style="display:none;">‹</button>
@@ -2206,7 +2241,7 @@
   </div>
 
   <!-- ── MODAL: FETCH GAME MANUAL ───────────────────────────────────────────── -->
-  <div id="modal-manual-fetch" class="modal-overlay" style="z-index:120;">
+  <div id="modal-manual-fetch" class="modal-overlay">
     <div class="modal-box" style="width:440px; gap:0; text-align:center;">
       <div style="width:60px; height:60px; margin:4px auto 16px; border-radius:16px; background:var(--bg_panel); border:1px solid var(--border_solid); display:flex; align-items:center; justify-content:center; color:var(--accent);">
         <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
@@ -2237,7 +2272,7 @@
   </div>
 
   <!-- ── MODAL: THEMED CONFIRM / ALERT ──────────────────────────────────────── -->
-  <div id="modal-dialog" class="modal-overlay" style="z-index:30000;">
+  <div id="modal-dialog" class="modal-overlay">
     <div class="modal-box" style="width:420px; text-align:center; gap:0;">
       <div id="modal-dialog-title" style="font-size:13px; font-weight:900; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:14px;"></div>
       <p id="modal-dialog-body" style="font-size:13px; color:var(--text_sec); line-height:1.7; margin:0 0 24px; white-space:pre-line;"></p>
@@ -2352,6 +2387,7 @@
     </div>
   </div>
 
+  <script src="rom-variant.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
