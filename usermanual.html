@@ -337,6 +337,19 @@
                 <li><strong>Screenshots</strong>: the in-game shots, also used by the Couch Mode screensaver</li>
             </ul>
 
+            <h3>Scraping a whole system</h3>
+            <p><strong>Scrape All</strong> on a system's header asks two things before it starts: which games, and which source.</p>
+            <table class="controls-table">
+                <tr><th>Which games</th><th>Means</th></tr>
+                <tr><td><strong>Not scraped yet</strong></td><td>Only games with nothing on them at all. The default, and almost always what you want on a system you have scraped before.</td></tr>
+                <tr><td><strong>Favourites</strong></td><td>Only the games in this system you have starred.</td></tr>
+                <tr><td><strong>Everything</strong></td><td>All of them, including games that already have their art and details. Use this to re-fetch from a different source, or after a scrape went to the wrong game.</td></tr>
+            </table>
+            <p>Each option carries its own count, so the choice is made against real numbers: a system of 687 games where three are done offers 684, not 687. An option with nothing in it is greyed out rather than quietly doing nothing.</p>
+            <div class="tip-box">
+                <p><strong>A game the scraper could not find stays in "not scraped yet".</strong> That is deliberate. It means a second pass picks it up after you fix your credentials, switch source, or rename a file that was never going to match, instead of writing it off for good.</p>
+            </div>
+
             <h2 id="man-9">10. Metadata Scraping</h2>
             <p>Metadata is everything that is not art: description, developer, publisher, release date, genre, player count, rating. It comes from the same picker and the same five sources.</p>
             <p>If a scrape matches the wrong game, which is common with regional variants, revisions and anything called "Adventure", use <strong>refine</strong> to search manually and pick the correct result. The system's platform identifier is passed to the scrapers, so results are already filtered to the right console before you even look.</p>
