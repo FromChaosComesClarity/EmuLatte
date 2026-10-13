@@ -63,6 +63,16 @@
     #modal-refine-scrape { z-index: 30000; }
     #modal-dialog { z-index: 30000; }
 
+    /* Scope chooser in the scrape picker. Same shape as the report modal's segmented control. */
+    .scope-btn { flex: 1; background: transparent; border: 0; border-right: 1px solid var(--border_solid);
+      color: var(--text_sec); padding: 9px 6px; font-size: 11px; font-weight: 900; letter-spacing: .5px;
+      cursor: pointer; border-radius: 0; display: flex; flex-direction: column; gap: 2px; align-items: center; }
+    .scope-btn:last-child { border-right: 0; }
+    .scope-btn:hover:not(:disabled) { background: var(--bg_panel); color: var(--text_main); }
+    .scope-btn.active { background: var(--accent); color: var(--bg); }
+    .scope-btn:disabled { opacity: .4; cursor: default; }
+    .scope-btn .scope-n { font-size: 10px; font-weight: 700; opacity: .75; letter-spacing: 0; }
+
     .modal-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity 0.2s; }
     .modal-box { background: var(--bg_menu); padding: 30px; border-radius: var(--radius-lg); border: 2px solid var(--border_solid); width: 480px; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
     .modal-box.wide { width: 700px; }
@@ -1932,6 +1942,15 @@
         <div class="modal-hdr-btns">
           <button id="btn-scraper-picker-cancel" class="btn-modal-x">✕</button>
         </div>
+      </div>
+      <div id="scrape-scope-row" style="display:none; margin-bottom:14px;">
+        <label>Which games</label>
+        <div style="display:flex; border:1px solid var(--border_solid); border-radius:6px; overflow:hidden;">
+          <button class="scope-btn active" data-scope="missing">Not scraped yet<span class="scope-n"></span></button>
+          <button class="scope-btn" data-scope="favs">Favourites<span class="scope-n"></span></button>
+          <button class="scope-btn" data-scope="all">Everything<span class="scope-n"></span></button>
+        </div>
+        <div id="scrape-scope-hint" class="hint" style="margin-top:6px;"></div>
       </div>
       <div style="display:flex; flex-direction:column; gap:10px;">
         <button id="btn-scrape-with-ss"   class="scraper-pick-btn">

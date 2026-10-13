@@ -3445,8 +3445,17 @@ function wireUI() {
         _scrapeAllSystemId = (currentFilter !== 'all' && currentFilter !== 'favs' && currentFilter !== 'want' && currentFilter !== 'recent')
             ? currentFilter : null;
         _scraperPickerMode = 'batch';
+        _scrapeScope = 'missing';                       // the cheap, obvious one by default
         document.getElementById('scraper-picker-status').textContent = '';
-        openModal('modal-scraper-picker');
+        openScraperPicker(_scrapeAllSystemId);
+    });
+
+    document.querySelectorAll('#scrape-scope-row .scope-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.disabled) return;
+            _scrapeScope = btn.dataset.scope;
+            paintScrapeScope(_scrapeAllSystemId);
+        });
     });
 
     // Systems manager is reached from Settings → Systems (btn-settings-manage-systems)
@@ -3524,7 +3533,7 @@ function wireUI() {
         if (!currentGame) return;
         _scraperPickerMode = 'full';
         document.getElementById('scraper-picker-status').textContent = '';
-        openModal('modal-scraper-picker');
+        openScraperPicker();
     });
 
     // Gamepage edit
@@ -3682,7 +3691,7 @@ function wireUI() {
         if (!currentGame) return;
         _scraperPickerMode = 'meta';
         document.getElementById('scraper-picker-status').textContent = '';
-        openModal('modal-scraper-picker');
+        openScraperPicker();
     });
 
     for (const type of ['cover', 'hero', 'logo', 'screenshot']) {
@@ -4439,7 +4448,7 @@ function wireUI() {
 
     document.getElementById('btn-scrape-with-ss').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('ss'); return; }
-        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAll(_scrapeAllSystemId); return; }
+        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAll(_scrapeAllSystemId, _scrapeScope); return; }
         if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'ss'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.scrapeGameMeta(id), 'ScreenScraper', true); return; }
         if (!currentGame) return;
@@ -4448,21 +4457,21 @@ function wireUI() {
     });
     document.getElementById('btn-scrape-with-igdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('igdb'); return; }
-        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'igdb'); return; }
+        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'igdb', _scrapeScope); return; }
         if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'igdb'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.igdbScrapeGameMeta(id), 'IGDB'); return; }
         runScraper(id => window.api.igdbScrapeGame(id), 'IGDB');
     });
     document.getElementById('btn-scrape-with-tgdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('tgdb'); return; }
-        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'tgdb'); return; }
+        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'tgdb', _scrapeScope); return; }
         if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'tgdb'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.tgdbScrapeGameMeta(id), 'TheGamesDB'); return; }
         runScraper(id => window.api.tgdbScrapeGame(id), 'TheGamesDB');
     });
     document.getElementById('btn-scrape-with-sgdb').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('sgdb'); return; }
-        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'sgdb'); return; }
+        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'sgdb', _scrapeScope); return; }
         if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'sgdb'); return; }
         if (_scraperPickerMode === 'meta')  {
             const statusEl = document.getElementById('scraper-picker-status');
@@ -4474,7 +4483,7 @@ function wireUI() {
     });
     document.getElementById('btn-scrape-with-moby').addEventListener('click', async () => {
         if (_scraperPickerMode === 'art')   { await _pickArt('moby'); return; }
-        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'moby'); return; }
+        if (_scraperPickerMode === 'batch') { closeModal('modal-scraper-picker'); scrapeAllWith(_scrapeAllSystemId, 'moby', _scrapeScope); return; }
         if (_scraperPickerMode === 'batchIds') { closeModal('modal-scraper-picker'); enqueueScrapeIds(_scrapeBatchIds, 'moby'); return; }
         if (_scraperPickerMode === 'meta')  { runScraper(id => window.api.mobyScrapeGameMeta(id), 'MobyGames'); return; }
         runScraper(id => window.api.mobyScrapeGame(id), 'MobyGames');
@@ -4909,7 +4918,7 @@ function openArtPicker(type) {
     _artPickerType    = type;
     _scraperPickerMode = 'art';
     document.getElementById('scraper-picker-status').textContent = '';
-    openModal('modal-scraper-picker');
+    openScraperPicker();
 }
 
 async function _openArtPickerModal() {
@@ -5313,6 +5322,64 @@ function openDuplicatesModal() {
     openModal('modal-duplicates');
 }
 
+// ── WHAT A BATCH SCRAPE SHOULD COVER ─────────────────────────────────────────
+// "Scrape All" used to mean all of it, every time, which on a scraped system is a long wait and
+// a chunk of somebody's API quota spent re-fetching files it already has. So it asks.
+//
+// A game counts as scraped when it has anything at all on it: any of the scraped fields or any
+// artwork. That is deliberately the same test the artwork export uses, and it means a game the
+// scraper found nothing for stays in the "not scraped yet" bucket and gets another go, which is
+// what you want after fixing your credentials or switching source.
+const SCRAPED_FIELDS_UI = ['description', 'year', 'developer', 'publisher', 'genre', 'players',
+                           'rating', 'screenscraper_id', 'ra_game_id', 'igdb_trailer'];
+const ART_FIELDS_UI = ['cover', 'hero', 'logo', 'screenshot'];
+const isScrapedGame = (g) => SCRAPED_FIELDS_UI.some(f => g[f] !== null && g[f] !== undefined && g[f] !== '')
+                          || ART_FIELDS_UI.some(f => !!g[f]);
+
+const SCRAPE_SCOPES = {
+    missing: { label: 'not scraped yet', pick: (gs) => gs.filter(g => !isScrapedGame(g)) },
+    favs:    { label: 'favourites',      pick: (gs) => gs.filter(g => !!g.fav) },
+    all:     { label: 'every game',      pick: (gs) => gs.slice() },
+};
+let _scrapeScope = 'missing';
+
+const gamesInSystem = (systemId) => systemId
+    ? allGames.filter(g => g.system_id === Number(systemId))
+    : allGames.slice();
+
+// Counts on the buttons, so the choice is made against real numbers rather than a guess. An
+// empty scope is disabled rather than silently doing nothing.
+// Open the source picker in whatever mode is already set, and leave the scope row in the right
+// state for it. Every path that shows this modal goes through here, so a batch open cannot leave
+// the row behind for the next single-game scrape.
+function openScraperPicker(systemId = null) {
+    paintScrapeScope(systemId);
+    openModal('modal-scraper-picker');
+}
+
+function paintScrapeScope(systemId) {
+    const row = document.getElementById('scrape-scope-row');
+    if (!row) return;
+    if (_scraperPickerMode !== 'batch') { row.style.display = 'none'; return; }
+    row.style.display = '';
+    const pool = gamesInSystem(systemId);
+    const counts = {};
+    for (const [k, def] of Object.entries(SCRAPE_SCOPES)) counts[k] = def.pick(pool).length;
+    // Nothing missing on a fully scraped system, so do not sit on a choice that does nothing.
+    if (!counts[_scrapeScope]) _scrapeScope = counts.missing ? 'missing' : (counts.all ? 'all' : 'missing');
+    row.querySelectorAll('.scope-btn').forEach(btn => {
+        const k = btn.dataset.scope;
+        btn.classList.toggle('active', k === _scrapeScope);
+        btn.disabled = !counts[k];
+        btn.querySelector('.scope-n').textContent = counts[k].toLocaleString();
+    });
+    const sysName = systemId ? (allSystems.find(x => x.id === Number(systemId))?.name || 'this system') : 'your whole library';
+    const n = counts[_scrapeScope];
+    document.getElementById('scrape-scope-hint').textContent = n
+        ? `${n.toLocaleString()} game${n !== 1 ? 's' : ''} in ${sysName}. Pick a source below to start.`
+        : `Nothing to scrape in ${sysName}.`;
+}
+
 // ── UNIFIED SCRAPE QUEUE ──────────────────────────────────────────────────────
 // Every "Scrape All" (any system, any source) feeds one renderer-side worker that
 // scrapes a game at a time via the per-game IPC. Queuing more while it runs just
@@ -5339,11 +5406,12 @@ function updateScrapeCount() {
     document.getElementById('scrape-progress-bar').style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
 }
 
-function enqueueScrape(systemId, source) {
-    const games = systemId
-        ? allGames.filter(g => g.system_id === Number(systemId))
-        : allGames;
-    if (!games.length) { showLaunchToast('No ROMs to scrape in this system.', null); return; }
+function enqueueScrape(systemId, source, scope = 'all') {
+    const def   = SCRAPE_SCOPES[scope] || SCRAPE_SCOPES.all;
+    const pool  = gamesInSystem(systemId);
+    const games = def.pick(pool);
+    if (!pool.length)  { showLaunchToast('No ROMs to scrape in this system.', null); return; }
+    if (!games.length) { showLaunchToast(`Nothing ${def.label} to scrape here.`, null); return; }
 
     const fn   = scraperFnFor(source);
     const isSS = !['igdb', 'tgdb', 'moby', 'sgdb'].includes(source);
@@ -5410,8 +5478,8 @@ async function runScrapeWorker() {
 }
 
 // Entry points used by the scraper-picker batch buttons.
-function scrapeAll(systemId)          { enqueueScrape(systemId, 'ss'); }
-function scrapeAllWith(systemId, src) { enqueueScrape(systemId, src); }
+function scrapeAll(systemId, scope)          { enqueueScrape(systemId, 'ss', scope); }
+function scrapeAllWith(systemId, src, scope) { enqueueScrape(systemId, src, scope); }
 
 // Scrape an explicit list of game ids (used after the Refresh rescan adds new ROMs).
 function enqueueScrapeIds(ids, source) {
@@ -5837,7 +5905,7 @@ async function applyScanResult(res, { quiet = false, noToast = false } = {}) {
     const statusEl = document.getElementById('scraper-picker-status');
     statusEl.textContent = `Added ${newIds.length} new game${newIds.length !== 1 ? 's' : ''}. Choose a source to scrape them, or close to skip.`;
     statusEl.style.color = 'var(--accent)';
-    openModal('modal-scraper-picker');
+    openScraperPicker();
 }
 
 function wireScrapeProgress() {
