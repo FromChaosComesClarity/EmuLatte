@@ -31,6 +31,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const say = (phase, detail) => { try { window.api.splashPhase({ phase, detail }); } catch {} };
     applyZoom();
     currentSort = await window.api.getSetting('el_sort') || 'alpha';   // restore the last-used gallery sort
+    heroMedia   = await window.api.getSetting('hero_media') || 'screenshot';   // before loadGames: it starts the cycle
     document.getElementById('gallery-sort').value = currentSort;       // (before enhanceAllSelects so the widget shows it)
     say('Reading your systems');
     await loadSystems();
@@ -1324,28 +1325,109 @@ const shuffled = arr => {   // Fisher–Yates, in place
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr;
 };
+// Which image the hero shows is the user's choice, in Settings > Appearance. Screenshots by
+// default: they are what a game actually looks like in motion, and a scraped library holds far
+// more of them than it does wide banner art.
+const HERO_MEDIA_FIELDS = { screenshot: 'screenshot', hero: 'hero', cover: 'cover' };
+const HERO_MEDIA_ORDER  = ['screenshot', 'hero', 'cover'];
+const HERO_DWELL = 6000;
+let heroMedia = 'screenshot';
+let _heroGame = null;                 // the game on screen right now, which the buttons act on
+let _heroShow = null;                 // the advance function, kept so hovering can pause it
+
+// A screenshot field can hold several paths separated by '|'. One is taken at random, so a game
+// that comes round twice is not necessarily the same frame twice.
+function heroImageFor(g, mode = heroMedia) {
+    const pick = (field) => {
+        const v = g && g[field];
+        if (!v) return '';
+        const all = String(v).split('|').filter(Boolean);
+        return all.length ? all[Math.floor(Math.random() * all.length)] : '';
+    };
+    if (mode === 'any') {
+        for (const f of HERO_MEDIA_ORDER) { const u = pick(f); if (u) return { url: u, field: f }; }
+        return { url: '', field: '' };
+    }
+    const field = HERO_MEDIA_FIELDS[mode] || 'screenshot';
+    return { url: pick(field), field };
+}
+const hasHeroImage = (g, mode) => !!heroImageFor(g, mode).url;
+
 function startHeroCycle() {
     clearInterval(heroCycleTimer);
-    const img = document.getElementById('hero-kb-img');
+    const img    = document.getElementById('hero-kb-img');
     const nameEl = document.getElementById('hero-game-name');
-    const games = getFilteredGames().filter(g => g.hero);
-    // Random pick from whatever the gallery is currently showing (a shuffled pass, so nothing
-    // repeats until every game has had a turn — then it reshuffles for a fresh order).
-    heroQueue = shuffled(games.length ? games : allGames.filter(g => g.hero));
-    if (!heroQueue.length) { img.style.opacity = 0; nameEl.textContent = ''; return; }
+    const varEl  = document.getElementById('hero-game-variant');
+    const btns   = document.getElementById('hero-game-btns');
+    const bg     = document.getElementById('hero-kb-bg');
+    const inView = getFilteredGames();
+
+    // What the gallery is showing, then the whole library, then anything with a picture at all.
+    // Asking for screenshots on a library that was only ever scraped for box art should still
+    // show something rather than an empty panel.
+    let pool = inView.filter(g => hasHeroImage(g, heroMedia));
+    if (!pool.length) pool = allGames.filter(g => hasHeroImage(g, heroMedia));
+    if (!pool.length) pool = inView.filter(g => hasHeroImage(g, 'any'));
+    if (!pool.length) pool = allGames.filter(g => hasHeroImage(g, 'any'));
+
+    heroQueue = shuffled(pool);
+    if (!heroQueue.length) {
+        img.style.opacity = 0;
+        img.removeAttribute('src');
+        bg.style.display = 'none';
+        nameEl.textContent = '';
+        varEl.style.display = 'none';
+        btns.style.display = 'none';
+        _heroGame = null;
+        return;
+    }
     let i = 0;
     const show = () => {
         if (i >= heroQueue.length) { shuffled(heroQueue); i = 0; }
         const g = heroQueue[i++];
+        let shot = heroImageFor(g);
+        if (!shot.url) shot = heroImageFor(g, 'any');
         img.style.opacity = 0;
         setTimeout(() => {
-            img.src = g.hero;
+            // Box art is portrait; contain it and let a blurred copy fill the panel behind.
+            const portrait = shot.field === 'cover';
+            img.classList.toggle('contain', portrait);
+            bg.style.display = portrait ? 'block' : 'none';
+            bg.style.backgroundImage = portrait ? `url("${shot.url.replace(/"/g, '%22')}")` : '';
+            img.src = shot.url;
             img.style.opacity = 1;
             nameEl.textContent = g.title;
+            const v = variantFor(g);                    // which release, when it is ambiguous
+            varEl.textContent = v;
+            varEl.style.display = v ? 'block' : 'none';
+            btns.style.display = 'flex';
+            _heroGame = g;
         }, 500);
     };
+    _heroShow = show;
     show();
-    heroCycleTimer = setInterval(show, 6000);
+    heroCycleTimer = setInterval(show, HERO_DWELL);
+}
+
+// Reaching for Play on a panel that changes under the cursor every six seconds is how you launch
+// the wrong game, so the cycle holds while the pointer is on it.
+function pauseHeroCycle()  { clearInterval(heroCycleTimer); }
+function resumeHeroCycle() {
+    clearInterval(heroCycleTimer);
+    if (_heroShow && heroQueue.length) heroCycleTimer = setInterval(_heroShow, HERO_DWELL);
+}
+
+// How much of the library each kind of image covers, so the choice is informed.
+function paintHeroMediaStatus() {
+    const el = document.getElementById('hero-media-status');
+    if (!el) return;
+    const sel = document.getElementById('hero-media-sel');
+    if (sel) sel.value = heroMedia;
+    const n = allGames.filter(g => hasHeroImage(g, heroMedia)).length;
+    const label = { screenshot: 'a screenshot', hero: 'hero art', cover: 'box art', any: 'some artwork' }[heroMedia] || 'this';
+    el.textContent = allGames.length
+        ? `${n.toLocaleString()} of your ${allGames.length.toLocaleString()} games have ${label}.`
+        : '';
 }
 
 // ── SYSTEM FILTERS ────────────────────────────────────────────────────────────
@@ -3458,6 +3540,26 @@ function wireUI() {
         });
     });
 
+    const heroEl = document.getElementById('hero-display');
+    heroEl.addEventListener('mouseenter', pauseHeroCycle);
+    heroEl.addEventListener('mouseleave', resumeHeroCycle);
+
+    // The hero's own buttons act on whichever game it is showing at that moment.
+    document.getElementById('btn-hero-play').addEventListener('click', e => {
+        e.stopPropagation();
+        if (_heroGame) launchGame(_heroGame.id);
+    });
+    document.getElementById('btn-hero-add-playlist').addEventListener('click', e => {
+        e.stopPropagation();
+        if (_heroGame) openPlaylistPicker(_heroGame.id);
+    });
+    document.getElementById('hero-media-sel').addEventListener('change', async e => {
+        heroMedia = e.target.value;
+        await window.api.setSetting('hero_media', heroMedia);
+        paintHeroMediaStatus();
+        startHeroCycle();                               // take effect now, not on the next reload
+    });
+
     // Systems manager is reached from Settings → Systems (btn-settings-manage-systems)
 
     // Settings
@@ -3486,6 +3588,7 @@ function wireUI() {
         coresEl.textContent = allCores.length ? `${allCores.length} core${allCores.length !== 1 ? 's' : ''} scanned.` : '';
         document.getElementById('ra-config-status').textContent = '';
         refreshRaConfigInfo();
+        paintHeroMediaStatus();
         await loadCouchSettings();
         openModal('modal-settings');
     });
@@ -4651,6 +4754,7 @@ function wireUI() {
             if (pane === 'express') renderExpressSettings();   // load fresh + render the chips on entry
             if (pane === 'omarchy') renderOmarchyPane();       // re-probe on entry, so an install just done in a terminal shows
             if (pane === 'library')  renderLibraryPane();      // re-read the folders on entry, so a drive just plugged in shows
+            if (pane === 'appearance') paintHeroMediaStatus();  // counts move as the library gets scraped
             document.querySelectorAll('#settings-rail .cp-rail-item').forEach(b => b.classList.toggle('active', b === item));
             document.querySelectorAll('#modal-settings .cp-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === pane));
             document.getElementById('settings-content').scrollTop = 0;
